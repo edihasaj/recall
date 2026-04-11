@@ -26,13 +26,17 @@ import { detectContradictions, resolveContradiction, autoResolveContradictions, 
 import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "./audit/trail.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json");
 
 const program = new Command();
 
 program
   .name("recall")
   .description("Cross-tool coding memory and instruction compiler")
-  .version("0.1.0");
+  .version(pkg.version);
 
 // --- init ---
 
