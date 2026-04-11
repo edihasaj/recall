@@ -25,6 +25,7 @@ import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "./audit/trail.js";
+import { getRepoQualityProfile } from "./repo/quality.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
 
@@ -171,13 +172,13 @@ program
   .description("Compile active memories into injection pack")
   .requiredOption("-r, --repo <repo>", "Repository name")
   .option("-p, --path <path>", "File path for scoping")
-  .option("--threshold <n>", "Confidence threshold", "0.6")
+  .option("--threshold <n>", "Confidence threshold (default: dynamic from quality profile)")
   .action((opts) => {
     const db = initDb();
     const result = compileContext(db, {
       repo: opts.repo,
       path: opts.path,
-      config: { confidence_threshold: parseFloat(opts.threshold) },
+      config: opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {},
     });
 
     if (!result.text) {

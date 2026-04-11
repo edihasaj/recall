@@ -3,6 +3,7 @@ import { join, basename } from "node:path";
 import { execSync } from "node:child_process";
 import type { RecallDb } from "../db/client.js";
 import { createMemory, type CreateMemoryInput } from "../models/memory.js";
+import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 
 interface ScanResult {
   candidates: CreateMemoryInput[];
@@ -39,9 +40,15 @@ export function scanRepo(repoPath: string): ScanResult {
 
 export function scanAndStore(db: RecallDb, repoPath: string): string[] {
   const { candidates, repo } = scanRepo(repoPath);
+  const profile = getRepoQualityProfile(db, repo);
   const ids: string[] = [];
 
   for (const candidate of candidates) {
+    // Apply maturity-aware confidence seeding
+    candidate.confidence = seedCandidateConfidence(
+      candidate.confidence ?? 0.5,
+      profile,
+    );
     const id = createMemory(db, candidate);
     ids.push(id);
   }
