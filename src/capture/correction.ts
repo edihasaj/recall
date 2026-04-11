@@ -1,7 +1,15 @@
 import type { RecallDb } from "../db/client.js";
-import { createMemory, queryMemories, promoteMemory } from "../models/memory.js";
+import {
+  appendEvidence,
+  countDistinctCorrectionSessions,
+  createMemory,
+  getMemory,
+  promoteMemory,
+  queryMemories,
+} from "../models/memory.js";
 import type { CreateMemoryInput } from "../models/memory.js";
-import type { MemoryType, EvidenceEntry } from "../types.js";
+import type { MemoryItem, MemoryType, EvidenceEntry } from "../types.js";
+import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 
 // --- Detection patterns ---
 
@@ -89,33 +97,11 @@ export function processCorrection(
 ): string[] {
   const corrections = detectCorrections(text);
   if (corrections.length === 0) return [];
+  const profile = getRepoQualityProfile(db, ctx.repo);
 
   const ids: string[] = [];
 
   for (const correction of corrections) {
-    // Check if similar memory already exists (dedup by text similarity)
-    const existing = queryMemories(db, {
-      repo: ctx.repo,
-      status: "candidate",
-    });
-
-    const duplicate = existing.find(
-      (m) => textSimilarity(m.text, correction.text) > 0.8,
-    );
-
-    if (duplicate) {
-      // Repeated correction → promote
-      promoteMemory(db, duplicate.id, "repeat_correction", {
-        type: "session_correction",
-        session: ctx.sessionId,
-        timestamp: new Date().toISOString(),
-        context: text,
-      });
-      ids.push(duplicate.id);
-      continue;
-    }
-
-    // New candidate
     const evidence: EvidenceEntry = correction.type === "review_pattern"
       ? {
           type: "review_feedback",
@@ -130,6 +116,31 @@ export function processCorrection(
           context: text,
         };
 
+    const duplicate = findDuplicateMemory(
+      db,
+      ctx.repo,
+      correction.type,
+      correction.text,
+      profile.dedup_similarity_threshold,
+    );
+
+    if (duplicate) {
+      appendEvidence(db, duplicate.id, evidence);
+      const updated = getMemory(db, duplicate.id);
+
+      if (
+        updated &&
+        updated.status !== "active" &&
+        countDistinctCorrectionSessions(updated) >= profile.repeat_sessions_required
+      ) {
+        promoteMemory(db, duplicate.id, "repeat_correction", evidence);
+      }
+
+      ids.push(duplicate.id);
+      continue;
+    }
+
+    // New candidate
     const input: CreateMemoryInput = {
       type: correction.type,
       text: correction.text,
@@ -140,7 +151,7 @@ export function processCorrection(
         correction.type === "review_pattern"
           ? "user_reported_review"
           : "user_correction",
-      confidence: correction.confidence,
+      confidence: seedCandidateConfidence(correction.confidence, profile),
       evidence: [evidence],
     };
 
@@ -158,6 +169,7 @@ export function processReviewFeedback(
   feedback: string,
   ctx: CorrectionContext & { reviewer?: string },
 ): string[] {
+  const profile = getRepoQualityProfile(db, ctx.repo);
   const evidence: EvidenceEntry = {
     type: "review_feedback",
     reported_by_user: true,
@@ -172,6 +184,24 @@ export function processReviewFeedback(
   if (corrections.length > 0) {
     const ids: string[] = [];
     for (const correction of corrections) {
+      const duplicate = findDuplicateMemory(
+        db,
+        ctx.repo,
+        correction.type,
+        correction.text,
+        profile.dedup_similarity_threshold,
+      );
+
+      if (duplicate) {
+        appendEvidence(db, duplicate.id, evidence);
+        const updated = getMemory(db, duplicate.id);
+        if (updated && updated.status !== "active") {
+          promoteMemory(db, duplicate.id, "review_feedback", evidence);
+        }
+        ids.push(duplicate.id);
+        continue;
+      }
+
       const id = createMemory(db, {
         type: correction.type,
         text: correction.text,
@@ -179,7 +209,7 @@ export function processReviewFeedback(
         path_scope: ctx.path ?? null,
         repo: ctx.repo ?? null,
         source: "user_reported_review",
-        confidence: correction.confidence + 0.1, // review feedback bonus
+        confidence: seedCandidateConfidence(correction.confidence + 0.1, profile),
         evidence: [evidence],
       });
       ids.push(id);
@@ -195,7 +225,7 @@ export function processReviewFeedback(
     path_scope: ctx.path ?? null,
     repo: ctx.repo ?? null,
     source: "user_reported_review",
-    confidence: 0.4,
+    confidence: seedCandidateConfidence(0.4, profile),
     evidence: [evidence],
   });
 
@@ -210,4 +240,30 @@ function textSimilarity(a: string, b: string): number {
   const intersection = [...wordsA].filter((w) => wordsB.has(w));
   const union = new Set([...wordsA, ...wordsB]);
   return intersection.length / union.size; // Jaccard similarity
+}
+
+function findDuplicateMemory(
+  db: RecallDb,
+  repo: string | undefined,
+  type: MemoryType,
+  text: string,
+  threshold: number,
+): MemoryItem | undefined {
+  if (!repo) return undefined;
+
+  const existing = queryMemories(db, { repo })
+    .filter((m) => m.status !== "rejected" && m.type === type);
+
+  let best: MemoryItem | undefined;
+  let bestScore = 0;
+
+  for (const memory of existing) {
+    const score = textSimilarity(memory.text, text);
+    if (score >= threshold && score > bestScore) {
+      best = memory;
+      bestScore = score;
+    }
+  }
+
+  return best;
 }
