@@ -1,8 +1,12 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.js";
-import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { mkdirSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function getDbPath(): string {
   const dataDir =
@@ -13,6 +17,20 @@ export function getDbPath(): string {
     );
   mkdirSync(dataDir, { recursive: true });
   return join(dataDir, "recall.db");
+}
+
+function getMigrationsPath(): string {
+  // Walk up from __dirname until we find drizzle/meta/_journal.json
+  let dir = __dirname;
+  for (let i = 0; i < 5; i++) {
+    const candidate = join(dir, "drizzle");
+    if (existsSync(join(candidate, "meta", "_journal.json"))) {
+      return candidate;
+    }
+    dir = dirname(dir);
+  }
+  // Fallback: relative to __dirname (works in bundled dist/)
+  return join(__dirname, "..", "drizzle");
 }
 
 let _sqlite: Database.Database | null = null;
@@ -44,143 +62,15 @@ export function createStandaloneDb(dbPath: string): { db: RecallDb; sqlite: Data
   return { db, sqlite };
 }
 
-const INIT_SQL = `
-  CREATE TABLE IF NOT EXISTS memories (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL,
-    text TEXT NOT NULL,
-    scope TEXT NOT NULL,
-    path_scope TEXT,
-    repo TEXT,
-    status TEXT NOT NULL,
-    confidence REAL NOT NULL DEFAULT 0,
-    source TEXT NOT NULL,
-    evidence TEXT NOT NULL DEFAULT '[]',
-    supersedes TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    last_validated_at TEXT,
-    last_injected_at TEXT,
-    injection_count INTEGER NOT NULL DEFAULT 0,
-    override_count INTEGER NOT NULL DEFAULT 0,
-    team_id TEXT,
-    sync_version INTEGER NOT NULL DEFAULT 0,
-    embedding BLOB
-  );
-
-  CREATE TABLE IF NOT EXISTS feedback_events (
-    id TEXT PRIMARY KEY,
-    memory_id TEXT NOT NULL REFERENCES memories(id),
-    session_id TEXT NOT NULL,
-    injected INTEGER NOT NULL,
-    outcome TEXT NOT NULL,
-    timestamp TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS sync_state (
-    id TEXT PRIMARY KEY,
-    remote_url TEXT,
-    team_id TEXT,
-    last_push_at TEXT,
-    last_pull_at TEXT,
-    last_push_version INTEGER NOT NULL DEFAULT 0,
-    last_pull_version INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS eval_sessions (
-    id TEXT PRIMARY KEY,
-    repo TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    ended_at TEXT,
-    memories_injected INTEGER NOT NULL DEFAULT 0,
-    memories_followed INTEGER NOT NULL DEFAULT 0,
-    memories_overridden INTEGER NOT NULL DEFAULT 0,
-    user_corrections INTEGER NOT NULL DEFAULT 0,
-    test_passes INTEGER NOT NULL DEFAULT 0,
-    test_failures INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS implicit_signals (
-    id TEXT PRIMARY KEY,
-    memory_id TEXT NOT NULL REFERENCES memories(id),
-    session_id TEXT NOT NULL,
-    signal_type TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    context TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS policy_rules (
-    id TEXT PRIMARY KEY,
-    org_id TEXT NOT NULL,
-    rule_type TEXT NOT NULL,
-    config TEXT NOT NULL DEFAULT '{}',
-    enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS approval_requests (
-    id TEXT PRIMARY KEY,
-    memory_id TEXT NOT NULL REFERENCES memories(id),
-    org_id TEXT NOT NULL,
-    requested_by TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    reviewed_by TEXT,
-    reason TEXT,
-    created_at TEXT NOT NULL,
-    resolved_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS contradictions (
-    id TEXT PRIMARY KEY,
-    memory_a_id TEXT NOT NULL REFERENCES memories(id),
-    memory_b_id TEXT NOT NULL REFERENCES memories(id),
-    contradiction_type TEXT NOT NULL,
-    severity TEXT NOT NULL,
-    description TEXT NOT NULL,
-    resolved INTEGER NOT NULL DEFAULT 0,
-    resolution TEXT,
-    detected_at TEXT NOT NULL,
-    resolved_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS audit_trail (
-    id TEXT PRIMARY KEY,
-    memory_id TEXT NOT NULL,
-    action TEXT NOT NULL,
-    actor TEXT NOT NULL,
-    before_snapshot TEXT,
-    after_snapshot TEXT,
-    reason TEXT,
-    timestamp TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_memories_repo ON memories(repo);
-  CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
-  CREATE INDEX IF NOT EXISTS idx_memories_repo_status ON memories(repo, status);
-  CREATE INDEX IF NOT EXISTS idx_memories_team ON memories(team_id);
-  CREATE INDEX IF NOT EXISTS idx_feedback_memory ON feedback_events(memory_id);
-  CREATE INDEX IF NOT EXISTS idx_feedback_session ON feedback_events(session_id);
-  CREATE INDEX IF NOT EXISTS idx_eval_repo ON eval_sessions(repo);
-  CREATE INDEX IF NOT EXISTS idx_implicit_memory ON implicit_signals(memory_id);
-  CREATE INDEX IF NOT EXISTS idx_implicit_session ON implicit_signals(session_id);
-  CREATE INDEX IF NOT EXISTS idx_policy_org ON policy_rules(org_id);
-  CREATE INDEX IF NOT EXISTS idx_approval_org ON approval_requests(org_id);
-  CREATE INDEX IF NOT EXISTS idx_approval_status ON approval_requests(status);
-  CREATE INDEX IF NOT EXISTS idx_contradictions_resolved ON contradictions(resolved);
-  CREATE INDEX IF NOT EXISTS idx_audit_memory ON audit_trail(memory_id);
-  CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_trail(timestamp);
-`;
-
 export function initDb(dbPath?: string): RecallDb {
   const db = getDb(dbPath);
-  _sqlite!.exec(INIT_SQL);
+  migrate(db, { migrationsFolder: getMigrationsPath() });
   return db;
 }
 
 /** Init a standalone DB (for tests — no module-level singleton). */
 export function initStandaloneDb(dbPath: string): RecallDb {
-  const { db, sqlite } = createStandaloneDb(dbPath);
-  sqlite.exec(INIT_SQL);
+  const { db } = createStandaloneDb(dbPath);
+  migrate(db, { migrationsFolder: getMigrationsPath() });
   return db;
 }
