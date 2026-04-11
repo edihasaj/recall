@@ -1,6 +1,7 @@
 import { queryMemories } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
 import { CONFIDENCE, type CompilerConfig, type MemoryItem } from "../types.js";
+import { getRepoQualityProfile } from "../repo/quality.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
@@ -27,7 +28,13 @@ export function compileContext(
   db: RecallDb,
   req: CompileRequest,
 ): CompiledContext {
-  const config = { ...DEFAULT_CONFIG, ...req.config };
+  const profile = getRepoQualityProfile(db, req.repo);
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...req.config,
+    confidence_threshold:
+      req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
+  };
 
   // 1. Pull repo-scoped + path-scoped memories
   const allActive = queryMemories(db, {

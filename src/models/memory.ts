@@ -236,6 +236,44 @@ export function reactivateMemory(
   return true;
 }
 
+export function appendEvidence(
+  db: RecallDb,
+  id: string,
+  evidence: EvidenceEntry,
+): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+  if (hasEquivalentEvidence(mem.evidence, evidence)) return true;
+
+  const now = new Date().toISOString();
+  db.update(memories)
+    .set({
+      evidence: [...mem.evidence, evidence] as any,
+      updated_at: now,
+      last_validated_at: now,
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
+export function countDistinctCorrectionSessions(mem: MemoryItem): number {
+  const sessions = new Set<string>();
+
+  for (const entry of mem.evidence) {
+    if (entry.type === "session_correction") {
+      sessions.add(entry.session);
+    } else if (entry.type === "repeated_correction") {
+      for (const session of entry.sessions) {
+        sessions.add(session);
+      }
+    }
+  }
+
+  return sessions.size;
+}
+
 // --- Feedback ---
 
 export function recordFeedback(
@@ -322,4 +360,31 @@ function rowToMemory(row: MemoryRow): MemoryItem {
     injection_count: row.injection_count,
     override_count: row.override_count,
   };
+}
+
+function hasEquivalentEvidence(
+  existing: EvidenceEntry[],
+  next: EvidenceEntry,
+): boolean {
+  return existing.some((entry) => {
+    if (entry.type !== next.type) return false;
+
+    if (entry.type === "session_correction" && next.type === "session_correction") {
+      return entry.session === next.session;
+    }
+
+    if (entry.type === "review_feedback" && next.type === "review_feedback") {
+      return entry.reviewer === next.reviewer && entry.context === next.context;
+    }
+
+    if (entry.type === "repo_scan" && next.type === "repo_scan") {
+      return entry.file === next.file;
+    }
+
+    if (entry.type === "repeated_correction" && next.type === "repeated_correction") {
+      return entry.sessions.join("|") === next.sessions.join("|");
+    }
+
+    return false;
+  });
 }
