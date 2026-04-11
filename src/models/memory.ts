@@ -1,0 +1,325 @@
+import { eq, and, gte, like, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import type { RecallDb } from "../db/client.js";
+import { memories, feedbackEvents } from "../db/schema.js";
+import {
+  CONFIDENCE,
+  PROMOTION,
+  type MemoryItem,
+  type MemoryQuery,
+  type MemoryStatus,
+  type MemoryType,
+  type MemoryScope,
+  type MemorySource,
+  type EvidenceEntry,
+  type FeedbackOutcome,
+} from "../types.js";
+
+type MemoryRow = typeof memories.$inferSelect;
+
+// --- Create ---
+
+export interface CreateMemoryInput {
+  type: MemoryType;
+  text: string;
+  scope: MemoryScope;
+  path_scope?: string | null;
+  repo?: string | null;
+  source: MemorySource;
+  confidence?: number;
+  evidence?: EvidenceEntry[];
+  supersedes?: string | null;
+}
+
+function statusFromConfidence(confidence: number): MemoryStatus {
+  if (confidence < CONFIDENCE.TRANSIENT_MAX) return "transient";
+  if (confidence < CONFIDENCE.CANDIDATE_MAX) return "candidate";
+  return "active";
+}
+
+export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
+  const now = new Date().toISOString();
+  const id = randomUUID();
+  const confidence = input.confidence ?? 0.35; // default: low candidate
+  const status = statusFromConfidence(confidence);
+
+  db.insert(memories)
+    .values({
+      id,
+      type: input.type,
+      text: input.text,
+      scope: input.scope,
+      path_scope: input.path_scope ?? null,
+      repo: input.repo ?? null,
+      status,
+      confidence,
+      source: input.source,
+      evidence: (input.evidence ?? []) as any,
+      supersedes: input.supersedes ?? null,
+      created_at: now,
+      updated_at: now,
+      last_validated_at: null,
+      last_injected_at: null,
+      injection_count: 0,
+      override_count: 0,
+    })
+    .run();
+
+  return id;
+}
+
+// --- Read ---
+
+export function getMemory(
+  db: RecallDb,
+  id: string,
+): MemoryItem | undefined {
+  const row = db.select().from(memories).where(eq(memories.id, id)).get();
+  if (!row) return undefined;
+  return rowToMemory(row);
+}
+
+export function queryMemories(
+  db: RecallDb,
+  query: MemoryQuery,
+): MemoryItem[] {
+  const conditions = [];
+
+  if (query.repo) conditions.push(eq(memories.repo, query.repo));
+  if (query.status) conditions.push(eq(memories.status, query.status));
+  if (query.type) conditions.push(eq(memories.type, query.type));
+  if (query.scope) conditions.push(eq(memories.scope, query.scope));
+  if (query.min_confidence != null)
+    conditions.push(gte(memories.confidence, query.min_confidence));
+  if (query.path) conditions.push(like(memories.path_scope, `%${query.path}%`));
+
+  const rows =
+    conditions.length > 0
+      ? db
+          .select()
+          .from(memories)
+          .where(and(...conditions))
+          .all()
+      : db.select().from(memories).all();
+
+  return rows.map(rowToMemory);
+}
+
+export function listMemories(
+  db: RecallDb,
+  repo?: string,
+): MemoryItem[] {
+  if (repo) {
+    return db
+      .select()
+      .from(memories)
+      .where(eq(memories.repo, repo))
+      .all()
+      .map(rowToMemory);
+  }
+  return db.select().from(memories).all().map(rowToMemory);
+}
+
+// --- State transitions ---
+
+export function promoteMemory(
+  db: RecallDb,
+  id: string,
+  reason: "explicit_confirm" | "repeat_correction" | "review_feedback" | "passive_gain",
+  evidence?: EvidenceEntry,
+): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+  if (mem.status === "rejected") return false; // must use reactivate
+
+  let newConfidence: number;
+  if (reason === "explicit_confirm") {
+    newConfidence = Math.max(mem.confidence, PROMOTION.EXPLICIT_CONFIRM);
+  } else if (reason === "repeat_correction") {
+    newConfidence = Math.min(1, mem.confidence + PROMOTION.REPEAT_CORRECTION);
+  } else if (reason === "review_feedback") {
+    newConfidence = Math.min(1, mem.confidence + PROMOTION.REVIEW_FEEDBACK);
+  } else {
+    newConfidence = Math.min(1, mem.confidence + PROMOTION.PASSIVE_GAIN);
+  }
+
+  const newStatus = statusFromConfidence(newConfidence);
+  const now = new Date().toISOString();
+
+  const newEvidence = evidence
+    ? [...mem.evidence, evidence]
+    : mem.evidence;
+
+  db.update(memories)
+    .set({
+      confidence: newConfidence,
+      status: newStatus,
+      evidence: newEvidence as any,
+      updated_at: now,
+      last_validated_at: now,
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
+export function demoteMemory(
+  db: RecallDb,
+  id: string,
+  reason: string,
+): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+
+  const newConfidence = Math.max(0, mem.confidence - 0.3);
+  const newStatus = statusFromConfidence(newConfidence);
+  const now = new Date().toISOString();
+
+  db.update(memories)
+    .set({
+      confidence: newConfidence,
+      status: newStatus === "transient" ? "candidate" : newStatus, // don't lose it completely
+      updated_at: now,
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
+export function rejectMemory(db: RecallDb, id: string): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+
+  db.update(memories)
+    .set({
+      status: "rejected",
+      confidence: 0,
+      updated_at: new Date().toISOString(),
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
+export function confirmMemory(db: RecallDb, id: string): boolean {
+  return promoteMemory(db, id, "explicit_confirm", {
+    type: "session_correction",
+    session: "cli",
+    timestamp: new Date().toISOString(),
+    context: "user explicitly confirmed",
+  });
+}
+
+export function reactivateMemory(
+  db: RecallDb,
+  id: string,
+  evidence: EvidenceEntry,
+): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+  if (mem.status !== "rejected") return false;
+
+  const now = new Date().toISOString();
+  db.update(memories)
+    .set({
+      status: "candidate",
+      confidence: CONFIDENCE.TRANSIENT_MAX + 0.05,
+      evidence: [...mem.evidence, evidence] as any,
+      updated_at: now,
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
+// --- Feedback ---
+
+export function recordFeedback(
+  db: RecallDb,
+  memoryId: string,
+  sessionId: string,
+  injected: boolean,
+  outcome: FeedbackOutcome,
+): string {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  db.insert(feedbackEvents)
+    .values({
+      id,
+      memory_id: memoryId,
+      session_id: sessionId,
+      injected,
+      outcome,
+      timestamp: now,
+    })
+    .run();
+
+  // Auto-adjust confidence based on outcome
+  if (outcome === "followed") {
+    promoteMemory(db, memoryId, "passive_gain");
+  } else if (outcome === "overridden" || outcome === "contradicted") {
+    demoteMemory(db, memoryId, outcome);
+  }
+
+  // Update injection tracking
+  if (injected) {
+    db.update(memories)
+      .set({
+        last_injected_at: now,
+        injection_count: sql`injection_count + 1`,
+        ...(outcome === "overridden"
+          ? { override_count: sql`override_count + 1` }
+          : {}),
+      })
+      .where(eq(memories.id, memoryId))
+      .run();
+  }
+
+  return id;
+}
+
+export function getMemoryFeedback(
+  db: RecallDb,
+  memoryId: string,
+) {
+  return db
+    .select()
+    .from(feedbackEvents)
+    .where(eq(feedbackEvents.memory_id, memoryId))
+    .all();
+}
+
+// --- Helpers ---
+
+function rowToMemory(row: MemoryRow): MemoryItem {
+  const evidence =
+    typeof row.evidence === "string"
+      ? JSON.parse(row.evidence as string)
+      : Array.isArray(row.evidence)
+        ? row.evidence
+        : [];
+  return {
+    id: row.id,
+    type: row.type,
+    text: row.text,
+    scope: row.scope,
+    path_scope: row.path_scope,
+    repo: row.repo,
+    status: row.status,
+    confidence: row.confidence,
+    source: row.source,
+    evidence: evidence as EvidenceEntry[],
+    supersedes: row.supersedes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    last_validated_at: row.last_validated_at,
+    last_injected_at: row.last_injected_at,
+    injection_count: row.injection_count,
+    override_count: row.override_count,
+  };
+}
