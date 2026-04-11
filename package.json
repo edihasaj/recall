@@ -1,0 +1,33 @@
+{
+  "name": "recall",
+  "version": "0.1.0",
+  "description": "Cross-tool coding memory and instruction compiler",
+  "type": "module",
+  "bin": {
+    "recall": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "better-sqlite3": "^11.8.1",
+    "commander": "^13.1.0",
+    "drizzle-orm": "^0.44.2",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.3",
+    "drizzle-kit": "^0.31.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}
