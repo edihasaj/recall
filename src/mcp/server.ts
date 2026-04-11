@@ -21,6 +21,7 @@ import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "
 import { detectContradictions, resolveContradiction, autoResolveContradictions } from "../contradictions/detector.js";
 import { pruneMemories, formatPruneReport } from "../pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "../audit/trail.js";
+import { getRepoQualityProfile } from "../repo/quality.js";
 
 const db = initDb();
 
@@ -475,6 +476,26 @@ server.tool(
           : "Approval not found.",
       }],
     };
+  },
+);
+
+server.tool(
+  "recall_quality",
+  "Get the repo quality profile — maturity stage, dynamic thresholds, and quality score. Use this to understand how strict memory gating is for a repo.",
+  {
+    repo: z.string().optional().describe("Repository name"),
+  },
+  async ({ repo }) => {
+    const profile = getRepoQualityProfile(db, repo);
+    const lines = [
+      `Stage: ${profile.stage} | Score: ${(profile.score * 100).toFixed(0)}%`,
+      `Active: ${profile.active_count} | Total: ${profile.total_count}`,
+      `Avg health: ${(profile.avg_health * 100).toFixed(0)}% | Override rate: ${(profile.override_rate * 100).toFixed(0)}%`,
+      `Repeat sessions needed: ${profile.repeat_sessions_required}`,
+      `Compile threshold: ${profile.compile_confidence_threshold.toFixed(2)}`,
+      `Dedup similarity: ${profile.dedup_similarity_threshold.toFixed(2)}`,
+    ];
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
   },
 );
 
