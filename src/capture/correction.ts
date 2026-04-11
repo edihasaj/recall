@@ -133,7 +133,7 @@ export function processCorrection(
         updated.status !== "active" &&
         countDistinctCorrectionSessions(updated) >= profile.repeat_sessions_required
       ) {
-        promoteMemory(db, duplicate.id, "repeat_correction", evidence);
+        promoteMemory(db, duplicate.id, "repeat_correction");
       }
 
       ids.push(duplicate.id);
@@ -196,7 +196,7 @@ export function processReviewFeedback(
         appendEvidence(db, duplicate.id, evidence);
         const updated = getMemory(db, duplicate.id);
         if (updated && updated.status !== "active") {
-          promoteMemory(db, duplicate.id, "review_feedback", evidence);
+          promoteMemory(db, duplicate.id, "review_feedback");
         }
         ids.push(duplicate.id);
         continue;

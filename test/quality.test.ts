@@ -32,6 +32,8 @@ describe("repo quality gating", () => {
     const mem = getMemory(db, ids[0])!;
     expect(mem.status).toBe("active");
     expect(mem.confidence).toBeGreaterThanOrEqual(0.6);
+    const sessionEvidence = mem.evidence.filter((entry) => entry.type === "session_correction");
+    expect(sessionEvidence).toHaveLength(2);
   });
 
   it("requires more distinct sessions in mature healthy repos", () => {
