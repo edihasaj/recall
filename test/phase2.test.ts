@@ -13,6 +13,7 @@ import { startEvalSession, endEvalSession, getEvalSession, incrementEvalCounter,
 import { recordSignal, getSignals, getSignalStats, recordTestSignals } from "../src/feedback/implicit.js";
 import { inferScope, analyzeScopePatterns } from "../src/capture/scope.js";
 import { cosineSimilarity } from "../src/embeddings/embeddings.js";
+import { createActivityEvent, listActivityEvents, listActivitySessions } from "../src/models/activity.js";
 
 let dbCounter = 0;
 function freshDb() {
@@ -156,6 +157,55 @@ describe("implicit feedback", () => {
       output: "all tests pass",
     });
     expect(ids).toHaveLength(2);
+  });
+});
+
+// --- Activity log ---
+
+describe("activity log", () => {
+  it("records and lists activity events", () => {
+    const db = freshDb();
+    createActivityEvent(db, {
+      session_id: "sess-1",
+      repo: "test/repo",
+      source: "cli",
+      event_type: "compile",
+      memory_ids: ["11111111-1111-1111-1111-111111111111"],
+      request: { threshold: 0.6 },
+      result: { included: 1 },
+    });
+
+    const events = listActivityEvents(db, { repo: "test/repo" });
+    expect(events).toHaveLength(1);
+    expect(events[0].session_id).toBe("sess-1");
+    expect(events[0].event_type).toBe("compile");
+  });
+
+  it("groups activity by session", () => {
+    const db = freshDb();
+    createActivityEvent(db, {
+      session_id: "sess-1",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "compile",
+    });
+    createActivityEvent(db, {
+      session_id: "sess-1",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "feedback",
+    });
+    createActivityEvent(db, {
+      session_id: "sess-2",
+      repo: "test/repo",
+      source: "mcp",
+      event_type: "query",
+    });
+
+    const sessions = listActivitySessions(db, { repo: "test/repo" });
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0].event_count).toBeGreaterThanOrEqual(1);
+    expect(sessions.some((s) => s.session_id === "sess-1" && s.event_count === 2)).toBe(true);
   });
 });
 

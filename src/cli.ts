@@ -27,6 +27,7 @@ import { detectContradictions, resolveContradiction, autoResolveContradictions, 
 import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
+import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
 import {
@@ -64,7 +65,8 @@ program
   .command("scan")
   .description("Scan a repository and bootstrap memories")
   .argument("[path]", "Repository path", ".")
-  .action((path: string) => {
+  .option("-s, --session <id>", "Session ID")
+  .action((path: string, opts) => {
     const db = initDb();
     const repoPath = resolve(path);
     const ids = scanAndStore(db, repoPath);
@@ -75,6 +77,15 @@ program
     const candidateCount = scanned.filter((mem) => mem.status === "candidate").length;
     console.log(`Scanned ${repoPath}`);
     console.log(`Created ${ids.length} memories (${activeCount} active, ${candidateCount} candidate).`);
+    createActivityEvent(db, {
+      session_id: opts.session ?? null,
+      repo: scanned[0]?.repo ?? null,
+      source: "cli",
+      event_type: "scan",
+      memory_ids: ids,
+      request: { repo_path: repoPath },
+      result: { created: ids.length, active: activeCount, candidate: candidateCount },
+    });
 
     if (ids.length > 0) {
       console.log("\nMemories:");
@@ -202,6 +213,7 @@ program
   .description("Compile active memories into injection pack")
   .requiredOption("-r, --repo <repo>", "Repository name")
   .option("-p, --path <path>", "File path for scoping")
+  .option("-s, --session <id>", "Session ID")
   .option("--threshold <n>", "Confidence threshold (default: dynamic from quality profile)")
   .action((opts) => {
     const db = initDb();
@@ -209,6 +221,22 @@ program
       repo: opts.repo,
       path: opts.path,
       config: opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {},
+    });
+    createActivityEvent(db, {
+      session_id: opts.session ?? null,
+      repo: opts.repo,
+      path: opts.path ?? null,
+      source: "cli",
+      event_type: "compile",
+      memory_ids: result.memories_included,
+      request: {
+        threshold: opts.threshold ? parseFloat(opts.threshold) : null,
+      },
+      result: {
+        included: result.memories_included,
+        dropped: result.memories_dropped,
+        token_estimate: result.token_estimate,
+      },
     });
 
     if (!result.text) {
@@ -231,12 +259,23 @@ program
   .argument("<text>", "Correction text")
   .option("-r, --repo <repo>", "Repository name")
   .option("-p, --path <path>", "File path context")
+  .option("-s, --session <id>", "Session ID", "cli")
   .action((text: string, opts) => {
     const db = initDb();
     const ids = processCorrection(db, text, {
-      sessionId: "cli",
+      sessionId: opts.session,
       repo: opts.repo,
       path: opts.path,
+    });
+    createActivityEvent(db, {
+      session_id: opts.session,
+      repo: opts.repo ?? null,
+      path: opts.path ?? null,
+      source: "cli",
+      event_type: "correction",
+      memory_ids: ids,
+      request: { text },
+      result: { created: ids },
     });
 
     if (ids.length === 0) {
@@ -263,14 +302,25 @@ program
   .argument("<feedback>", "Review feedback text")
   .option("-r, --repo <repo>", "Repository name")
   .option("-p, --path <path>", "File path context")
+  .option("-s, --session <id>", "Session ID", "cli-review")
   .option("--reviewer <name>", "Reviewer name")
   .action((feedback: string, opts) => {
     const db = initDb();
     const ids = processReviewFeedback(db, feedback, {
-      sessionId: "cli-review",
+      sessionId: opts.session,
       repo: opts.repo,
       path: opts.path,
       reviewer: opts.reviewer,
+    });
+    createActivityEvent(db, {
+      session_id: opts.session,
+      repo: opts.repo ?? null,
+      path: opts.path ?? null,
+      source: "cli",
+      event_type: "review",
+      memory_ids: ids,
+      request: { feedback, reviewer: opts.reviewer ?? null },
+      result: { created: ids },
     });
 
     console.log(`Created ${ids.length} candidate(s) from review feedback.`);
@@ -501,6 +551,16 @@ program
       process.exit(1);
     }
     const id = recordSignal(db, mem.id, opts.session, signal as any);
+    createActivityEvent(db, {
+      session_id: opts.session,
+      repo: mem.repo,
+      path: mem.path_scope,
+      source: "cli",
+      event_type: "signal",
+      memory_ids: [mem.id],
+      request: { signal },
+      result: { signal_id: id },
+    });
     console.log(`Signal recorded: ${id.slice(0, 8)}`);
 
     const stats = getSignalStats(db, mem.id);
@@ -848,6 +908,68 @@ program
     console.log(`Repeat sessions needed: ${profile.repeat_sessions_required}`);
     console.log(`Compile threshold:      ${profile.compile_confidence_threshold.toFixed(2)}`);
     console.log(`Dedup similarity:       ${profile.dedup_similarity_threshold.toFixed(2)}`);
+  });
+
+// --- Activity ---
+
+program
+  .command("activity")
+  .description("List recent activity events")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .option("-s, --session <id>", "Filter by session ID")
+  .option("--source <source>", "Filter by source: cli|daemon|mcp|system")
+  .option("--type <type>", "Filter by event type")
+  .option("--since <iso>", "Filter by created_at >= ISO timestamp")
+  .option("-n, --limit <n>", "Max events", "20")
+  .action((opts) => {
+    const db = initDb();
+    const events = listActivityEvents(db, {
+      repo: opts.repo,
+      session_id: opts.session,
+      source: opts.source,
+      event_type: opts.type,
+      since: opts.since,
+      limit: parseInt(opts.limit, 10),
+    });
+    if (events.length === 0) {
+      console.log("No activity found.");
+      return;
+    }
+    for (const event of events) {
+      console.log(
+        `${event.created_at}  ${event.source}/${event.event_type}  session:${event.session_id ?? "-"}  repo:${event.repo ?? "-"}  memories:${event.memory_ids.length}`,
+      );
+    }
+    console.log(`\n${events.length} activity events total.`);
+  });
+
+program
+  .command("sessions")
+  .description("List recent activity sessions")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .option("--source <source>", "Filter by source: cli|daemon|mcp|system")
+  .option("--type <type>", "Filter by event type")
+  .option("--since <iso>", "Filter by created_at >= ISO timestamp")
+  .option("-n, --limit <n>", "Max sessions", "20")
+  .action((opts) => {
+    const db = initDb();
+    const sessions = listActivitySessions(db, {
+      repo: opts.repo,
+      source: opts.source,
+      event_type: opts.type,
+      since: opts.since,
+      limit: parseInt(opts.limit, 10),
+    });
+    if (sessions.length === 0) {
+      console.log("No sessions found.");
+      return;
+    }
+    for (const session of sessions) {
+      console.log(
+        `${session.last_at}  ${session.session_id}  repo:${session.repo ?? "-"}  events:${session.event_count}  types:${session.event_types.join(",")}`,
+      );
+    }
+    console.log(`\n${sessions.length} sessions total.`);
   });
 
 // --- daemon ---

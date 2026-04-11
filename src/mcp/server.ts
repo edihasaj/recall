@@ -22,6 +22,7 @@ import { detectContradictions, resolveContradiction, autoResolveContradictions }
 import { pruneMemories, formatPruneReport } from "../pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "../audit/trail.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
+import { createActivityEvent, listActivityEvents, listActivitySessions } from "../models/activity.js";
 
 const db = initDb();
 
@@ -39,12 +40,27 @@ server.tool(
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
     path: z.string().optional().describe("Current file path for path-scoped filtering"),
     min_confidence: z.number().optional().describe("Minimum confidence threshold (default: 0.6)"),
+    session_id: z.string().optional().describe("Optional session identifier"),
   },
-  async ({ repo, path, min_confidence }) => {
+  async ({ repo, path, min_confidence, session_id }) => {
     const result = compileContext(db, {
       repo,
       path,
       config: min_confidence ? { confidence_threshold: min_confidence } : {},
+    });
+    createActivityEvent(db, {
+      session_id: session_id ?? null,
+      repo,
+      path: path ?? null,
+      source: "mcp",
+      event_type: "query",
+      memory_ids: result.memories_included,
+      request: { min_confidence: min_confidence ?? null },
+      result: {
+        included: result.memories_included,
+        dropped: result.memories_dropped,
+        token_estimate: result.token_estimate,
+      },
     });
 
     if (!result.text) {
@@ -108,6 +124,16 @@ server.tool(
       repo,
       path,
     });
+    createActivityEvent(db, {
+      session_id: session_id ?? "mcp",
+      repo: repo ?? null,
+      path: path ?? null,
+      source: "mcp",
+      event_type: "correction",
+      memory_ids: ids,
+      request: { text },
+      result: { created: ids },
+    });
 
     if (ids.length === 0) {
       return {
@@ -139,13 +165,24 @@ server.tool(
     repo: z.string().optional().describe("Repository name"),
     path: z.string().optional().describe("File path context"),
     reviewer: z.string().optional().describe("Reviewer name"),
+    session_id: z.string().optional().describe("Optional session identifier"),
   },
-  async ({ feedback, repo, path, reviewer }) => {
+  async ({ feedback, repo, path, reviewer, session_id }) => {
     const ids = processReviewFeedback(db, feedback, {
-      sessionId: "mcp-review",
+      sessionId: session_id ?? "mcp-review",
       repo,
       path,
       reviewer,
+    });
+    createActivityEvent(db, {
+      session_id: session_id ?? "mcp-review",
+      repo: repo ?? null,
+      path: path ?? null,
+      source: "mcp",
+      event_type: "review",
+      memory_ids: ids,
+      request: { feedback, reviewer: reviewer ?? null },
+      result: { created: ids },
     });
 
     return {
@@ -218,6 +255,17 @@ server.tool(
   },
   async ({ memory_id, session_id, injected, outcome }) => {
     const id = recordFeedback(db, memory_id, session_id, injected, outcome);
+    const mem = getMemory(db, memory_id);
+    createActivityEvent(db, {
+      session_id,
+      repo: mem?.repo ?? null,
+      path: mem?.path_scope ?? null,
+      source: "mcp",
+      event_type: "feedback",
+      memory_ids: [memory_id],
+      request: { injected, outcome },
+      result: { feedback_id: id },
+    });
     return {
       content: [
         { type: "text" as const, text: `Feedback recorded: ${id.slice(0, 8)}` },
@@ -231,9 +279,20 @@ server.tool(
   "Scan a repository and bootstrap memories from config files, scripts, and instruction files.",
   {
     repo_path: z.string().describe("Absolute path to the repository root"),
+    session_id: z.string().optional().describe("Optional session identifier"),
   },
-  async ({ repo_path }) => {
+  async ({ repo_path, session_id }) => {
     const ids = scanAndStore(db, repo_path);
+    const mem = ids[0] ? getMemory(db, ids[0]) : undefined;
+    createActivityEvent(db, {
+      session_id: session_id ?? null,
+      repo: mem?.repo ?? null,
+      source: "mcp",
+      event_type: "scan",
+      memory_ids: ids,
+      request: { repo_path },
+      result: { created: ids },
+    });
     return {
       content: [
         {
@@ -276,6 +335,17 @@ server.tool(
   async ({ memory_id, session_id, signal_type, context }) => {
     const id = recordSignal(db, memory_id, session_id, signal_type, context);
     const stats = getSignalStats(db, memory_id);
+    const mem = getMemory(db, memory_id);
+    createActivityEvent(db, {
+      session_id,
+      repo: mem?.repo ?? null,
+      path: mem?.path_scope ?? null,
+      source: "mcp",
+      event_type: "signal",
+      memory_ids: [memory_id],
+      request: { signal_type, context: context ?? null },
+      result: { signal_id: id },
+    });
     return {
       content: [
         {
@@ -476,6 +546,53 @@ server.tool(
           : "Approval not found.",
       }],
     };
+  },
+);
+
+server.tool(
+  "recall_activity",
+  "List recent activity events such as queries, compiles, scans, corrections, feedback, and signals.",
+  {
+    repo: z.string().optional().describe("Filter by repo"),
+    session_id: z.string().optional().describe("Filter by session id"),
+    source: z.enum(["cli", "daemon", "mcp", "system"]).optional().describe("Filter by source"),
+    event_type: z.enum(["compile", "query", "scan", "correction", "review", "feedback", "signal"]).optional().describe("Filter by event type"),
+    since: z.string().optional().describe("Created at >= ISO timestamp"),
+    limit: z.number().optional().describe("Max events to return"),
+  },
+  async ({ repo, session_id, source, event_type, since, limit }) => {
+    const events = listActivityEvents(db, { repo, session_id, source, event_type, since, limit });
+    if (events.length === 0) {
+      return { content: [{ type: "text" as const, text: "No activity found." }] };
+    }
+    const lines = events.map(
+      (event) =>
+        `${event.created_at} ${event.source}/${event.event_type} session:${event.session_id ?? "-"} repo:${event.repo ?? "-"} memories:${event.memory_ids.length}`,
+    );
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  },
+);
+
+server.tool(
+  "recall_sessions",
+  "List grouped activity sessions so you can review what happened in prior runs.",
+  {
+    repo: z.string().optional().describe("Filter by repo"),
+    source: z.enum(["cli", "daemon", "mcp", "system"]).optional().describe("Filter by source"),
+    event_type: z.enum(["compile", "query", "scan", "correction", "review", "feedback", "signal"]).optional().describe("Filter by event type"),
+    since: z.string().optional().describe("Created at >= ISO timestamp"),
+    limit: z.number().optional().describe("Max sessions to return"),
+  },
+  async ({ repo, source, event_type, since, limit }) => {
+    const sessions = listActivitySessions(db, { repo, source, event_type, since, limit });
+    if (sessions.length === 0) {
+      return { content: [{ type: "text" as const, text: "No sessions found." }] };
+    }
+    const lines = sessions.map(
+      (session) =>
+        `${session.last_at} ${session.session_id} repo:${session.repo ?? "-"} events:${session.event_count} types:${session.event_types.join(",")}`,
+    );
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
   },
 );
 

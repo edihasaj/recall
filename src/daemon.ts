@@ -18,6 +18,7 @@ import { detectContradictions, resolveContradiction, autoResolveContradictions, 
 import { pruneMemories } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
+import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 
 const db = initDb();
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -68,6 +69,20 @@ const server = createServer(async (req, res) => {
         path: body.path,
         config: body.config,
       });
+      createActivityEvent(db, {
+        session_id: body.session_id ?? null,
+        repo: body.repo ?? null,
+        path: body.path ?? null,
+        source: "daemon",
+        event_type: "compile",
+        memory_ids: result.memories_included,
+        request: { config: body.config ?? {} },
+        result: {
+          included: result.memories_included,
+          dropped: result.memories_dropped,
+          token_estimate: result.token_estimate,
+        },
+      });
       return send(res, 200, result);
     }
 
@@ -78,6 +93,16 @@ const server = createServer(async (req, res) => {
         sessionId: body.session_id ?? "hook",
         repo: body.repo,
         path: body.path,
+      });
+      createActivityEvent(db, {
+        session_id: body.session_id ?? "hook",
+        repo: body.repo ?? null,
+        path: body.path ?? null,
+        source: "daemon",
+        event_type: "correction",
+        memory_ids: ids,
+        request: { text: body.text },
+        result: { created: ids },
       });
       return send(res, 200, { created: ids });
     }
@@ -90,6 +115,16 @@ const server = createServer(async (req, res) => {
         repo: body.repo,
         path: body.path,
         reviewer: body.reviewer,
+      });
+      createActivityEvent(db, {
+        session_id: body.session_id ?? "hook-review",
+        repo: body.repo ?? null,
+        path: body.path ?? null,
+        source: "daemon",
+        event_type: "review",
+        memory_ids: ids,
+        request: { feedback: body.feedback, reviewer: body.reviewer ?? null },
+        result: { created: ids },
       });
       return send(res, 200, { created: ids });
     }
@@ -118,6 +153,14 @@ const server = createServer(async (req, res) => {
         body.injected,
         body.outcome,
       );
+      createActivityEvent(db, {
+        session_id: body.session_id,
+        source: "daemon",
+        event_type: "feedback",
+        memory_ids: [body.memory_id],
+        request: { injected: body.injected, outcome: body.outcome },
+        result: { feedback_id: id },
+      });
       return send(res, 200, { feedback_id: id });
     }
 
@@ -141,6 +184,16 @@ const server = createServer(async (req, res) => {
     if (path === "/scan" && method === "POST") {
       const body = await parseBody(req);
       const ids = scanAndStore(db, body.repo_path);
+      const mem = ids[0] ? getMemory(db, ids[0]) : undefined;
+      createActivityEvent(db, {
+        session_id: body.session_id ?? null,
+        repo: mem?.repo ?? null,
+        source: "daemon",
+        event_type: "scan",
+        memory_ids: ids,
+        request: { repo_path: body.repo_path },
+        result: { created: ids.length },
+      });
       return send(res, 200, { created: ids, count: ids.length });
     }
 
@@ -185,6 +238,17 @@ const server = createServer(async (req, res) => {
         body.signal_type,
         body.context,
       );
+      const mem = getMemory(db, body.memory_id);
+      createActivityEvent(db, {
+        session_id: body.session_id ?? "daemon",
+        repo: mem?.repo ?? null,
+        path: mem?.path_scope ?? null,
+        source: "daemon",
+        event_type: "signal",
+        memory_ids: [body.memory_id],
+        request: { signal_type: body.signal_type, context: body.context ?? null },
+        result: { signal_id: id },
+      });
       return send(res, 200, { signal_id: id });
     }
 
@@ -216,6 +280,29 @@ const server = createServer(async (req, res) => {
     if (path === "/quality" && method === "GET") {
       const repo = url.searchParams.get("repo") ?? undefined;
       return send(res, 200, getRepoQualityProfile(db, repo));
+    }
+
+    if (path === "/activity" && method === "GET") {
+      const repo = url.searchParams.get("repo") ?? undefined;
+      const session_id = url.searchParams.get("session_id") ?? undefined;
+      const source = url.searchParams.get("source") as any;
+      const event_type = url.searchParams.get("event_type") as any;
+      const since = url.searchParams.get("since") ?? undefined;
+      const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
+      return send(res, 200, {
+        events: listActivityEvents(db, { repo, session_id, source, event_type, since, limit }),
+      });
+    }
+
+    if (path === "/sessions" && method === "GET") {
+      const repo = url.searchParams.get("repo") ?? undefined;
+      const source = url.searchParams.get("source") as any;
+      const event_type = url.searchParams.get("event_type") as any;
+      const since = url.searchParams.get("since") ?? undefined;
+      const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
+      return send(res, 200, {
+        sessions: listActivitySessions(db, { repo, source, event_type, since, limit }),
+      });
     }
 
     // --- Phase 3 endpoints ---
