@@ -17,6 +17,7 @@ import { computeHealthScore, computeAllHealthScores } from "./health/scoring.js"
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, rollbackMemory } from "./audit/trail.js";
+import { getRepoQualityProfile } from "./repo/quality.js";
 
 const db = initDb();
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -209,6 +210,12 @@ const server = createServer(async (req, res) => {
         signals: signalIds,
         output: testResult.output?.slice(0, 1000),
       });
+    }
+
+    // Quality profile
+    if (path === "/quality" && method === "GET") {
+      const repo = url.searchParams.get("repo") ?? undefined;
+      return send(res, 200, getRepoQualityProfile(db, repo));
     }
 
     // --- Phase 3 endpoints ---
