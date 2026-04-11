@@ -195,7 +195,11 @@ export function processReviewFeedback(
       if (duplicate) {
         appendEvidence(db, duplicate.id, evidence);
         const updated = getMemory(db, duplicate.id);
-        if (updated && updated.status !== "active") {
+        if (
+          updated &&
+          updated.status !== "active" &&
+          countDistinctCorrectionSessions(updated) >= Math.max(1, profile.repeat_sessions_required - 1)
+        ) {
           promoteMemory(db, duplicate.id, "review_feedback");
         }
         ids.push(duplicate.id);
