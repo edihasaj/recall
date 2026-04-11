@@ -128,6 +128,23 @@ export function seedCandidateConfidence(
   );
 }
 
+export function seedScannedConfidence(
+  baseConfidence: number,
+  profile: RepoQualityProfile,
+): number {
+  const maturityPenalty = profile.stage === "cold"
+    ? 0
+    : profile.stage === "growing"
+      ? 0.02
+      : 0.05;
+  const qualityPenalty = profile.score < 0.45 ? 0.03 : 0;
+  return clamp(
+    baseConfidence - maturityPenalty - qualityPenalty,
+    0.5,
+    0.85,
+  );
+}
+
 function classifyStage(activeCount: number): RepoQualityProfile["stage"] {
   if (activeCount < 10) return "cold";
   if (activeCount < 50) return "growing";

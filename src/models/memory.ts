@@ -31,7 +31,7 @@ export interface CreateMemoryInput {
   supersedes?: string | null;
 }
 
-function statusFromConfidence(confidence: number): MemoryStatus {
+export function statusFromConfidence(confidence: number): MemoryStatus {
   if (confidence < CONFIDENCE.TRANSIENT_MAX) return "transient";
   if (confidence < CONFIDENCE.CANDIDATE_MAX) return "candidate";
   return "active";
@@ -118,6 +118,14 @@ export function listMemories(
       .map(rowToMemory);
   }
   return db.select().from(memories).all().map(rowToMemory);
+}
+
+export function listRepos(db: RecallDb): string[] {
+  return [...new Set(
+    db.select({ repo: memories.repo }).from(memories).all()
+      .map((row) => row.repo)
+      .filter((repo): repo is string => Boolean(repo)),
+  )].sort();
 }
 
 // --- State transitions ---

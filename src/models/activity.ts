@@ -1,0 +1,141 @@
+import { and, desc, eq, gte } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import type { RecallDb } from "../db/client.js";
+import { activityEvents } from "../db/schema.js";
+import type {
+  ActivityEvent,
+  ActivityEventQuery,
+  ActivityEventType,
+  ActivitySource,
+} from "../types.js";
+
+type ActivityRow = typeof activityEvents.$inferSelect;
+
+export interface CreateActivityEventInput {
+  session_id?: string | null;
+  repo?: string | null;
+  path?: string | null;
+  source: ActivitySource;
+  event_type: ActivityEventType;
+  memory_ids?: string[];
+  request?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+}
+
+export function createActivityEvent(
+  db: RecallDb,
+  input: CreateActivityEventInput,
+): string {
+  const id = randomUUID();
+  db.insert(activityEvents)
+    .values({
+      id,
+      session_id: input.session_id ?? null,
+      repo: input.repo ?? null,
+      path: input.path ?? null,
+      source: input.source,
+      event_type: input.event_type,
+      memory_ids: input.memory_ids ?? [],
+      request: input.request ?? {},
+      result: input.result ?? {},
+      created_at: new Date().toISOString(),
+    })
+    .run();
+  return id;
+}
+
+export function getActivityEvent(
+  db: RecallDb,
+  id: string,
+): ActivityEvent | undefined {
+  const row = db.select().from(activityEvents).where(eq(activityEvents.id, id)).get();
+  return row ? rowToActivityEvent(row) : undefined;
+}
+
+export function listActivityEvents(
+  db: RecallDb,
+  query: ActivityEventQuery = {},
+): ActivityEvent[] {
+  const conditions = [];
+
+  if (query.repo) conditions.push(eq(activityEvents.repo, query.repo));
+  if (query.session_id) conditions.push(eq(activityEvents.session_id, query.session_id));
+  if (query.source) conditions.push(eq(activityEvents.source, query.source));
+  if (query.event_type) conditions.push(eq(activityEvents.event_type, query.event_type));
+  if (query.since) conditions.push(gte(activityEvents.created_at, query.since));
+
+  const base = db.select().from(activityEvents);
+  const rows = conditions.length > 0
+    ? base.where(and(...conditions)).orderBy(desc(activityEvents.created_at)).all()
+    : base.orderBy(desc(activityEvents.created_at)).all();
+
+  const limited = query.limit ? rows.slice(0, query.limit) : rows;
+  return limited.map(rowToActivityEvent);
+}
+
+export function listActivitySessions(
+  db: RecallDb,
+  query: Omit<ActivityEventQuery, "session_id"> & { limit?: number } = {},
+): Array<{
+  session_id: string;
+  repo: string | null;
+  event_count: number;
+  event_types: ActivityEventType[];
+  first_at: string;
+  last_at: string;
+}> {
+  const events = listActivityEvents(db, query).filter((event) => event.session_id);
+  const grouped = new Map<string, ActivityEvent[]>();
+
+  for (const event of events) {
+    const sessionId = event.session_id!;
+    const bucket = grouped.get(sessionId) ?? [];
+    bucket.push(event);
+    grouped.set(sessionId, bucket);
+  }
+
+  const sessions = [...grouped.entries()].map(([session_id, items]) => {
+    const sorted = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    return {
+      session_id,
+      repo: sorted[0]?.repo ?? null,
+      event_count: items.length,
+      event_types: [...new Set(items.map((item) => item.event_type))],
+      first_at: sorted[0]!.created_at,
+      last_at: sorted[sorted.length - 1]!.created_at,
+    };
+  });
+
+  sessions.sort((a, b) => b.last_at.localeCompare(a.last_at));
+  return query.limit ? sessions.slice(0, query.limit) : sessions;
+}
+
+function rowToActivityEvent(row: ActivityRow): ActivityEvent {
+  const memory_ids =
+    typeof row.memory_ids === "string"
+      ? JSON.parse(row.memory_ids)
+      : Array.isArray(row.memory_ids)
+        ? row.memory_ids
+        : [];
+  const request =
+    typeof row.request === "string"
+      ? JSON.parse(row.request)
+      : row.request ?? {};
+  const result =
+    typeof row.result === "string"
+      ? JSON.parse(row.result)
+      : row.result ?? {};
+
+  return {
+    id: row.id,
+    session_id: row.session_id,
+    repo: row.repo,
+    path: row.path,
+    source: row.source,
+    event_type: row.event_type,
+    memory_ids,
+    request: request as Record<string, unknown>,
+    result: result as Record<string, unknown>,
+    created_at: row.created_at,
+  };
+}
