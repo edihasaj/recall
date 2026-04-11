@@ -75,6 +75,83 @@ export const evalSessions = sqliteTable("eval_sessions", {
   test_failures: integer("test_failures").notNull().default(0),
 });
 
+// Phase 3: policy rules
+export const policyRules = sqliteTable("policy_rules", {
+  id: text("id").primaryKey(),
+  org_id: text("org_id").notNull(),
+  rule_type: text("rule_type", {
+    enum: [
+      "min_confidence",
+      "require_approval",
+      "allowed_sources",
+      "blocked_scopes",
+      "auto_approve_pattern",
+      "max_active_per_repo",
+      "require_evidence_count",
+    ],
+  }).notNull(),
+  config: text("config", { mode: "json" }).notNull().default("{}"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+});
+
+// Phase 3: approval queue
+export const approvalRequests = sqliteTable("approval_requests", {
+  id: text("id").primaryKey(),
+  memory_id: text("memory_id")
+    .notNull()
+    .references(() => memories.id),
+  org_id: text("org_id").notNull(),
+  requested_by: text("requested_by").notNull(),
+  status: text("status", {
+    enum: ["pending", "approved", "denied"],
+  }).notNull().default("pending"),
+  reviewed_by: text("reviewed_by"),
+  reason: text("reason"),
+  created_at: text("created_at").notNull(),
+  resolved_at: text("resolved_at"),
+});
+
+// Phase 3: contradictions
+export const contradictions = sqliteTable("contradictions", {
+  id: text("id").primaryKey(),
+  memory_a_id: text("memory_a_id")
+    .notNull()
+    .references(() => memories.id),
+  memory_b_id: text("memory_b_id")
+    .notNull()
+    .references(() => memories.id),
+  contradiction_type: text("contradiction_type", {
+    enum: ["direct_negation", "conflicting_rules", "scope_overlap", "superseded"],
+  }).notNull(),
+  severity: text("severity", { enum: ["low", "medium", "high"] }).notNull(),
+  description: text("description").notNull(),
+  resolved: integer("resolved", { mode: "boolean" }).notNull().default(false),
+  resolution: text("resolution"),
+  detected_at: text("detected_at").notNull(),
+  resolved_at: text("resolved_at"),
+});
+
+// Phase 3: audit trail
+export const auditTrail = sqliteTable("audit_trail", {
+  id: text("id").primaryKey(),
+  memory_id: text("memory_id").notNull(),
+  action: text("action", {
+    enum: [
+      "created", "promoted", "demoted", "rejected", "confirmed",
+      "reactivated", "edited", "pruned", "archived", "policy_applied",
+      "approval_requested", "approval_resolved",
+      "contradiction_detected", "contradiction_resolved", "rolled_back",
+    ],
+  }).notNull(),
+  actor: text("actor").notNull(),
+  before_snapshot: text("before_snapshot"),
+  after_snapshot: text("after_snapshot"),
+  reason: text("reason"),
+  timestamp: text("timestamp").notNull(),
+});
+
 // Phase 2: implicit feedback signals
 export const implicitSignals = sqliteTable("implicit_signals", {
   id: text("id").primaryKey(),

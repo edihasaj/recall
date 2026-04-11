@@ -109,6 +109,52 @@ const INIT_SQL = `
     context TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS policy_rules (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    rule_type TEXT NOT NULL,
+    config TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS approval_requests (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES memories(id),
+    org_id TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewed_by TEXT,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS contradictions (
+    id TEXT PRIMARY KEY,
+    memory_a_id TEXT NOT NULL REFERENCES memories(id),
+    memory_b_id TEXT NOT NULL REFERENCES memories(id),
+    contradiction_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    description TEXT NOT NULL,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    resolution TEXT,
+    detected_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    before_snapshot TEXT,
+    after_snapshot TEXT,
+    reason TEXT,
+    timestamp TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_memories_repo ON memories(repo);
   CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
   CREATE INDEX IF NOT EXISTS idx_memories_repo_status ON memories(repo, status);
@@ -118,6 +164,12 @@ const INIT_SQL = `
   CREATE INDEX IF NOT EXISTS idx_eval_repo ON eval_sessions(repo);
   CREATE INDEX IF NOT EXISTS idx_implicit_memory ON implicit_signals(memory_id);
   CREATE INDEX IF NOT EXISTS idx_implicit_session ON implicit_signals(session_id);
+  CREATE INDEX IF NOT EXISTS idx_policy_org ON policy_rules(org_id);
+  CREATE INDEX IF NOT EXISTS idx_approval_org ON approval_requests(org_id);
+  CREATE INDEX IF NOT EXISTS idx_approval_status ON approval_requests(status);
+  CREATE INDEX IF NOT EXISTS idx_contradictions_resolved ON contradictions(resolved);
+  CREATE INDEX IF NOT EXISTS idx_audit_memory ON audit_trail(memory_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_trail(timestamp);
 `;
 
 export function initDb(dbPath?: string): RecallDb {

@@ -16,6 +16,11 @@ import { scanAndStore } from "../scanner/repo.js";
 import { computeMetrics, formatMetricsReport } from "../eval/harness.js";
 import { recordSignal, getSignalStats } from "../feedback/implicit.js";
 import { inferScope } from "../capture/scope.js";
+import { evaluatePolicy, listPendingApprovals, resolveApproval } from "../policy/engine.js";
+import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "../health/scoring.js";
+import { detectContradictions, resolveContradiction, autoResolveContradictions } from "../contradictions/detector.js";
+import { pruneMemories, formatPruneReport } from "../pruning/pruner.js";
+import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "../audit/trail.js";
 
 const db = initDb();
 
@@ -297,6 +302,178 @@ server.tool(
           text: `Scope: ${result.scope}, Path: ${result.path_scope ?? "none"}, Reason: ${result.reason}`,
         },
       ],
+    };
+  },
+);
+
+// --- Phase 3 tools ---
+
+server.tool(
+  "recall_health",
+  "Get memory health scores. Returns composite health report for all memories or a single memory.",
+  {
+    repo: z.string().optional().describe("Filter by repo"),
+    memory_id: z.string().optional().describe("Score a single memory"),
+  },
+  async ({ repo, memory_id }) => {
+    if (memory_id) {
+      const score = computeHealthScore(db, memory_id);
+      if (!score) {
+        return { content: [{ type: "text" as const, text: "Memory not found." }] };
+      }
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Health: ${(score.score * 100).toFixed(0)}% | Conf: ${(score.confidence_component * 100).toFixed(0)}% | Fresh: ${(score.freshness_component * 100).toFixed(0)}% | Follow: ${(score.follow_rate_component * 100).toFixed(0)}% | Signal: ${(score.signal_ratio_component * 100).toFixed(0)}%`,
+        }],
+      };
+    }
+    const scores = computeAllHealthScores(db, repo);
+    return { content: [{ type: "text" as const, text: formatHealthReport(scores) }] };
+  },
+);
+
+server.tool(
+  "recall_contradictions",
+  "Detect contradictions between memories. Finds conflicting rules, negations, and scope overlaps.",
+  {
+    repo: z.string().optional().describe("Filter by repo"),
+    auto_resolve: z.boolean().optional().describe("Auto-resolve by confidence (default: false)"),
+  },
+  async ({ repo, auto_resolve }) => {
+    const found = detectContradictions(db, repo);
+    if (auto_resolve) {
+      const resolved = autoResolveContradictions(db, repo);
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Detected ${found.length} contradiction(s). Auto-resolved ${resolved}.`,
+        }],
+      };
+    }
+    if (found.length === 0) {
+      return { content: [{ type: "text" as const, text: "No contradictions detected." }] };
+    }
+    const lines = found.map(
+      (c) => `[${c.severity}] ${c.contradiction_type}: ${c.description} (${c.id.slice(0, 8)})`,
+    );
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  },
+);
+
+server.tool(
+  "recall_prune",
+  "Auto-prune stale, rejected, transient, and unhealthy memories.",
+  {
+    dry_run: z.boolean().optional().describe("Preview without making changes (default: false)"),
+    stale_days: z.number().optional().describe("Days before archiving stale memories (default: 90)"),
+    min_health_score: z.number().optional().describe("Min health score for active (default: 0.2)"),
+  },
+  async ({ dry_run, stale_days, min_health_score }) => {
+    const result = pruneMemories(db, { dry_run: dry_run ?? false, stale_days, min_health_score });
+    return {
+      content: [{ type: "text" as const, text: formatPruneReport(result, dry_run ?? false) }],
+    };
+  },
+);
+
+server.tool(
+  "recall_audit",
+  "View audit trail for a memory or recent activity.",
+  {
+    memory_id: z.string().optional().describe("Memory ID (omit for recent global audit)"),
+    limit: z.number().optional().describe("Max entries for recent audit (default: 50)"),
+  },
+  async ({ memory_id, limit }) => {
+    const entries = memory_id
+      ? getAuditTrail(db, memory_id)
+      : getRecentAudit(db, limit ?? 50);
+    return {
+      content: [{ type: "text" as const, text: formatAuditTrail(entries) }],
+    };
+  },
+);
+
+server.tool(
+  "recall_rollback",
+  "Rollback a memory to a previous state using an audit entry.",
+  {
+    memory_id: z.string().describe("Memory ID"),
+    audit_entry_id: z.string().describe("Audit entry ID to rollback to"),
+    actor: z.string().optional().describe("Who is performing the rollback"),
+  },
+  async ({ memory_id, audit_entry_id, actor }) => {
+    const ok = rollbackMemory(db, memory_id, audit_entry_id, actor ?? "mcp");
+    return {
+      content: [{
+        type: "text" as const,
+        text: ok
+          ? `Memory ${memory_id.slice(0, 8)} rolled back successfully.`
+          : "Rollback failed. Audit entry not found or no snapshot available.",
+      }],
+    };
+  },
+);
+
+server.tool(
+  "recall_policy_check",
+  "Check a memory against org policies. Returns policy violations.",
+  {
+    org_id: z.string().describe("Organization ID"),
+    memory_id: z.string().describe("Memory ID to check"),
+  },
+  async ({ org_id, memory_id }) => {
+    const mem = getMemory(db, memory_id);
+    if (!mem) {
+      return { content: [{ type: "text" as const, text: "Memory not found." }] };
+    }
+    const violations = evaluatePolicy(db, org_id, mem);
+    if (violations.length === 0) {
+      return { content: [{ type: "text" as const, text: "No policy violations." }] };
+    }
+    const lines = violations.map(
+      (v) => `[${v.blocking ? "BLOCK" : "WARN"}] ${v.rule_type}: ${v.message}`,
+    );
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  },
+);
+
+server.tool(
+  "recall_approval_list",
+  "List pending approval requests for an organization.",
+  {
+    org_id: z.string().describe("Organization ID"),
+  },
+  async ({ org_id }) => {
+    const pending = listPendingApprovals(db, org_id);
+    if (pending.length === 0) {
+      return { content: [{ type: "text" as const, text: "No pending approvals." }] };
+    }
+    const lines = pending.map(
+      (a) => `${a.id.slice(0, 8)} memory:${a.memory_id.slice(0, 8)} by:${a.requested_by} ${a.created_at}`,
+    );
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  },
+);
+
+server.tool(
+  "recall_approval_resolve",
+  "Approve or deny a pending approval request.",
+  {
+    approval_id: z.string().describe("Approval request ID"),
+    status: z.enum(["approved", "denied"]).describe("Decision"),
+    reviewed_by: z.string().optional().describe("Reviewer name"),
+    reason: z.string().optional().describe("Reason for decision"),
+  },
+  async ({ approval_id, status, reviewed_by, reason }) => {
+    const ok = resolveApproval(db, approval_id, status, reviewed_by ?? "mcp", reason);
+    return {
+      content: [{
+        type: "text" as const,
+        text: ok
+          ? `Approval ${approval_id.slice(0, 8)} → ${status}`
+          : "Approval not found.",
+      }],
     };
   },
 );
