@@ -147,5 +147,105 @@ export const MemoryQuery = z.object({
   type: MemoryType.optional(),
   status: MemoryStatus.optional(),
   min_confidence: z.number().optional(),
+  semantic_query: z.string().optional(),
 });
 export type MemoryQuery = z.infer<typeof MemoryQuery>;
+
+// --- Sync (Phase 2) ---
+
+export const SyncConfig = z.object({
+  remote_url: z.string().url(),
+  api_key: z.string(),
+  team_id: z.string().optional(),
+  auto_sync: z.boolean().default(false),
+  sync_interval_seconds: z.number().default(300),
+});
+export type SyncConfig = z.infer<typeof SyncConfig>;
+
+export const SyncDirection = z.enum(["push", "pull", "both"]);
+export type SyncDirection = z.infer<typeof SyncDirection>;
+
+export const SyncResult = z.object({
+  pushed: z.number(),
+  pulled: z.number(),
+  conflicts: z.number(),
+  errors: z.array(z.string()),
+});
+export type SyncResult = z.infer<typeof SyncResult>;
+
+// --- Team (Phase 2) ---
+
+export const TeamMember = z.object({
+  id: z.string().uuid(),
+  team_id: z.string().uuid(),
+  user_id: z.string(),
+  role: z.enum(["owner", "admin", "member"]),
+  joined_at: z.string(),
+});
+export type TeamMember = z.infer<typeof TeamMember>;
+
+// --- Embeddings (Phase 2) ---
+
+export const EmbeddingConfig = z.object({
+  enabled: z.boolean().default(false),
+  provider: z.enum(["openai", "local"]).default("openai"),
+  model: z.string().default("text-embedding-3-small"),
+  api_key: z.string().optional(),
+  dimensions: z.number().default(256),
+  similarity_threshold: z.number().default(0.8),
+});
+export type EmbeddingConfig = z.infer<typeof EmbeddingConfig>;
+
+// --- Evaluation (Phase 2) ---
+
+export const EvalSession = z.object({
+  id: z.string().uuid(),
+  repo: z.string(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  memories_injected: z.number(),
+  memories_followed: z.number(),
+  memories_overridden: z.number(),
+  user_corrections: z.number(),
+  test_passes: z.number(),
+  test_failures: z.number(),
+});
+export type EvalSession = z.infer<typeof EvalSession>;
+
+export const EvalMetrics = z.object({
+  total_sessions: z.number(),
+  injection_rate: z.number(),
+  follow_rate: z.number(),
+  override_rate: z.number(),
+  correction_frequency: z.number(),
+  avg_confidence_at_injection: z.number(),
+  memory_effectiveness: z.number(),
+});
+export type EvalMetrics = z.infer<typeof EvalMetrics>;
+
+// --- Implicit feedback (Phase 2) ---
+
+export const ImplicitSignal = z.object({
+  id: z.string().uuid(),
+  memory_id: z.string().uuid(),
+  session_id: z.string(),
+  signal_type: z.enum([
+    "test_pass",
+    "test_fail",
+    "file_unchanged",
+    "file_rewritten",
+    "task_accepted",
+    "task_rejected",
+  ]),
+  timestamp: z.string(),
+  context: z.string().optional(),
+});
+export type ImplicitSignal = z.infer<typeof ImplicitSignal>;
+
+// --- Recall config (Phase 2) ---
+
+export const RecallConfig = z.object({
+  sync: SyncConfig.optional(),
+  embeddings: EmbeddingConfig.optional(),
+});
+export type RecallConfig = z.infer<typeof RecallConfig>;

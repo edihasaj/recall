@@ -13,6 +13,9 @@ import {
 import { compileContext } from "../compiler/context.js";
 import { processCorrection, processReviewFeedback } from "../capture/correction.js";
 import { scanAndStore } from "../scanner/repo.js";
+import { computeMetrics, formatMetricsReport } from "../eval/harness.js";
+import { recordSignal, getSignalStats } from "../feedback/implicit.js";
+import { inferScope } from "../capture/scope.js";
 
 const db = initDb();
 
@@ -230,6 +233,68 @@ server.tool(
         {
           type: "text" as const,
           text: `Scanned repo. Created ${ids.length} candidate memories.`,
+        },
+      ],
+    };
+  },
+);
+
+// --- Phase 2 tools ---
+
+server.tool(
+  "recall_eval",
+  "Get evaluation metrics for memory effectiveness.",
+  {
+    repo: z.string().optional().describe("Filter by repo"),
+    since: z.string().optional().describe("Since date (ISO)"),
+  },
+  async ({ repo, since }) => {
+    const metrics = computeMetrics(db, { repo, since });
+    return {
+      content: [{ type: "text" as const, text: formatMetricsReport(metrics) }],
+    };
+  },
+);
+
+server.tool(
+  "recall_signal",
+  "Record an implicit feedback signal (test pass/fail, file unchanged/rewritten, task accepted/rejected).",
+  {
+    memory_id: z.string().describe("Memory ID"),
+    session_id: z.string().describe("Session ID"),
+    signal_type: z
+      .enum(["test_pass", "test_fail", "file_unchanged", "file_rewritten", "task_accepted", "task_rejected"])
+      .describe("Type of implicit signal"),
+    context: z.string().optional().describe("Additional context"),
+  },
+  async ({ memory_id, session_id, signal_type, context }) => {
+    const id = recordSignal(db, memory_id, session_id, signal_type, context);
+    const stats = getSignalStats(db, memory_id);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Signal recorded: ${id.slice(0, 8)}. Stats: ${JSON.stringify(stats)}`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  "recall_scope",
+  "Analyze the scope of a correction text. Returns inferred scope, path, and reasoning.",
+  {
+    text: z.string().describe("Correction text to analyze"),
+    path: z.string().optional().describe("Context file path"),
+  },
+  async ({ text, path }) => {
+    const result = inferScope(text, path);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Scope: ${result.scope}, Path: ${result.path_scope ?? "none"}, Reason: ${result.reason}`,
         },
       ],
     };
