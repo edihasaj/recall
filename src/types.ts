@@ -249,3 +249,118 @@ export const RecallConfig = z.object({
   embeddings: EmbeddingConfig.optional(),
 });
 export type RecallConfig = z.infer<typeof RecallConfig>;
+
+// --- Policy (Phase 3) ---
+
+export const PolicyRule = z.object({
+  id: z.string().uuid(),
+  org_id: z.string(),
+  rule_type: z.enum([
+    "min_confidence",
+    "require_approval",
+    "allowed_sources",
+    "blocked_scopes",
+    "auto_approve_pattern",
+    "max_active_per_repo",
+    "require_evidence_count",
+  ]),
+  config: z.record(z.unknown()),
+  enabled: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type PolicyRule = z.infer<typeof PolicyRule>;
+
+export const ApprovalStatus = z.enum(["pending", "approved", "denied"]);
+export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
+
+export const ApprovalRequest = z.object({
+  id: z.string().uuid(),
+  memory_id: z.string().uuid(),
+  org_id: z.string(),
+  requested_by: z.string(),
+  status: ApprovalStatus,
+  reviewed_by: z.string().nullable(),
+  reason: z.string().nullable(),
+  created_at: z.string(),
+  resolved_at: z.string().nullable(),
+});
+export type ApprovalRequest = z.infer<typeof ApprovalRequest>;
+
+// --- Health scoring (Phase 3) ---
+
+export const HealthScore = z.object({
+  memory_id: z.string().uuid(),
+  score: z.number().min(0).max(1),
+  confidence_component: z.number(),
+  freshness_component: z.number(),
+  follow_rate_component: z.number(),
+  signal_ratio_component: z.number(),
+  computed_at: z.string(),
+});
+export type HealthScore = z.infer<typeof HealthScore>;
+
+// --- Contradiction (Phase 3) ---
+
+export const Contradiction = z.object({
+  id: z.string().uuid(),
+  memory_a_id: z.string().uuid(),
+  memory_b_id: z.string().uuid(),
+  contradiction_type: z.enum([
+    "direct_negation",
+    "conflicting_rules",
+    "scope_overlap",
+    "superseded",
+  ]),
+  severity: z.enum(["low", "medium", "high"]),
+  description: z.string(),
+  resolved: z.boolean(),
+  resolution: z.string().nullable(),
+  detected_at: z.string(),
+  resolved_at: z.string().nullable(),
+});
+export type Contradiction = z.infer<typeof Contradiction>;
+
+// --- Pruning config (Phase 3) ---
+
+export const PruneConfig = z.object({
+  stale_days: z.number().default(90),
+  rejected_retention_days: z.number().default(30),
+  transient_retention_days: z.number().default(7),
+  min_health_score: z.number().default(0.2),
+  dry_run: z.boolean().default(false),
+});
+export type PruneConfig = z.infer<typeof PruneConfig>;
+
+// --- Audit trail (Phase 3) ---
+
+export const AuditAction = z.enum([
+  "created",
+  "promoted",
+  "demoted",
+  "rejected",
+  "confirmed",
+  "reactivated",
+  "edited",
+  "pruned",
+  "archived",
+  "policy_applied",
+  "approval_requested",
+  "approval_resolved",
+  "contradiction_detected",
+  "contradiction_resolved",
+  "rolled_back",
+]);
+export type AuditAction = z.infer<typeof AuditAction>;
+
+export const AuditEntry = z.object({
+  id: z.string().uuid(),
+  memory_id: z.string().uuid(),
+  action: AuditAction,
+  actor: z.string(),
+  before_snapshot: z.string().nullable(),
+  after_snapshot: z.string().nullable(),
+  reason: z.string().nullable(),
+  timestamp: z.string(),
+});
+export type AuditEntry = z.infer<typeof AuditEntry>;

@@ -20,6 +20,11 @@ import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession }
 import { embedAllMemories, semanticSearch } from "./embeddings/embeddings.js";
 import { recordSignal, getSignalStats } from "./feedback/implicit.js";
 import { inferScope, analyzeScopePatterns } from "./capture/scope.js";
+import { createPolicy, listPolicies, togglePolicy, deletePolicy, evaluatePolicy, requestApproval, resolveApproval, listPendingApprovals } from "./policy/engine.js";
+import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "./health/scoring.js";
+import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
+import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
+import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "./audit/trail.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 
 const program = new Command();
@@ -480,6 +485,312 @@ program
     console.log(`Path scope:  ${result.path_scope ?? "(none)"}`);
     console.log(`Confidence:  ${result.confidence_modifier > 0 ? "+" : ""}${result.confidence_modifier}`);
     console.log(`Reason:      ${result.reason}`);
+  });
+
+// --- Phase 3: policy ---
+
+const policyCmd = program
+  .command("policy")
+  .description("Org-level policy management");
+
+policyCmd
+  .command("create")
+  .description("Create a policy rule")
+  .requiredOption("--org <id>", "Organization ID")
+  .requiredOption("--type <type>", "Rule type: min_confidence|require_approval|allowed_sources|blocked_scopes|max_active_per_repo|require_evidence_count|auto_approve_pattern")
+  .requiredOption("--config <json>", "Rule config as JSON")
+  .action((opts) => {
+    const db = initDb();
+    const config = JSON.parse(opts.config);
+    const id = createPolicy(db, opts.org, opts.type, config);
+    console.log(`Policy created: ${id.slice(0, 8)}`);
+  });
+
+policyCmd
+  .command("list")
+  .description("List policies for an org")
+  .requiredOption("--org <id>", "Organization ID")
+  .action((opts) => {
+    const db = initDb();
+    const rules = listPolicies(db, opts.org);
+    if (rules.length === 0) {
+      console.log("No policies.");
+      return;
+    }
+    for (const r of rules) {
+      console.log(`${r.id.slice(0, 8)}  [${r.enabled ? "on" : "off"}] ${r.rule_type}  ${JSON.stringify(r.config)}`);
+    }
+  });
+
+policyCmd
+  .command("toggle")
+  .description("Enable/disable a policy")
+  .argument("<id>", "Policy ID")
+  .argument("<state>", "on or off")
+  .action((id: string, state: string) => {
+    const db = initDb();
+    togglePolicy(db, id, state === "on");
+    console.log(`Policy ${id.slice(0, 8)} ${state === "on" ? "enabled" : "disabled"}.`);
+  });
+
+policyCmd
+  .command("delete")
+  .description("Delete a policy")
+  .argument("<id>", "Policy ID")
+  .action((id: string) => {
+    const db = initDb();
+    deletePolicy(db, id);
+    console.log(`Policy ${id.slice(0, 8)} deleted.`);
+  });
+
+policyCmd
+  .command("check")
+  .description("Check a memory against org policies")
+  .requiredOption("--org <id>", "Organization ID")
+  .argument("<memory-id>", "Memory ID")
+  .action((memoryId: string, opts) => {
+    const db = initDb();
+    const mem = findByPrefix(db, memoryId);
+    if (!mem) {
+      console.error(`Memory not found: ${memoryId}`);
+      process.exit(1);
+    }
+    const violations = evaluatePolicy(db, opts.org, mem);
+    if (violations.length === 0) {
+      console.log("No policy violations.");
+    } else {
+      for (const v of violations) {
+        console.log(`[${v.blocking ? "BLOCK" : "WARN"}] ${v.rule_type}: ${v.message}`);
+      }
+    }
+  });
+
+// --- Phase 3: approval ---
+
+const approvalCmd = program
+  .command("approval")
+  .description("Approval queue management");
+
+approvalCmd
+  .command("request")
+  .description("Request approval for a memory")
+  .argument("<memory-id>", "Memory ID")
+  .requiredOption("--org <id>", "Organization ID")
+  .option("--by <name>", "Requested by", "cli")
+  .action((memoryId: string, opts) => {
+    const db = initDb();
+    const mem = findByPrefix(db, memoryId);
+    if (!mem) {
+      console.error(`Memory not found: ${memoryId}`);
+      process.exit(1);
+    }
+    const id = requestApproval(db, mem.id, opts.org, opts.by);
+    console.log(`Approval requested: ${id.slice(0, 8)}`);
+  });
+
+approvalCmd
+  .command("list")
+  .description("List pending approvals")
+  .requiredOption("--org <id>", "Organization ID")
+  .action((opts) => {
+    const db = initDb();
+    const pending = listPendingApprovals(db, opts.org);
+    if (pending.length === 0) {
+      console.log("No pending approvals.");
+      return;
+    }
+    for (const a of pending) {
+      console.log(`${a.id.slice(0, 8)}  memory:${a.memory_id.slice(0, 8)}  by:${a.requested_by}  ${a.created_at}`);
+    }
+  });
+
+approvalCmd
+  .command("resolve")
+  .description("Approve or deny a request")
+  .argument("<approval-id>", "Approval ID")
+  .argument("<decision>", "approved or denied")
+  .option("--by <name>", "Reviewed by", "cli")
+  .option("--reason <reason>", "Reason")
+  .action((approvalId: string, decision: string, opts) => {
+    const db = initDb();
+    const ok = resolveApproval(db, approvalId, decision as any, opts.by, opts.reason);
+    if (ok) {
+      console.log(`Approval ${approvalId.slice(0, 8)} → ${decision}`);
+    } else {
+      console.error("Approval not found.");
+    }
+  });
+
+// --- Phase 3: health ---
+
+program
+  .command("health")
+  .description("Memory health scoring report")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .option("--id <id>", "Score a single memory")
+  .action((opts) => {
+    const db = initDb();
+    if (opts.id) {
+      const mem = findByPrefix(db, opts.id);
+      if (!mem) {
+        console.error(`Memory not found: ${opts.id}`);
+        process.exit(1);
+      }
+      const score = computeHealthScore(db, mem.id);
+      if (score) {
+        console.log(`Score:      ${(score.score * 100).toFixed(0)}%`);
+        console.log(`Confidence: ${(score.confidence_component * 100).toFixed(0)}%`);
+        console.log(`Freshness:  ${(score.freshness_component * 100).toFixed(0)}%`);
+        console.log(`Follow:     ${(score.follow_rate_component * 100).toFixed(0)}%`);
+        console.log(`Signal:     ${(score.signal_ratio_component * 100).toFixed(0)}%`);
+      }
+      return;
+    }
+    const scores = computeAllHealthScores(db, opts.repo);
+    console.log(formatHealthReport(scores));
+  });
+
+// --- Phase 3: contradictions ---
+
+const contradictCmd = program
+  .command("contradictions")
+  .description("Detect and resolve contradictions");
+
+contradictCmd
+  .command("detect")
+  .description("Scan for contradictions")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .action((opts) => {
+    const db = initDb();
+    const found = detectContradictions(db, opts.repo);
+    if (found.length === 0) {
+      console.log("No new contradictions detected.");
+      return;
+    }
+    for (const c of found) {
+      console.log(`${c.id.slice(0, 8)}  [${c.severity}] ${c.contradiction_type}: ${c.description}`);
+    }
+    console.log(`\n${found.length} contradiction(s) found.`);
+  });
+
+contradictCmd
+  .command("list")
+  .description("List contradictions")
+  .option("--resolved", "Show resolved only")
+  .option("--unresolved", "Show unresolved only")
+  .action((opts) => {
+    const db = initDb();
+    const resolved = opts.resolved ? true : opts.unresolved ? false : undefined;
+    const items = listContradictions(db, { resolved });
+    if (items.length === 0) {
+      console.log("No contradictions.");
+      return;
+    }
+    for (const c of items) {
+      const status = c.resolved ? "resolved" : "open";
+      console.log(`${c.id.slice(0, 8)}  [${status}] ${c.severity} ${c.contradiction_type}: ${c.description}`);
+    }
+  });
+
+contradictCmd
+  .command("resolve")
+  .description("Resolve a contradiction by keeping one memory")
+  .argument("<contradiction-id>", "Contradiction ID")
+  .argument("<keep-memory-id>", "Memory ID to keep")
+  .option("--actor <name>", "Who resolved", "cli")
+  .option("--reason <reason>", "Resolution reason")
+  .action((cId: string, keepId: string, opts) => {
+    const db = initDb();
+    const ok = resolveContradiction(db, cId, keepId, opts.actor, opts.reason);
+    if (ok) {
+      console.log(`Contradiction ${cId.slice(0, 8)} resolved. Kept ${keepId.slice(0, 8)}.`);
+    } else {
+      console.error("Contradiction not found.");
+    }
+  });
+
+contradictCmd
+  .command("auto-resolve")
+  .description("Auto-resolve contradictions (higher confidence wins)")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .action((opts) => {
+    const db = initDb();
+    const count = autoResolveContradictions(db, opts.repo);
+    console.log(`Auto-resolved ${count} contradiction(s).`);
+  });
+
+// --- Phase 3: prune ---
+
+program
+  .command("prune")
+  .description("Auto-prune stale and unhealthy memories")
+  .option("--stale-days <n>", "Days before archiving stale memories", "90")
+  .option("--rejected-days <n>", "Days before deleting rejected memories", "30")
+  .option("--transient-days <n>", "Days before deleting transient memories", "7")
+  .option("--min-health <n>", "Min health score for active memories", "0.2")
+  .option("--dry-run", "Preview without making changes")
+  .action((opts) => {
+    const db = initDb();
+    const result = pruneMemories(db, {
+      stale_days: parseInt(opts.staleDays),
+      rejected_retention_days: parseInt(opts.rejectedDays),
+      transient_retention_days: parseInt(opts.transientDays),
+      min_health_score: parseFloat(opts.minHealth),
+      dry_run: opts.dryRun ?? false,
+    });
+    console.log(formatPruneReport(result, opts.dryRun ?? false));
+  });
+
+// --- Phase 3: audit ---
+
+const auditCmd = program
+  .command("audit")
+  .description("View audit trail and rollback");
+
+auditCmd
+  .command("show")
+  .description("Show audit trail for a memory")
+  .argument("<memory-id>", "Memory ID")
+  .action((memoryId: string) => {
+    const db = initDb();
+    const mem = findByPrefix(db, memoryId);
+    if (!mem) {
+      console.error(`Memory not found: ${memoryId}`);
+      process.exit(1);
+    }
+    const entries = getAuditTrail(db, mem.id);
+    console.log(formatAuditTrail(entries));
+  });
+
+auditCmd
+  .command("recent")
+  .description("Show recent audit entries")
+  .option("-n, --limit <n>", "Max entries", "50")
+  .action((opts) => {
+    const db = initDb();
+    const entries = getRecentAudit(db, parseInt(opts.limit));
+    console.log(formatAuditTrail(entries));
+  });
+
+auditCmd
+  .command("rollback")
+  .description("Rollback a memory to a previous state")
+  .argument("<memory-id>", "Memory ID")
+  .argument("<audit-entry-id>", "Audit entry ID to rollback to")
+  .option("--actor <name>", "Who performed rollback", "cli")
+  .action((memoryId: string, auditEntryId: string, opts) => {
+    const db = initDb();
+    const mem = findByPrefix(db, memoryId);
+    if (!mem) {
+      console.error(`Memory not found: ${memoryId}`);
+      process.exit(1);
+    }
+    const ok = rollbackMemory(db, mem.id, auditEntryId, opts.actor);
+    if (ok) {
+      console.log(`Memory ${mem.id.slice(0, 8)} rolled back.`);
+    } else {
+      console.error("Rollback failed. Audit entry not found or no snapshot.");
+    }
   });
 
 // --- Helpers ---
