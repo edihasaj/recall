@@ -6,6 +6,7 @@ import { initStandaloneDb } from "../src/db/client.js";
 import {
   createMemory,
   getMemory,
+  listRepos,
   queryMemories,
   confirmMemory,
   rejectMemory,
@@ -99,6 +100,36 @@ describe("memory CRUD", () => {
     const active = queryMemories(db, { status: "active" });
     expect(active).toHaveLength(1);
     expect(active[0].text).toBe("b");
+  });
+
+  it("lists distinct repos", () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "a",
+      scope: "repo",
+      repo: "z/repo",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "b",
+      scope: "repo",
+      repo: "a/repo",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "c",
+      scope: "repo",
+      repo: "a/repo",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+
+    expect(listRepos(db)).toEqual(["a/repo", "z/repo"]);
   });
 });
 

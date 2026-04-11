@@ -2,15 +2,20 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
+import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
+import { memories } from "../src/db/schema.js";
 import {
   createMemory,
   confirmMemory,
+  getMemory,
   queryMemories,
 } from "../src/models/memory.js";
-import { getRepoQualityProfile, seedCandidateConfidence } from "../src/repo/quality.js";
+import { getRepoQualityProfile, seedCandidateConfidence, seedScannedConfidence } from "../src/repo/quality.js";
 import { processCorrection, processReviewFeedback } from "../src/capture/correction.js";
 import { CONFIDENCE } from "../src/types.js";
+import { scanAndStore } from "../src/scanner/repo.js";
 
 let dbCounter = 0;
 function freshDb() {
@@ -195,6 +200,24 @@ describe("seedCandidateConfidence", () => {
   });
 });
 
+describe("seedScannedConfidence", () => {
+  it("keeps trusted scan memories active in cold repos", () => {
+    const profile = {
+      stage: "cold" as const,
+      score: 0.35,
+      total_count: 0,
+      active_count: 0,
+      avg_health: 0,
+      override_rate: 0,
+      contradiction_rate: 0,
+      repeat_sessions_required: 2,
+      compile_confidence_threshold: 0.6,
+      dedup_similarity_threshold: 0.85,
+    };
+    expect(seedScannedConfidence(0.65, profile)).toBeCloseTo(0.62);
+  });
+});
+
 // --- Dynamic thresholds ---
 
 describe("dynamic thresholds", () => {
@@ -253,5 +276,65 @@ describe("review feedback maturity gate", () => {
     // At least one should still be candidate
     const hasCandidates = strictMems.some((m) => m.status === "candidate");
     expect(hasCandidates).toBe(true);
+  });
+});
+
+describe("scan bootstrap behavior", () => {
+  it("keeps config-based commands active on first cold scan", () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({
+      name: "demo",
+      scripts: {
+        test: "vitest run",
+        build: "tsup",
+      },
+    }, null, 2));
+    const db = initStandaloneDb(join(dir, "recall.db"));
+
+    const ids = scanAndStore(db, dir);
+    const memories = ids.map((id) => getMemory(db, id)!);
+    const commands = memories.filter((m) => m.type === "command");
+
+    expect(commands.length).toBeGreaterThan(0);
+    expect(commands.every((m) => m.status === "active")).toBe(true);
+  });
+
+  it("does not duplicate identical memories on repeated scan", () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({
+      name: "demo",
+      scripts: { test: "vitest run" },
+    }, null, 2));
+    const db = initStandaloneDb(join(dir, "recall.db"));
+
+    const first = scanAndStore(db, dir);
+    const second = scanAndStore(db, dir);
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(first[0]).toBe(second[0]);
+    expect(queryMemories(db, {})).toHaveLength(1);
+  });
+
+  it("upgrades stale scan memories on repeated scan", () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({
+      name: "demo",
+      scripts: { test: "vitest run" },
+    }, null, 2));
+    const db = initStandaloneDb(join(dir, "recall.db"));
+
+    const first = scanAndStore(db, dir);
+    const memory = getMemory(db, first[0])!;
+    db.update(memories)
+      .set({ confidence: 0.59, status: "candidate" })
+      .where(eq(memories.id, memory.id))
+      .run();
+
+    const second = scanAndStore(db, dir);
+    const upgraded = getMemory(db, second[0])!;
+
+    expect(upgraded.status).toBe("active");
+    expect(upgraded.confidence).toBeGreaterThanOrEqual(0.6);
   });
 });

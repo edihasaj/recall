@@ -58,6 +58,29 @@ export const feedbackEvents = sqliteTable("feedback_events", {
   index("idx_feedback_session").on(table.session_id),
 ]));
 
+// Session/query activity log
+export const activityEvents = sqliteTable("activity_events", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id"),
+  repo: text("repo"),
+  path: text("path"),
+  source: text("source", {
+    enum: ["cli", "daemon", "mcp", "system"],
+  }).notNull(),
+  event_type: text("event_type", {
+    enum: ["compile", "query", "scan", "correction", "review", "feedback", "signal"],
+  }).notNull(),
+  memory_ids: text("memory_ids", { mode: "json" }).notNull().default("[]"),
+  request: text("request", { mode: "json" }).notNull().default("{}"),
+  result: text("result", { mode: "json" }).notNull().default("{}"),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_activity_session").on(table.session_id),
+  index("idx_activity_repo").on(table.repo),
+  index("idx_activity_event_type").on(table.event_type),
+  index("idx_activity_created").on(table.created_at),
+]));
+
 // Phase 2: sync state tracking
 export const syncState = sqliteTable("sync_state", {
   id: text("id").primaryKey(), // "local" singleton

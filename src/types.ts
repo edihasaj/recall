@@ -103,6 +103,46 @@ export const FeedbackEvent = z.object({
 });
 export type FeedbackEvent = z.infer<typeof FeedbackEvent>;
 
+// --- Activity events ---
+
+export const ActivitySource = z.enum(["cli", "daemon", "mcp", "system"]);
+export type ActivitySource = z.infer<typeof ActivitySource>;
+
+export const ActivityEventType = z.enum([
+  "compile",
+  "query",
+  "scan",
+  "correction",
+  "review",
+  "feedback",
+  "signal",
+]);
+export type ActivityEventType = z.infer<typeof ActivityEventType>;
+
+export const ActivityEvent = z.object({
+  id: z.string().uuid(),
+  session_id: z.string().nullable(),
+  repo: z.string().nullable(),
+  path: z.string().nullable(),
+  source: ActivitySource,
+  event_type: ActivityEventType,
+  memory_ids: z.array(z.string().uuid()),
+  request: z.record(z.string(), z.unknown()),
+  result: z.record(z.string(), z.unknown()),
+  created_at: z.string(),
+});
+export type ActivityEvent = z.infer<typeof ActivityEvent>;
+
+export const ActivityEventQuery = z.object({
+  repo: z.string().optional(),
+  session_id: z.string().optional(),
+  source: ActivitySource.optional(),
+  event_type: ActivityEventType.optional(),
+  since: z.string().optional(),
+  limit: z.number().int().positive().optional(),
+});
+export type ActivityEventQuery = z.infer<typeof ActivityEventQuery>;
+
 // --- Confidence thresholds ---
 
 export const CONFIDENCE = {

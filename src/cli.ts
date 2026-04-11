@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { initDb, getDbPath } from "./db/client.js";
 import {
   listMemories,
+  listRepos,
   getMemory,
   confirmMemory,
   rejectMemory,
@@ -28,6 +29,14 @@ import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from 
 import { getRepoQualityProfile } from "./repo/quality.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
+import {
+  getLaunchAgentInfo,
+  getLaunchAgentStatus,
+  installLaunchAgent,
+  startLaunchAgent,
+  stopLaunchAgent,
+  uninstallLaunchAgent,
+} from "./daemon/launchd.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -59,8 +68,13 @@ program
     const db = initDb();
     const repoPath = resolve(path);
     const ids = scanAndStore(db, repoPath);
+    const scanned = ids
+      .map((id) => getMemory(db, id))
+      .filter((mem) => mem != null);
+    const activeCount = scanned.filter((mem) => mem.status === "active").length;
+    const candidateCount = scanned.filter((mem) => mem.status === "candidate").length;
     console.log(`Scanned ${repoPath}`);
-    console.log(`Created ${ids.length} candidate memories.`);
+    console.log(`Created ${ids.length} memories (${activeCount} active, ${candidateCount} candidate).`);
 
     if (ids.length > 0) {
       console.log("\nMemories:");
@@ -79,6 +93,22 @@ program
   });
 
 // --- list ---
+
+program
+  .command("repos")
+  .description("List repositories known to Recall")
+  .action(() => {
+    const db = initDb();
+    const repos = listRepos(db);
+    if (repos.length === 0) {
+      console.log("No repositories found.");
+      return;
+    }
+    for (const repo of repos) {
+      console.log(repo);
+    }
+    console.log(`\n${repos.length} repos total.`);
+  });
 
 program
   .command("list")
@@ -818,6 +848,73 @@ program
     console.log(`Repeat sessions needed: ${profile.repeat_sessions_required}`);
     console.log(`Compile threshold:      ${profile.compile_confidence_threshold.toFixed(2)}`);
     console.log(`Dedup similarity:       ${profile.dedup_similarity_threshold.toFixed(2)}`);
+  });
+
+// --- daemon ---
+
+const daemonCmd = program
+  .command("daemon")
+  .description("Manage the local Recall HTTP daemon with launchd");
+
+daemonCmd
+  .command("install")
+  .description("Install and start a user LaunchAgent")
+  .option("--port <port>", "Daemon port", "7890")
+  .option("--data-dir <dir>", "Recall data dir")
+  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .action((opts) => {
+    const status = installLaunchAgent({
+      label: opts.label,
+      port: parseInt(opts.port, 10),
+      dataDir: opts.dataDir,
+    });
+    console.log(getLaunchAgentInfo(status.label));
+  });
+
+daemonCmd
+  .command("start")
+  .description("Start the installed LaunchAgent")
+  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .action((opts) => {
+    const status = startLaunchAgent(opts.label);
+    console.log(getLaunchAgentInfo(status.label));
+  });
+
+daemonCmd
+  .command("stop")
+  .description("Stop the LaunchAgent")
+  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .action((opts) => {
+    const status = stopLaunchAgent(opts.label);
+    console.log(getLaunchAgentInfo(status.label));
+  });
+
+daemonCmd
+  .command("restart")
+  .description("Restart the LaunchAgent")
+  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .action((opts) => {
+    stopLaunchAgent(opts.label);
+    const status = startLaunchAgent(opts.label);
+    console.log(getLaunchAgentInfo(status.label));
+  });
+
+daemonCmd
+  .command("status")
+  .description("Show LaunchAgent status")
+  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .action((opts) => {
+    const status = getLaunchAgentStatus(opts.label);
+    console.log(getLaunchAgentInfo(status.label));
+  });
+
+daemonCmd
+  .command("uninstall")
+  .description("Remove the LaunchAgent")
+  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .action((opts) => {
+    const status = uninstallLaunchAgent(opts.label);
+    console.log(getLaunchAgentInfo(status.label));
   });
 
 // --- Helpers ---
