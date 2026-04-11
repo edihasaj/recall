@@ -35,7 +35,7 @@ export function getRepoQualityProfile(
   const health = computeAllHealthScores(db, repo);
   const avgHealth = health.length > 0
     ? health.reduce((sum, item) => sum + item.score, 0) / health.length
-    : 0.5;
+    : 0;
 
   const totalInjections = memories.reduce((sum, m) => sum + m.injection_count, 0);
   const totalOverrides = memories.reduce((sum, m) => sum + m.override_count, 0);
@@ -122,7 +122,7 @@ export function seedCandidateConfidence(
       : 0.05;
   const qualityPenalty = profile.score < 0.45 ? 0.03 : 0;
   return clamp(
-    Math.min(CONFIDENCE.ACTIVE_MIN - 0.01, baseConfidence - maturityPenalty - qualityPenalty),
+    baseConfidence - maturityPenalty - qualityPenalty,
     CONFIDENCE.TRANSIENT_MAX + 0.05,
     CONFIDENCE.ACTIVE_MIN - 0.01,
   );
@@ -137,10 +137,10 @@ function classifyStage(activeCount: number): RepoQualityProfile["stage"] {
 function defaultProfile(): RepoQualityProfile {
   return {
     stage: "cold",
-    score: 0.5,
+    score: 0.35,
     total_count: 0,
     active_count: 0,
-    avg_health: 0.5,
+    avg_health: 0,
     override_rate: 0,
     contradiction_rate: 0,
     repeat_sessions_required: 2,
