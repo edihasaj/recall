@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, blob } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, blob, index } from "drizzle-orm/sqlite-core";
 
 export const memories = sqliteTable("memories", {
   id: text("id").primaryKey(),
@@ -35,7 +35,12 @@ export const memories = sqliteTable("memories", {
   team_id: text("team_id"),
   sync_version: integer("sync_version").notNull().default(0),
   embedding: blob("embedding", { mode: "buffer" }),
-});
+}, (table) => ([
+  index("idx_memories_repo").on(table.repo),
+  index("idx_memories_status").on(table.status),
+  index("idx_memories_repo_status").on(table.repo, table.status),
+  index("idx_memories_team").on(table.team_id),
+]));
 
 export const feedbackEvents = sqliteTable("feedback_events", {
   id: text("id").primaryKey(),
@@ -48,7 +53,10 @@ export const feedbackEvents = sqliteTable("feedback_events", {
     enum: ["followed", "overridden", "ignored", "contradicted"],
   }).notNull(),
   timestamp: text("timestamp").notNull(),
-});
+}, (table) => ([
+  index("idx_feedback_memory").on(table.memory_id),
+  index("idx_feedback_session").on(table.session_id),
+]));
 
 // Phase 2: sync state tracking
 export const syncState = sqliteTable("sync_state", {
@@ -73,7 +81,9 @@ export const evalSessions = sqliteTable("eval_sessions", {
   user_corrections: integer("user_corrections").notNull().default(0),
   test_passes: integer("test_passes").notNull().default(0),
   test_failures: integer("test_failures").notNull().default(0),
-});
+}, (table) => ([
+  index("idx_eval_repo").on(table.repo),
+]));
 
 // Phase 3: policy rules
 export const policyRules = sqliteTable("policy_rules", {
@@ -94,7 +104,9 @@ export const policyRules = sqliteTable("policy_rules", {
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
-});
+}, (table) => ([
+  index("idx_policy_org").on(table.org_id),
+]));
 
 // Phase 3: approval queue
 export const approvalRequests = sqliteTable("approval_requests", {
@@ -111,7 +123,10 @@ export const approvalRequests = sqliteTable("approval_requests", {
   reason: text("reason"),
   created_at: text("created_at").notNull(),
   resolved_at: text("resolved_at"),
-});
+}, (table) => ([
+  index("idx_approval_org").on(table.org_id),
+  index("idx_approval_status").on(table.status),
+]));
 
 // Phase 3: contradictions
 export const contradictions = sqliteTable("contradictions", {
@@ -131,7 +146,9 @@ export const contradictions = sqliteTable("contradictions", {
   resolution: text("resolution"),
   detected_at: text("detected_at").notNull(),
   resolved_at: text("resolved_at"),
-});
+}, (table) => ([
+  index("idx_contradictions_resolved").on(table.resolved),
+]));
 
 // Phase 3: audit trail
 export const auditTrail = sqliteTable("audit_trail", {
@@ -150,7 +167,10 @@ export const auditTrail = sqliteTable("audit_trail", {
   after_snapshot: text("after_snapshot"),
   reason: text("reason"),
   timestamp: text("timestamp").notNull(),
-});
+}, (table) => ([
+  index("idx_audit_memory").on(table.memory_id),
+  index("idx_audit_timestamp").on(table.timestamp),
+]));
 
 // Phase 2: implicit feedback signals
 export const implicitSignals = sqliteTable("implicit_signals", {
@@ -171,4 +191,7 @@ export const implicitSignals = sqliteTable("implicit_signals", {
   }).notNull(),
   timestamp: text("timestamp").notNull(),
   context: text("context"),
-});
+}, (table) => ([
+  index("idx_implicit_memory").on(table.memory_id),
+  index("idx_implicit_session").on(table.session_id),
+]));
