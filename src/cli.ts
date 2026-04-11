@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { resolve } from "node:path";
-import { writeFileSync } from "node:fs";
-import { initDb } from "./db/client.js";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { initDb, getDbPath } from "./db/client.js";
 import {
   listMemories,
   getMemory,
@@ -14,6 +15,12 @@ import { scanAndStore } from "./scanner/repo.js";
 import { compileContext } from "./compiler/context.js";
 import { processCorrection, processReviewFeedback } from "./capture/correction.js";
 import { exportClaude, exportCodex, exportMarkdown } from "./adapters/markdown.js";
+import { sync, createTeam, joinTeam } from "./sync/client.js";
+import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession } from "./eval/harness.js";
+import { embedAllMemories, semanticSearch } from "./embeddings/embeddings.js";
+import { recordSignal, getSignalStats } from "./feedback/implicit.js";
+import { inferScope, analyzeScopePatterns } from "./capture/scope.js";
+import type { SyncConfig, EmbeddingConfig } from "./types.js";
 
 const program = new Command();
 
@@ -278,7 +285,229 @@ program
     await import("./mcp/server.js");
   });
 
+// --- Phase 2: sync ---
+
+const syncCmd = program
+  .command("sync")
+  .description("Sync memories with remote server");
+
+syncCmd
+  .command("push")
+  .description("Push local memories to remote")
+  .action(async () => {
+    const db = initDb();
+    const config = loadSyncConfig();
+    if (!config) {
+      console.error("No sync config. Set RECALL_SYNC_URL and RECALL_SYNC_KEY.");
+      process.exit(1);
+    }
+    const result = await sync(db, config);
+    console.log(`Pushed: ${result.pushed}, Pulled: ${result.pulled}, Conflicts: ${result.conflicts}`);
+    if (result.errors.length > 0) {
+      console.error("Errors:", result.errors.join("; "));
+    }
+  });
+
+syncCmd
+  .command("pull")
+  .description("Pull team memories from remote")
+  .action(async () => {
+    const db = initDb();
+    const config = loadSyncConfig();
+    if (!config) {
+      console.error("No sync config. Set RECALL_SYNC_URL and RECALL_SYNC_KEY.");
+      process.exit(1);
+    }
+    const result = await sync(db, config);
+    console.log(`Pulled: ${result.pulled}, Conflicts: ${result.conflicts}`);
+  });
+
+// --- Phase 2: team ---
+
+const teamCmd = program
+  .command("team")
+  .description("Manage teams");
+
+teamCmd
+  .command("create")
+  .description("Create a new team")
+  .argument("<name>", "Team name")
+  .action(async (name: string) => {
+    const config = loadSyncConfig();
+    if (!config) {
+      console.error("No sync config.");
+      process.exit(1);
+    }
+    const teamId = await createTeam(config, name);
+    console.log(`Team created: ${teamId}`);
+    console.log(`Set RECALL_TEAM_ID=${teamId} to use this team.`);
+  });
+
+teamCmd
+  .command("join")
+  .description("Join an existing team")
+  .argument("<team-id>", "Team ID")
+  .action(async (teamId: string) => {
+    const config = loadSyncConfig();
+    if (!config) {
+      console.error("No sync config.");
+      process.exit(1);
+    }
+    await joinTeam(config, teamId);
+    console.log(`Joined team: ${teamId}`);
+  });
+
+// --- Phase 2: eval ---
+
+const evalCmd = program
+  .command("eval")
+  .description("Evaluation metrics");
+
+evalCmd
+  .command("report")
+  .description("Show evaluation metrics report")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .option("--since <date>", "Since date (ISO)")
+  .action((opts) => {
+    const db = initDb();
+    const metrics = computeMetrics(db, { repo: opts.repo, since: opts.since });
+    console.log(formatMetricsReport(metrics));
+  });
+
+evalCmd
+  .command("start")
+  .description("Start an eval session")
+  .requiredOption("-r, --repo <repo>", "Repository name")
+  .action((opts) => {
+    const db = initDb();
+    const id = startEvalSession(db, opts.repo);
+    console.log(`Eval session started: ${id}`);
+  });
+
+evalCmd
+  .command("end")
+  .description("End an eval session")
+  .argument("<session-id>", "Session ID")
+  .action((sessionId: string) => {
+    const db = initDb();
+    endEvalSession(db, sessionId);
+    console.log(`Eval session ended: ${sessionId}`);
+  });
+
+// --- Phase 2: embed ---
+
+program
+  .command("embed")
+  .description("Generate embeddings for all un-embedded memories")
+  .action(async () => {
+    const db = initDb();
+    const config = loadEmbeddingConfig();
+    if (!config?.enabled) {
+      console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
+      process.exit(1);
+    }
+    const count = await embedAllMemories(db, config);
+    console.log(`Embedded ${count} memories.`);
+  });
+
+program
+  .command("search")
+  .description("Semantic search across memories")
+  .argument("<query>", "Search query")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .option("-n, --limit <n>", "Max results", "10")
+  .action(async (query: string, opts) => {
+    const db = initDb();
+    const config = loadEmbeddingConfig();
+    if (!config?.enabled) {
+      console.error("Embeddings not enabled.");
+      process.exit(1);
+    }
+    const results = await semanticSearch(db, query, config, {
+      repo: opts.repo,
+      limit: parseInt(opts.limit),
+    });
+
+    if (results.length === 0) {
+      console.log("No matching memories found.");
+      return;
+    }
+
+    for (const r of results) {
+      console.log(
+        `${r.memory.id.slice(0, 8)}  (${r.similarity.toFixed(3)}) [${r.memory.status}] ${r.memory.text}`,
+      );
+    }
+  });
+
+// --- Phase 2: signals ---
+
+program
+  .command("signal")
+  .description("Record an implicit feedback signal")
+  .argument("<memory-id>", "Memory ID")
+  .argument("<signal>", "Signal type: test_pass|test_fail|file_unchanged|file_rewritten|task_accepted|task_rejected")
+  .option("-s, --session <id>", "Session ID", "cli")
+  .action((memoryIdPrefix: string, signal: string, opts) => {
+    const db = initDb();
+    const mem = findByPrefix(db, memoryIdPrefix);
+    if (!mem) {
+      console.error(`Memory not found: ${memoryIdPrefix}`);
+      process.exit(1);
+    }
+    const validSignals = ["test_pass", "test_fail", "file_unchanged", "file_rewritten", "task_accepted", "task_rejected"];
+    if (!validSignals.includes(signal)) {
+      console.error(`Invalid signal. Use: ${validSignals.join(", ")}`);
+      process.exit(1);
+    }
+    const id = recordSignal(db, mem.id, opts.session, signal as any);
+    console.log(`Signal recorded: ${id.slice(0, 8)}`);
+
+    const stats = getSignalStats(db, mem.id);
+    console.log("Stats:", JSON.stringify(stats));
+  });
+
+// --- Phase 2: scope analysis ---
+
+program
+  .command("scope")
+  .description("Analyze scope of a correction text")
+  .argument("<text>", "Correction text")
+  .option("-p, --path <path>", "Context file path")
+  .action((text: string, opts) => {
+    const result = inferScope(text, opts.path);
+    console.log(`Scope:       ${result.scope}`);
+    console.log(`Path scope:  ${result.path_scope ?? "(none)"}`);
+    console.log(`Confidence:  ${result.confidence_modifier > 0 ? "+" : ""}${result.confidence_modifier}`);
+    console.log(`Reason:      ${result.reason}`);
+  });
+
 // --- Helpers ---
+
+function loadSyncConfig(): SyncConfig | null {
+  const url = process.env.RECALL_SYNC_URL;
+  const key = process.env.RECALL_SYNC_KEY;
+  if (!url || !key) return null;
+  return {
+    remote_url: url,
+    api_key: key,
+    team_id: process.env.RECALL_TEAM_ID,
+    auto_sync: false,
+    sync_interval_seconds: 300,
+  };
+}
+
+function loadEmbeddingConfig(): EmbeddingConfig | null {
+  if (process.env.RECALL_EMBEDDINGS_ENABLED !== "true") return null;
+  return {
+    enabled: true,
+    provider: "openai",
+    model: process.env.RECALL_EMBEDDING_MODEL ?? "text-embedding-3-small",
+    api_key: process.env.OPENAI_API_KEY,
+    dimensions: parseInt(process.env.RECALL_EMBEDDING_DIMS ?? "256"),
+    similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),
+  };
+}
 
 function findByPrefix(db: ReturnType<typeof initDb>, prefix: string) {
   // Try exact match first

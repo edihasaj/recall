@@ -62,7 +62,10 @@ const INIT_SQL = `
     last_validated_at TEXT,
     last_injected_at TEXT,
     injection_count INTEGER NOT NULL DEFAULT 0,
-    override_count INTEGER NOT NULL DEFAULT 0
+    override_count INTEGER NOT NULL DEFAULT 0,
+    team_id TEXT,
+    sync_version INTEGER NOT NULL DEFAULT 0,
+    embedding BLOB
   );
 
   CREATE TABLE IF NOT EXISTS feedback_events (
@@ -74,11 +77,47 @@ const INIT_SQL = `
     timestamp TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS sync_state (
+    id TEXT PRIMARY KEY,
+    remote_url TEXT,
+    team_id TEXT,
+    last_push_at TEXT,
+    last_pull_at TEXT,
+    last_push_version INTEGER NOT NULL DEFAULT 0,
+    last_pull_version INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS eval_sessions (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    memories_injected INTEGER NOT NULL DEFAULT 0,
+    memories_followed INTEGER NOT NULL DEFAULT 0,
+    memories_overridden INTEGER NOT NULL DEFAULT 0,
+    user_corrections INTEGER NOT NULL DEFAULT 0,
+    test_passes INTEGER NOT NULL DEFAULT 0,
+    test_failures INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS implicit_signals (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL REFERENCES memories(id),
+    session_id TEXT NOT NULL,
+    signal_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    context TEXT
+  );
+
   CREATE INDEX IF NOT EXISTS idx_memories_repo ON memories(repo);
   CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
   CREATE INDEX IF NOT EXISTS idx_memories_repo_status ON memories(repo, status);
+  CREATE INDEX IF NOT EXISTS idx_memories_team ON memories(team_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_memory ON feedback_events(memory_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_session ON feedback_events(session_id);
+  CREATE INDEX IF NOT EXISTS idx_eval_repo ON eval_sessions(repo);
+  CREATE INDEX IF NOT EXISTS idx_implicit_memory ON implicit_signals(memory_id);
+  CREATE INDEX IF NOT EXISTS idx_implicit_session ON implicit_signals(session_id);
 `;
 
 export function initDb(dbPath?: string): RecallDb {

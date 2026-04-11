@@ -5,6 +5,7 @@ export default defineConfig({
     cli: "src/cli.ts",
     daemon: "src/daemon.ts",
     mcp: "src/mcp/server.ts",
+    "sync-server": "src/sync/server.ts",
   },
   format: ["esm"],
   target: "node22",
