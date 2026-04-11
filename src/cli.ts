@@ -798,6 +798,28 @@ auditCmd
     }
   });
 
+// --- Quality profile ---
+
+program
+  .command("quality")
+  .description("Show repo quality profile and dynamic thresholds")
+  .option("-r, --repo <repo>", "Repository name")
+  .action((opts) => {
+    const db = initDb();
+    const profile = getRepoQualityProfile(db, opts.repo);
+    console.log(`Stage:                  ${profile.stage}`);
+    console.log(`Quality score:          ${(profile.score * 100).toFixed(0)}%`);
+    console.log(`Active memories:        ${profile.active_count}`);
+    console.log(`Total memories:         ${profile.total_count}`);
+    console.log(`Avg health:             ${(profile.avg_health * 100).toFixed(0)}%`);
+    console.log(`Override rate:          ${(profile.override_rate * 100).toFixed(0)}%`);
+    console.log(`Contradiction rate:     ${(profile.contradiction_rate * 100).toFixed(0)}%`);
+    console.log(`---`);
+    console.log(`Repeat sessions needed: ${profile.repeat_sessions_required}`);
+    console.log(`Compile threshold:      ${profile.compile_confidence_threshold.toFixed(2)}`);
+    console.log(`Dedup similarity:       ${profile.dedup_similarity_threshold.toFixed(2)}`);
+  });
+
 // --- Helpers ---
 
 function loadSyncConfig(): SyncConfig | null {
