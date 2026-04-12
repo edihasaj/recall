@@ -26,6 +26,8 @@ recall scan ~/Projects/some-repo
 recall list
 ```
 
+If an unseen repo is later queried through the daemon or MCP, Recall now tries a lazy one-time bootstrap by resolving the local clone and scanning just that repo.
+
 Inspect quality / health / injection pack:
 
 ```bash
