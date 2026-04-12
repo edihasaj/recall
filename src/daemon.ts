@@ -19,6 +19,7 @@ import { pruneMemories } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
+import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "./repo/discovery.js";
 
 const db = initDb();
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -36,6 +37,10 @@ function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
     });
     req.on("error", reject);
   });
+}
+
+function resolveRepo(body: Record<string, any>): string | undefined {
+  return body.repo ?? inferRepoSlugFromPath(body.repo_path) ?? undefined;
 }
 
 const server = createServer(async (req, res) => {
@@ -64,39 +69,74 @@ const server = createServer(async (req, res) => {
     // Compile context (hook injection endpoint)
     if (path === "/compile" && method === "POST") {
       const body = await parseBody(req);
+      const repo = resolveRepo(body);
+      if (!repo) return send(res, 400, { error: "repo or repo_path required" });
+
+      const bootstrap = ensureRepoBootstrapped(db, {
+        repo,
+        repoPathHint: body.repo_path,
+      });
+      if (bootstrap.status === "bootstrapped" || bootstrap.status === "scanned_empty") {
+        createActivityEvent(db, {
+          session_id: body.session_id ?? null,
+          repo,
+          source: "daemon",
+          event_type: "scan",
+          memory_ids: bootstrap.created_ids,
+          request: {
+            repo_path: bootstrap.repo_path,
+            trigger: "compile_auto_bootstrap",
+          },
+          result: {
+            created: bootstrap.created_ids.length,
+            status: bootstrap.status,
+          },
+        });
+      }
+
       const result = compileContext(db, {
-        repo: body.repo,
+        repo,
         path: body.path,
         config: body.config,
       });
       createActivityEvent(db, {
         session_id: body.session_id ?? null,
-        repo: body.repo ?? null,
+        repo,
         path: body.path ?? null,
         source: "daemon",
         event_type: "compile",
         memory_ids: result.memories_included,
-        request: { config: body.config ?? {} },
+        request: {
+          config: body.config ?? {},
+          bootstrap_status: bootstrap.status,
+        },
         result: {
           included: result.memories_included,
           dropped: result.memories_dropped,
           token_estimate: result.token_estimate,
+          repo_path: bootstrap.repo_path,
         },
       });
-      return send(res, 200, result);
+      return send(res, 200, {
+        ...result,
+        repo,
+        repo_path: bootstrap.repo_path ?? body.repo_path ?? null,
+        bootstrap_status: bootstrap.status,
+      });
     }
 
     // Report correction
     if (path === "/correct" && method === "POST") {
       const body = await parseBody(req);
+      const repo = resolveRepo(body);
       const ids = processCorrection(db, body.text, {
         sessionId: body.session_id ?? "hook",
-        repo: body.repo,
+        repo,
         path: body.path,
       });
       createActivityEvent(db, {
         session_id: body.session_id ?? "hook",
-        repo: body.repo ?? null,
+        repo: repo ?? null,
         path: body.path ?? null,
         source: "daemon",
         event_type: "correction",
@@ -110,15 +150,16 @@ const server = createServer(async (req, res) => {
     // Report review feedback
     if (path === "/review" && method === "POST") {
       const body = await parseBody(req);
+      const repo = resolveRepo(body);
       const ids = processReviewFeedback(db, body.feedback, {
         sessionId: body.session_id ?? "hook-review",
-        repo: body.repo,
+        repo,
         path: body.path,
         reviewer: body.reviewer,
       });
       createActivityEvent(db, {
         session_id: body.session_id ?? "hook-review",
-        repo: body.repo ?? null,
+        repo: repo ?? null,
         path: body.path ?? null,
         source: "daemon",
         event_type: "review",

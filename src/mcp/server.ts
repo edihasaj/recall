@@ -23,6 +23,7 @@ import { pruneMemories, formatPruneReport } from "../pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "../audit/trail.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "../models/activity.js";
+import { ensureRepoBootstrapped } from "../repo/discovery.js";
 
 const db = initDb();
 
@@ -38,11 +39,34 @@ server.tool(
   "Retrieve relevant memories for the current task context. Returns compiled, confidence-gated memories scoped to the repo and path.",
   {
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
+    repo_path: z.string().optional().describe("Optional local repo path hint for first-time bootstrap"),
     path: z.string().optional().describe("Current file path for path-scoped filtering"),
     min_confidence: z.number().optional().describe("Minimum confidence threshold (default: 0.6)"),
     session_id: z.string().optional().describe("Optional session identifier"),
   },
-  async ({ repo, path, min_confidence, session_id }) => {
+  async ({ repo, repo_path, path, min_confidence, session_id }) => {
+    const bootstrap = ensureRepoBootstrapped(db, {
+      repo,
+      repoPathHint: repo_path,
+    });
+    if (bootstrap.status === "bootstrapped" || bootstrap.status === "scanned_empty") {
+      createActivityEvent(db, {
+        session_id: session_id ?? null,
+        repo,
+        source: "mcp",
+        event_type: "scan",
+        memory_ids: bootstrap.created_ids,
+        request: {
+          repo_path: bootstrap.repo_path,
+          trigger: "query_auto_bootstrap",
+        },
+        result: {
+          created: bootstrap.created_ids.length,
+          status: bootstrap.status,
+        },
+      });
+    }
+
     const result = compileContext(db, {
       repo,
       path,
@@ -55,11 +79,15 @@ server.tool(
       source: "mcp",
       event_type: "query",
       memory_ids: result.memories_included,
-      request: { min_confidence: min_confidence ?? null },
+      request: {
+        min_confidence: min_confidence ?? null,
+        bootstrap_status: bootstrap.status,
+      },
       result: {
         included: result.memories_included,
         dropped: result.memories_dropped,
         token_estimate: result.token_estimate,
+        repo_path: bootstrap.repo_path,
       },
     });
 

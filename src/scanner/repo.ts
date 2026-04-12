@@ -383,11 +383,17 @@ function inferRepoName(repoPath: string): string {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
-    // Extract owner/repo from URL
-    const match = remote.match(/[:/]([^/]+\/[^/.]+?)(?:\.git)?$/);
-    if (match) return match[1];
+    const repo = extractRepoSlugFromRemote(remote);
+    if (repo) return repo;
   } catch {}
   return basename(repoPath);
+}
+
+function extractRepoSlugFromRemote(remote: string): string | null {
+  const trimmed = remote.trim().replace(/\.git$/, "");
+  const parts = trimmed.split(/[:/]/).filter(Boolean);
+  if (parts.length < 2) return null;
+  return `${parts.at(-2)}/${parts.at(-1)}`;
 }
 
 function makeCommand(text: string, repo: string, file: string): CreateMemoryInput {
