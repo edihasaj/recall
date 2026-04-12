@@ -288,6 +288,8 @@ sequenceDiagram
 
 ### 2. Exported Instruction Files
 
+These are optional exports/fallbacks. Primary live integration should use MCP.
+
 Recall can generate instruction files or repo-local context artifacts for tools that read repo-local docs:
 
 - `CLAUDE.md`

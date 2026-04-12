@@ -44,7 +44,7 @@ recall publish ~/Projects/some-repo
 ```
 
 If an unseen repo is later queried through the daemon or MCP, Recall now tries a lazy one-time bootstrap by resolving the local clone and scanning just that repo.
-Recall can also publish repo-local context into `.recall/context.md` so agents can read a file instead of calling MCP first.
+Recall can also publish repo-local context into `.recall/context.md`, but the primary agent integration should be Recall MCP.
 
 Inspect quality / health / injection pack:
 
@@ -145,7 +145,7 @@ curl -s -X POST http://localhost:7890/session/end \
   -d '{"session_id":"codex-1","client":"codex","repo_path":"'"$PWD"'","payload":{"exit_code":0}}'
 ```
 
-Repo-local context artifact:
+Optional repo-local context artifact:
 
 ```bash
 recall publish .
@@ -199,15 +199,13 @@ RECALL_CLAUDE_BIN=/path/to/claude scripts/recall-claude
 RECALL_DAEMON_URL=http://localhost:7890 scripts/recall-codex
 ```
 
-## Repo-Local Context
+## MCP First
 
-Recall can write `.recall/context.md` inside a repo.
+Recommended production pattern:
 
-Recommended pattern:
-
-- keep `AGENTS.md` or `CLAUDE.md` small
-- tell agents to read `.recall/context.md` before repo-specific work
-- let Recall refresh that file on session start, scan, or explicit `recall publish`
+- run Recall locally via `/Applications/Recall.app`
+- let agents query/live-report through Recall MCP
+- treat `.recall/context.md` as optional export/fallback, not the primary path
 
 ## Fast Test Loop
 
