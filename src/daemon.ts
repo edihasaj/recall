@@ -25,6 +25,7 @@ import {
   recordSessionLifecycleEvent,
   startSessionLifecycle,
 } from "./session/lifecycle.js";
+import { writeRepoContextArtifact } from "./artifacts/context.js";
 
 const db = initDb();
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -285,6 +286,10 @@ const server = createServer(async (req, res) => {
       const body = await parseBody(req);
       const ids = scanAndStore(db, body.repo_path);
       const mem = ids[0] ? getMemory(db, ids[0]) : undefined;
+      const artifact = writeRepoContextArtifact(db, {
+        repo: mem?.repo ?? null,
+        repo_path: body.repo_path,
+      });
       createActivityEvent(db, {
         session_id: body.session_id ?? null,
         repo: mem?.repo ?? null,
@@ -292,9 +297,18 @@ const server = createServer(async (req, res) => {
         event_type: "scan",
         memory_ids: ids,
         request: { repo_path: body.repo_path },
-        result: { created: ids.length },
+        result: {
+          created: ids.length,
+          artifact_path: artifact.output_path,
+          artifact_written: artifact.written,
+        },
       });
-      return send(res, 200, { created: ids, count: ids.length });
+      return send(res, 200, {
+        created: ids,
+        count: ids.length,
+        artifact_path: artifact.output_path,
+        artifact_written: artifact.written,
+      });
     }
 
     // --- Phase 2 endpoints ---

@@ -16,6 +16,8 @@ import { scanAndStore } from "./scanner/repo.js";
 import { compileContext } from "./compiler/context.js";
 import { processCorrection, processReviewFeedback } from "./capture/correction.js";
 import { exportClaude, exportCodex, exportMarkdown } from "./adapters/markdown.js";
+import { writeRepoContextArtifact } from "./artifacts/context.js";
+import { inferRepoSlugFromPath } from "./repo/discovery.js";
 import { sync, createTeam, joinTeam } from "./sync/client.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession } from "./eval/harness.js";
 import { embedAllMemories, semanticSearch } from "./embeddings/embeddings.js";
@@ -70,6 +72,10 @@ program
     const db = initDb();
     const repoPath = resolve(path);
     const ids = scanAndStore(db, repoPath);
+    const artifact = writeRepoContextArtifact(db, {
+      repo: inferRepoSlugFromPath(repoPath),
+      repo_path: repoPath,
+    });
     const scanned = ids
       .map((id) => getMemory(db, id))
       .filter((mem) => mem != null);
@@ -77,6 +83,9 @@ program
     const candidateCount = scanned.filter((mem) => mem.status === "candidate").length;
     console.log(`Scanned ${repoPath}`);
     console.log(`Created ${ids.length} memories (${activeCount} active, ${candidateCount} candidate).`);
+    if (artifact.output_path) {
+      console.log(`Updated ${artifact.output_path}`);
+    }
     createActivityEvent(db, {
       session_id: opts.session ?? null,
       repo: scanned[0]?.repo ?? null,
@@ -338,7 +347,7 @@ program
   .requiredOption("-r, --repo <repo>", "Repository name")
   .option(
     "-f, --format <format>",
-    "Export format: claude | codex | markdown",
+    "Export format: claude | codex | markdown | context",
     "markdown",
   )
   .option("-o, --output <path>", "Output file path")
@@ -353,6 +362,19 @@ program
       case "codex":
         content = exportCodex(db, opts.repo);
         break;
+      case "context": {
+        const artifact = writeRepoContextArtifact(db, { repo: opts.repo });
+        if (!artifact.output_path) {
+          console.error(`Could not resolve local repo path for ${opts.repo}`);
+          process.exit(1);
+        }
+        content = readFileSync(artifact.output_path, "utf-8");
+        if (!opts.output) {
+          console.log(content);
+          return;
+        }
+        break;
+      }
       default:
         content = exportMarkdown(db, opts.repo);
     }
@@ -363,6 +385,24 @@ program
     } else {
       console.log(content);
     }
+  });
+
+program
+  .command("publish")
+  .description("Write repo-local .recall/context.md for the current repo")
+  .argument("[path]", "Repository path", ".")
+  .action((path: string) => {
+    const db = initDb();
+    const repoPath = resolve(path);
+    const artifact = writeRepoContextArtifact(db, {
+      repo: inferRepoSlugFromPath(repoPath),
+      repo_path: repoPath,
+    });
+    if (!artifact.output_path) {
+      console.error(`Could not write repo-local context for ${repoPath}`);
+      process.exit(1);
+    }
+    console.log(`Wrote ${artifact.output_path}`);
   });
 
 // --- serve (MCP) ---
