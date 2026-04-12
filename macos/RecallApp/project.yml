@@ -1,0 +1,32 @@
+name: RecallApp
+options:
+  minimumXcodeGenVersion: 2.38.0
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.edihasaj.recall
+    MACOSX_DEPLOYMENT_TARGET: 15.0
+    SWIFT_VERSION: 6.0
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_CFBundleDisplayName: Recall
+    INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+targets:
+  Recall:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Recall
+    resources:
+      - path: Generated/Runtime
+        type: folder
+    settings:
+      base:
+        PRODUCT_NAME: Recall
+        INFOPLIST_KEY_NSHumanReadableCopyright: Copyright © Edi Hasaj
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  Recall:
+    build:
+      targets:
+        Recall: all

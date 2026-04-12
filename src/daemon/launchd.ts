@@ -91,6 +91,7 @@ export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
 
   const cfg = resolveConfig({ label });
   const status = getLaunchAgentStatus(label);
+  const installed = readInstalledConfig(cfg.plistPath);
   const lines = [
     `Label:      ${status.label}`,
     `Plist:      ${cfg.plistPath}`,
@@ -102,12 +103,12 @@ export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
     lines.push(`State:      ${status.state}`);
   }
 
-  lines.push(`Port:       ${cfg.port}`);
-  lines.push(`Data dir:   ${cfg.dataDir}`);
-  lines.push(`Node:       ${cfg.nodePath}`);
-  lines.push(`Script:     ${cfg.daemonScript}`);
-  lines.push(`Stdout:     ${cfg.stdoutPath}`);
-  lines.push(`Stderr:     ${cfg.stderrPath}`);
+  lines.push(`Port:       ${installed?.port ?? cfg.port}`);
+  lines.push(`Data dir:   ${installed?.dataDir ?? cfg.dataDir}`);
+  lines.push(`Node:       ${installed?.nodePath ?? cfg.nodePath}`);
+  lines.push(`Script:     ${installed?.daemonScript ?? cfg.daemonScript}`);
+  lines.push(`Stdout:     ${installed?.stdoutPath ?? cfg.stdoutPath}`);
+  lines.push(`Stderr:     ${installed?.stderrPath ?? cfg.stderrPath}`);
 
   return lines.join("\n");
 }
@@ -216,6 +217,35 @@ function tryOutput(cmd: string, args: string[]) {
       ok: false,
       output: String(error?.stdout ?? error?.stderr ?? error?.message ?? ""),
     };
+  }
+}
+
+function readInstalledConfig(plistPath: string): {
+  nodePath?: string;
+  daemonScript?: string;
+  port?: string;
+  dataDir?: string;
+  stdoutPath?: string;
+  stderrPath?: string;
+} | null {
+  if (!exists(plistPath)) return null;
+
+  try {
+    const raw = execFileSync("plutil", ["-convert", "json", "-o", "-", plistPath], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const parsed = JSON.parse(raw);
+    return {
+      nodePath: parsed?.ProgramArguments?.[0],
+      daemonScript: parsed?.ProgramArguments?.[1],
+      port: parsed?.EnvironmentVariables?.RECALL_PORT,
+      dataDir: parsed?.EnvironmentVariables?.RECALL_DATA_DIR,
+      stdoutPath: parsed?.StandardOutPath,
+      stderrPath: parsed?.StandardErrorPath,
+    };
+  } catch {
+    return null;
   }
 }
 

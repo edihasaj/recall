@@ -11,6 +11,22 @@ npm run build
 npm link
 ```
 
+## Production App
+
+Build the macOS app bundle:
+
+```bash
+npm run build:app
+```
+
+Install it into `/Applications`:
+
+```bash
+npm run install:app
+```
+
+The app embeds its own Node runtime plus Recall `dist/`, `drizzle/`, and `node_modules/`, then manages the bundled daemon via launchd.
+
 ## First Run
 
 Initialize DB:
