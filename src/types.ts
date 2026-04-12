@@ -116,6 +116,9 @@ export const ActivityEventType = z.enum([
   "review",
   "feedback",
   "signal",
+  "session_start",
+  "session_event",
+  "session_end",
 ]);
 export type ActivityEventType = z.infer<typeof ActivityEventType>;
 

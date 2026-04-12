@@ -26,6 +26,18 @@ import { createActivityEvent, listActivityEvents, listActivitySessions } from ".
 import { ensureRepoBootstrapped } from "../repo/discovery.js";
 
 const db = initDb();
+const activityEventTypes = [
+  "compile",
+  "query",
+  "scan",
+  "correction",
+  "review",
+  "feedback",
+  "signal",
+  "session_start",
+  "session_event",
+  "session_end",
+] as const;
 
 const server = new McpServer({
   name: "recall",
@@ -584,7 +596,7 @@ server.tool(
     repo: z.string().optional().describe("Filter by repo"),
     session_id: z.string().optional().describe("Filter by session id"),
     source: z.enum(["cli", "daemon", "mcp", "system"]).optional().describe("Filter by source"),
-    event_type: z.enum(["compile", "query", "scan", "correction", "review", "feedback", "signal"]).optional().describe("Filter by event type"),
+    event_type: z.enum(activityEventTypes).optional().describe("Filter by event type"),
     since: z.string().optional().describe("Created at >= ISO timestamp"),
     limit: z.number().optional().describe("Max events to return"),
   },
@@ -607,7 +619,7 @@ server.tool(
   {
     repo: z.string().optional().describe("Filter by repo"),
     source: z.enum(["cli", "daemon", "mcp", "system"]).optional().describe("Filter by source"),
-    event_type: z.enum(["compile", "query", "scan", "correction", "review", "feedback", "signal"]).optional().describe("Filter by event type"),
+    event_type: z.enum(activityEventTypes).optional().describe("Filter by event type"),
     since: z.string().optional().describe("Created at >= ISO timestamp"),
     limit: z.number().optional().describe("Max sessions to return"),
   },

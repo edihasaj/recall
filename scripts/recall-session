@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+daemon_url="${RECALL_DAEMON_URL:-http://localhost:7890}"
+target_cmd="${RECALL_TARGET_CMD:-${1:-}}"
+
+if [[ -z "$target_cmd" ]]; then
+  echo "usage: recall-session <command> [args...]" >&2
+  exit 1
+fi
+
+if [[ -z "${RECALL_TARGET_CMD:-}" ]]; then
+  shift
+fi
+
+client_name="${RECALL_CLIENT_NAME:-$target_cmd}"
+session_id="${RECALL_SESSION_ID:-${client_name}-$(date +%Y%m%dT%H%M%S)-$$}"
+repo_path="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+json_start() {
+  SESSION_ID="$session_id" \
+  CLIENT_NAME="$client_name" \
+  REPO_PATH="$repo_path" \
+  ARGV_JSON="$argv_json" \
+  node <<'NODE'
+process.stdout.write(JSON.stringify({
+  session_id: process.env.SESSION_ID,
+  client: process.env.CLIENT_NAME,
+  repo_path: process.env.REPO_PATH,
+  meta: {
+    argv: JSON.parse(process.env.ARGV_JSON || "[]"),
+  },
+}));
+NODE
+}
+
+json_end() {
+  SESSION_ID="$session_id" \
+  CLIENT_NAME="$client_name" \
+  REPO_PATH="$repo_path" \
+  EXIT_CODE="${1:-0}" \
+  node <<'NODE'
+process.stdout.write(JSON.stringify({
+  session_id: process.env.SESSION_ID,
+  client: process.env.CLIENT_NAME,
+  repo_path: process.env.REPO_PATH,
+  payload: {
+    exit_code: Number(process.env.EXIT_CODE || "0"),
+  },
+}));
+NODE
+}
+
+post() {
+  local endpoint="$1"
+  local body="$2"
+  curl -fsS -X POST "${daemon_url}${endpoint}" \
+    -H 'Content-Type: application/json' \
+    -d "$body" >/dev/null 2>&1 || true
+}
+
+cleanup() {
+  local exit_code="${1:-$?}"
+  trap - EXIT
+  post "/session/end" "$(json_end "$exit_code")"
+}
+
+trap 'cleanup $?' EXIT
+argv_json="$(node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)))' -- "$@")"
+post "/session/start" "$(json_start)"
+"$target_cmd" "$@"

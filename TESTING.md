@@ -63,6 +63,22 @@ recall list -r edihasaj/recall -s active
 recall list -r edihasaj/recall -s candidate
 ```
 
+## 2a. Check session collector
+
+Start and end a synthetic session from the current repo:
+
+```bash
+curl -s -X POST http://localhost:7890/session/start \
+  -H 'Content-Type: application/json' \
+  -d "{\"session_id\":\"manual-session-1\",\"client\":\"codex\",\"repo_path\":\"$PWD\"}"
+
+curl -s -X POST http://localhost:7890/session/end \
+  -H 'Content-Type: application/json' \
+  -d "{\"session_id\":\"manual-session-1\",\"client\":\"codex\",\"repo_path\":\"$PWD\",\"payload\":{\"exit_code\":0}}"
+
+recall activity --session manual-session-1
+```
+
 ## 3. List all repos in the DB
 
 Preferred:
