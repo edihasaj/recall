@@ -229,6 +229,6 @@ final class AppPreferences: ObservableObject {
     static func applyBundledAppIcon() {
         guard let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
               let image = NSImage(contentsOfFile: path) else { return }
-        NSApp.applicationIconImage = image
+        NSApplication.shared.applicationIconImage = image
     }
 }
