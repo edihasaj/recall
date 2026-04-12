@@ -1024,11 +1024,15 @@ daemonCmd
   .option("--port <port>", "Daemon port", "7890")
   .option("--data-dir <dir>", "Recall data dir")
   .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .option("--node-path <path>", "Node executable path override")
+  .option("--daemon-script <path>", "Daemon script path override")
   .action((opts) => {
     const status = installLaunchAgent({
       label: opts.label,
       port: parseInt(opts.port, 10),
       dataDir: opts.dataDir,
+      nodePath: opts.nodePath,
+      daemonScript: opts.daemonScript,
     });
     console.log(getLaunchAgentInfo(status.label));
   });

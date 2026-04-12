@@ -6,3 +6,6 @@ dist/
 *.db-shm
 .env
 .DS_Store
+build/
+macos/RecallApp/Generated/
+macos/RecallApp/*.xcodeproj
