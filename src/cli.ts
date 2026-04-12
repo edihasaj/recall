@@ -30,6 +30,7 @@ import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
+import { runLocalSetup } from "./setup/local.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
 import {
@@ -59,6 +60,31 @@ program
   .action(() => {
     initDb();
     console.log("Recall initialized. Database ready.");
+  });
+
+const setupCmd = program
+  .command("setup")
+  .description("Setup Recall for local use");
+
+setupCmd
+  .command("local")
+  .description("Configure local Codex/Claude MCP to use the installed Recall.app")
+  .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
+  .option("--codex-only", "Configure only Codex MCP")
+  .option("--claude-only", "Configure only Claude MCP")
+  .action((opts) => {
+    const result = runLocalSetup({
+      appPath: opts.appPath,
+      codex: opts.claudeOnly ? false : true,
+      claude: opts.codexOnly ? false : true,
+    });
+
+    console.log(`Recall app: ${result.appPath}`);
+    console.log(`Bundled node: ${result.runtimeNodePath}`);
+    console.log(`Bundled MCP:  ${result.runtimeMcpPath}`);
+    console.log("");
+    console.log(`Codex:  ${formatSetupStep(result.codex)}`);
+    console.log(`Claude: ${formatSetupStep(result.claude)}`);
   });
 
 // --- scan ---
@@ -290,7 +316,7 @@ program
     if (ids.length === 0) {
       console.log("No correction pattern detected.");
       console.log(
-        'Try: "don\'t use X, use Y" or "always do Z" or "review said to use W"',
+        'Try: "don\'t use X, use Y", "always do Z", "let\'s use editorconfig defaults", or "review said to use W"',
       );
       return;
     }
@@ -1108,6 +1134,11 @@ function loadEmbeddingConfig(): EmbeddingConfig | null {
     dimensions: parseInt(process.env.RECALL_EMBEDDING_DIMS ?? "256"),
     similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),
   };
+}
+
+function formatSetupStep(step: { enabled: boolean; ok: boolean; message: string }) {
+  if (!step.enabled) return `skipped (${step.message})`;
+  return step.ok ? `ok (${step.message})` : `error (${step.message})`;
 }
 
 function findByPrefix(db: ReturnType<typeof initDb>, prefix: string) {

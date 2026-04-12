@@ -27,6 +27,12 @@ npm run install:app
 
 The app embeds its own Node runtime plus Recall `dist/`, `drizzle/`, and `node_modules/`, then manages the bundled daemon via launchd.
 
+Configure local MCP clients against the installed app:
+
+```bash
+recall setup local
+```
+
 ## First Run
 
 Initialize DB:

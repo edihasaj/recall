@@ -29,10 +29,22 @@ const EXPLICIT_RULE =
 const REVIEW_FEEDBACK =
   /\b(?:review|reviewer|PR feedback|code review)\s+(?:said|says|asked|wants|requires|flagged)\s+(.+)/i;
 
-const PREFERENCE =
-  /\b(?:we|I|the team)\s+(?:prefer|use|always use|always do|want)\s+(.+?)(?:\s+(?:instead of|not|over)\s+(.+))?$/i;
+const SOFT_PREFERENCE =
+  /\b(?:we|I|the team|this repo)\s+(?:prefer|usually use|tend to use|lean on|default to|use)\s+(.+?)(?:\s+(?:instead of|not|over)\s+(.+))?$/i;
+
+const SOFT_DECISION =
+  /\b(?:let's|lets|let us|we should|we'll|we will|we can|use)\s+(?:use|keep|follow|stick with|go with)\s+(.+?)(?:\s+(?:instead of|over)\s+(.+))?(?:[.!]|$)/i;
+
+const CONFIG_BACKED_DECISION =
+  /\b(?:editorconfig|prettier|eslint|tsconfig|package\.json|ci|workflow|this repo)\b.*\b(?:says|uses|wants|defaults to|is configured for)\s+(.+)/i;
+
+const QUESTION_ONLY =
+  /^\s*(?:should|could|would|can|do)\b.*\?\s*$/i;
 
 export function detectCorrections(text: string): CorrectionMatch[] {
+  const normalizedText = text.trim();
+  if (QUESTION_ONLY.test(normalizedText)) return [];
+
   const matches: CorrectionMatch[] = [];
 
   // Negation + replacement: "don't use X, use Y"
@@ -67,15 +79,36 @@ export function detectCorrections(text: string): CorrectionMatch[] {
   }
 
   // Preference: "we prefer X over Y"
-  const prefMatch = text.match(PREFERENCE);
-  if (prefMatch && !negMatch && !ruleMatch) {
+  const decisionMatch = text.match(SOFT_DECISION);
+  if (decisionMatch && !negMatch && !ruleMatch && !reviewMatch) {
+    const decision = decisionMatch[2]
+      ? `Prefer ${decisionMatch[1].trim()} over ${decisionMatch[2].trim()}`
+      : `Use ${stripTrailingPunctuation(decisionMatch[1])}`;
+    matches.push({
+      type: "decision",
+      text: ensureSentence(decision),
+      confidence: 0.38,
+    });
+  }
+
+  const prefMatch = text.match(SOFT_PREFERENCE);
+  if (prefMatch && !negMatch && !ruleMatch && !reviewMatch && !decisionMatch) {
     const pref = prefMatch[2]
       ? `Prefer ${prefMatch[1].trim()} over ${prefMatch[2].trim()}`
-      : `Prefer ${prefMatch[1].trim()}`;
+      : `Prefer ${stripTrailingPunctuation(prefMatch[1])}`;
     matches.push({
-      type: "rule",
-      text: pref,
-      confidence: 0.4,
+      type: "decision",
+      text: ensureSentence(pref),
+      confidence: 0.36,
+    });
+  }
+
+  const configMatch = text.match(CONFIG_BACKED_DECISION);
+  if (configMatch && !negMatch && !ruleMatch && !reviewMatch && !decisionMatch) {
+    matches.push({
+      type: "decision",
+      text: ensureSentence(`Follow configured repo convention: ${stripTrailingPunctuation(configMatch[1])}`),
+      confidence: 0.42,
     });
   }
 
@@ -88,6 +121,15 @@ export interface CorrectionContext {
   sessionId: string;
   repo?: string;
   path?: string;
+}
+
+function stripTrailingPunctuation(text: string): string {
+  return text.trim().replace(/[.?!,:;]+$/, "");
+}
+
+function ensureSentence(text: string): string {
+  const cleaned = stripTrailingPunctuation(text);
+  return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
 }
 
 export function processCorrection(
