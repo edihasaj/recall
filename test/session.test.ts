@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
@@ -51,6 +51,15 @@ describe("session lifecycle", () => {
     expect(started.repo).toBe("edihasaj/session-start");
     expect(started.bootstrap_status).toBe("bootstrapped");
     expect(started.created_ids.length).toBeGreaterThan(0);
+    const artifact = readFileSync(join(repoRoot, ".recall", "context.md"), "utf-8");
+    expect(artifact).toContain("# Recall Context");
+    expect(artifact).toContain("edihasaj/session-start");
+    const excludePath = execFileSync(
+      "git",
+      ["-C", repoRoot, "rev-parse", "--git-path", "info/exclude"],
+      { encoding: "utf-8", stdio: "pipe" },
+    ).trim();
+    expect(readFileSync(excludePath, "utf-8")).toContain(".recall/");
 
     recordSessionLifecycleEvent(db, {
       session_id: "sess-1",

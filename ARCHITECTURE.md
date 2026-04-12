@@ -288,10 +288,11 @@ sequenceDiagram
 
 ### 2. Exported Instruction Files
 
-Recall can generate instruction files for tools that read repo-local docs:
+Recall can generate instruction files or repo-local context artifacts for tools that read repo-local docs:
 
 - `CLAUDE.md`
 - `AGENTS.md`
+- `.recall/context.md`
 - plain Markdown
 
 ```mermaid
@@ -300,6 +301,7 @@ flowchart LR
     Compiler --> Export[Export Adapter]
     Export --> Claude[CLAUDE.md]
     Export --> Codex[AGENTS.md]
+    Export --> Context[.recall/context.md]
 ```
 
 ### 3. Local Daemon / Browser Hook

@@ -79,6 +79,13 @@ curl -s -X POST http://localhost:7890/session/end \
 recall activity --session manual-session-1
 ```
 
+Check repo-local context artifact:
+
+```bash
+recall publish .
+test -f .recall/context.md && sed -n '1,40p' .recall/context.md
+```
+
 ## 3. List all repos in the DB
 
 Preferred:
