@@ -79,7 +79,7 @@ curl -s -X POST http://localhost:7890/session/end \
 recall activity --session manual-session-1
 ```
 
-Check repo-local context artifact:
+Optional repo-local context artifact check:
 
 ```bash
 recall publish .
