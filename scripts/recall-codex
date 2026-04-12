@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECALL_TARGET_CMD="${RECALL_CODEX_BIN:-codex}" \
+RECALL_CLIENT_NAME="codex" \
+exec "${script_dir}/recall-session" "$@"

@@ -20,6 +20,11 @@ import { getAuditTrail, getRecentAudit, rollbackMemory } from "./audit/trail.js"
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "./repo/discovery.js";
+import {
+  endSessionLifecycle,
+  recordSessionLifecycleEvent,
+  startSessionLifecycle,
+} from "./session/lifecycle.js";
 
 const db = initDb();
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -123,6 +128,60 @@ const server = createServer(async (req, res) => {
         repo_path: bootstrap.repo_path ?? body.repo_path ?? null,
         bootstrap_status: bootstrap.status,
       });
+    }
+
+    // Session start
+    if (path === "/session/start" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.session_id) {
+        return send(res, 400, { error: "session_id required" });
+      }
+      const result = startSessionLifecycle(db, {
+        session_id: body.session_id,
+        client: body.client ?? null,
+        repo: body.repo ?? null,
+        repo_path: body.repo_path ?? null,
+        path: body.path ?? null,
+        meta: body.meta ?? {},
+      });
+      return send(res, 200, result);
+    }
+
+    // Session event
+    if (path === "/session/event" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.session_id || !body.name) {
+        return send(res, 400, { error: "session_id and name required" });
+      }
+      const result = recordSessionLifecycleEvent(db, {
+        session_id: body.session_id,
+        client: body.client ?? null,
+        repo: body.repo ?? null,
+        repo_path: body.repo_path ?? null,
+        path: body.path ?? null,
+        meta: body.meta ?? {},
+        name: body.name,
+        payload: body.payload ?? {},
+      });
+      return send(res, 200, result);
+    }
+
+    // Session end
+    if (path === "/session/end" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.session_id) {
+        return send(res, 400, { error: "session_id required" });
+      }
+      const result = endSessionLifecycle(db, {
+        session_id: body.session_id,
+        client: body.client ?? null,
+        repo: body.repo ?? null,
+        repo_path: body.repo_path ?? null,
+        path: body.path ?? null,
+        meta: body.meta ?? {},
+        payload: body.payload ?? {},
+      });
+      return send(res, 200, result);
     }
 
     // Report correction

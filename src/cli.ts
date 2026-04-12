@@ -918,7 +918,7 @@ program
   .option("-r, --repo <repo>", "Filter by repo")
   .option("-s, --session <id>", "Filter by session ID")
   .option("--source <source>", "Filter by source: cli|daemon|mcp|system")
-  .option("--type <type>", "Filter by event type")
+  .option("--type <type>", "Filter by event type: compile|query|scan|correction|review|feedback|signal|session_start|session_event|session_end")
   .option("--since <iso>", "Filter by created_at >= ISO timestamp")
   .option("-n, --limit <n>", "Max events", "20")
   .action((opts) => {
@@ -948,7 +948,7 @@ program
   .description("List recent activity sessions")
   .option("-r, --repo <repo>", "Filter by repo")
   .option("--source <source>", "Filter by source: cli|daemon|mcp|system")
-  .option("--type <type>", "Filter by event type")
+  .option("--type <type>", "Filter by event type: compile|query|scan|correction|review|feedback|signal|session_start|session_event|session_end")
   .option("--since <iso>", "Filter by created_at >= ISO timestamp")
   .option("-n, --limit <n>", "Max sessions", "20")
   .action((opts) => {

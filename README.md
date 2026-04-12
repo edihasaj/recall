@@ -115,6 +115,18 @@ curl -s -X POST http://localhost:7890/correct \
   -d '{"repo":"owner/repo","session_id":"s1","text":"don'\''t use npm, use pnpm"}'
 ```
 
+Session collector endpoints:
+
+```bash
+curl -s -X POST http://localhost:7890/session/start \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"codex-1","client":"codex","repo_path":"'"$PWD"'"}'
+
+curl -s -X POST http://localhost:7890/session/end \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"codex-1","client":"codex","repo_path":"'"$PWD"'","payload":{"exit_code":0}}'
+```
+
 ## Claude Code MCP
 
 Add to Claude Code MCP config:
@@ -138,6 +150,29 @@ Useful MCP tools:
 - `recall_quality`
 - `recall_list`
 - `recall_confirm`
+
+## Session Wrappers
+
+Use the thin wrappers in `scripts/` if you want Recall to auto-learn from session starts before retrieval is useful:
+
+```bash
+scripts/recall-codex
+scripts/recall-claude
+```
+
+They:
+
+- send `/session/start` with the current git root or `pwd`
+- let the real client run normally
+- send `/session/end` with the final exit code
+
+Override targets if needed:
+
+```bash
+RECALL_CODEX_BIN=/path/to/codex scripts/recall-codex
+RECALL_CLAUDE_BIN=/path/to/claude scripts/recall-claude
+RECALL_DAEMON_URL=http://localhost:7890 scripts/recall-codex
+```
 
 ## Fast Test Loop
 
