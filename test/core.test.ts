@@ -240,8 +240,27 @@ describe("correction detection", () => {
     expect(matches[0].type).toBe("review_pattern");
   });
 
+  it("detects soft decisions", () => {
+    const matches = detectCorrections("let's use editorconfig defaults for indentation");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].type).toBe("decision");
+    expect(matches[0].text).toContain("editorconfig");
+  });
+
+  it("detects soft preferences as decisions", () => {
+    const matches = detectCorrections("we prefer tabs over spaces in this repo");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].type).toBe("decision");
+    expect(matches[0].text).toContain("Prefer tabs over spaces");
+  });
+
   it("returns empty for normal text", () => {
     const matches = detectCorrections("can you help me with this file");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("ignores unresolved questions", () => {
+    const matches = detectCorrections("should we use tabs or spaces?");
     expect(matches).toHaveLength(0);
   });
 
@@ -274,6 +293,20 @@ describe("correction detection", () => {
 
     const mem = getMemory(db, ids2[0])!;
     expect(mem.confidence).toBeGreaterThan(0.5);
+  });
+
+  it("stores soft decisions as lower-confidence candidates", () => {
+    const db = freshDb();
+
+    const ids = processCorrection(db, "let's use editorconfig defaults for indentation", {
+      sessionId: "s1",
+      repo: "test/repo",
+    });
+
+    const mem = getMemory(db, ids[0])!;
+    expect(mem.type).toBe("decision");
+    expect(mem.status).toBe("candidate");
+    expect(mem.confidence).toBeLessThan(0.5);
   });
 });
 
