@@ -1,4 +1,5 @@
 import type { RecallDb } from "../db/client.js";
+import { findSemanticDuplicates, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import {
   appendEvidence,
   countDistinctCorrectionSessions,
@@ -132,11 +133,11 @@ function ensureSentence(text: string): string {
   return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
 }
 
-export function processCorrection(
+export async function processCorrection(
   db: RecallDb,
   text: string,
   ctx: CorrectionContext,
-): string[] {
+): Promise<string[]> {
   const corrections = detectCorrections(text);
   if (corrections.length === 0) return [];
   const profile = getRepoQualityProfile(db, ctx.repo);
@@ -158,7 +159,7 @@ export function processCorrection(
           context: text,
         };
 
-    const duplicate = findDuplicateMemory(
+    const duplicate = await findDuplicateMemory(
       db,
       ctx.repo,
       correction.type,
@@ -206,11 +207,11 @@ export function processCorrection(
 
 // --- Report review feedback ---
 
-export function processReviewFeedback(
+export async function processReviewFeedback(
   db: RecallDb,
   feedback: string,
   ctx: CorrectionContext & { reviewer?: string },
-): string[] {
+): Promise<string[]> {
   const profile = getRepoQualityProfile(db, ctx.repo);
   const evidence: EvidenceEntry = {
     type: "review_feedback",
@@ -226,7 +227,7 @@ export function processReviewFeedback(
   if (corrections.length > 0) {
     const ids: string[] = [];
     for (const correction of corrections) {
-      const duplicate = findDuplicateMemory(
+      const duplicate = await findDuplicateMemory(
         db,
         ctx.repo,
         correction.type,
@@ -288,13 +289,13 @@ function textSimilarity(a: string, b: string): number {
   return intersection.length / union.size; // Jaccard similarity
 }
 
-function findDuplicateMemory(
+async function findDuplicateMemory(
   db: RecallDb,
   repo: string | undefined,
   type: MemoryType,
   text: string,
   threshold: number,
-): MemoryItem | undefined {
+): Promise<MemoryItem | undefined> {
   if (!repo) return undefined;
 
   const existing = queryMemories(db, { repo })
@@ -311,5 +312,18 @@ function findDuplicateMemory(
     }
   }
 
-  return best;
+  if (best) return best;
+
+  const config = loadEmbeddingConfigFromEnv();
+  if (!config?.enabled) return undefined;
+
+  const semantic = await findSemanticDuplicates(
+    db,
+    text,
+    config,
+    threshold,
+    { repo, type, limit: 1 },
+  );
+
+  return semantic[0] ? getMemory(db, semantic[0].id) : undefined;
 }

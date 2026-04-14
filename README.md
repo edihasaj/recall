@@ -58,6 +58,7 @@ Inspect quality / health / injection pack:
 recall quality -r owner/repo
 recall health -r owner/repo
 recall compile -r owner/repo
+recall compile -r owner/repo --query "pytest -q" --include-candidates
 ```
 
 Bootstrap local embeddings and the derived sqlite-vec index:

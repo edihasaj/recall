@@ -13,7 +13,7 @@ import {
   recordFeedback,
 } from "./models/memory.js";
 import { scanAndStore } from "./scanner/repo.js";
-import { compileContext } from "./compiler/context.js";
+import { compileContext, compileContextHybrid } from "./compiler/context.js";
 import { processCorrection, processReviewFeedback } from "./capture/correction.js";
 import { exportClaude, exportCodex, exportMarkdown } from "./adapters/markdown.js";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
@@ -191,12 +191,16 @@ program
     "Filter by status (transient|candidate|active|rejected)",
   )
   .option("-t, --type <type>", "Filter by type")
+  .option("-n, --limit <n>", "Limit results")
+  .option("--offset <n>", "Skip first N results", "0")
   .action((opts) => {
     const db = initDb();
     const items = queryMemories(db, {
       repo: opts.repo,
       status: opts.status,
       type: opts.type,
+      limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+      offset: opts.offset ? parseInt(opts.offset, 10) : undefined,
     });
 
     if (items.length === 0) {
@@ -274,15 +278,27 @@ program
   .description("Compile active memories into injection pack")
   .requiredOption("-r, --repo <repo>", "Repository name")
   .option("-p, --path <path>", "File path for scoping")
+  .option("-q, --query <text>", "Optional query text for hybrid reranking")
+  .option("--include-candidates", "Allow strong candidate memories into hybrid ranking")
   .option("-s, --session <id>", "Session ID")
   .option("--threshold <n>", "Confidence threshold (default: dynamic from quality profile)")
-  .action((opts) => {
+  .action(async (opts) => {
     const db = initDb();
-    const result = compileContext(db, {
-      repo: opts.repo,
-      path: opts.path,
-      config: opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {},
-    });
+    const result = opts.query || opts.includeCandidates
+      ? await compileContextHybrid(db, {
+          repo: opts.repo,
+          path: opts.path,
+          query_text: opts.query,
+          config: {
+            ...(opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {}),
+            include_candidates: opts.includeCandidates ?? false,
+          },
+        })
+      : compileContext(db, {
+          repo: opts.repo,
+          path: opts.path,
+          config: opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {},
+        });
     createActivityEvent(db, {
       session_id: opts.session ?? null,
       repo: opts.repo,
@@ -292,6 +308,8 @@ program
       memory_ids: result.memories_included,
       request: {
         threshold: opts.threshold ? parseFloat(opts.threshold) : null,
+        query_text: opts.query ?? null,
+        include_candidates: opts.includeCandidates ?? false,
       },
       result: {
         included: result.memories_included,
@@ -321,9 +339,9 @@ program
   .option("-r, --repo <repo>", "Repository name")
   .option("-p, --path <path>", "File path context")
   .option("-s, --session <id>", "Session ID", "cli")
-  .action((text: string, opts) => {
+  .action(async (text: string, opts) => {
     const db = initDb();
-    const ids = processCorrection(db, text, {
+    const ids = await processCorrection(db, text, {
       sessionId: opts.session,
       repo: opts.repo,
       path: opts.path,
@@ -365,9 +383,9 @@ program
   .option("-p, --path <path>", "File path context")
   .option("-s, --session <id>", "Session ID", "cli-review")
   .option("--reviewer <name>", "Reviewer name")
-  .action((feedback: string, opts) => {
+  .action(async (feedback: string, opts) => {
     const db = initDb();
-    const ids = processReviewFeedback(db, feedback, {
+    const ids = await processReviewFeedback(db, feedback, {
       sessionId: opts.session,
       repo: opts.repo,
       path: opts.path,
@@ -953,6 +971,7 @@ contradictCmd
 program
   .command("prune")
   .description("Auto-prune stale and unhealthy memories")
+  .option("-r, --repo <repo>", "Limit pruning to one repo")
   .option("--stale-days <n>", "Days before archiving stale memories", "90")
   .option("--rejected-days <n>", "Days before deleting rejected memories", "30")
   .option("--transient-days <n>", "Days before deleting transient memories", "7")
@@ -961,6 +980,7 @@ program
   .action((opts) => {
     const db = initDb();
     const result = pruneMemories(db, {
+      repo: opts.repo,
       stale_days: parseInt(opts.staleDays),
       rejected_retention_days: parseInt(opts.rejectedDays),
       transient_retention_days: parseInt(opts.transientDays),

@@ -95,14 +95,18 @@ export function queryMemories(
     conditions.push(gte(memories.confidence, query.min_confidence));
   if (query.path) conditions.push(like(memories.path_scope, `%${query.path}%`));
 
-  const rows =
-    conditions.length > 0
-      ? db
-          .select()
-          .from(memories)
-          .where(and(...conditions))
-          .all()
-      : db.select().from(memories).all();
+  let statement = db.select().from(memories).$dynamic();
+  if (conditions.length > 0) {
+    statement = statement.where(and(...conditions));
+  }
+  if (query.offset != null) {
+    statement = statement.offset(query.offset);
+  }
+  if (query.limit != null) {
+    statement = statement.limit(query.limit);
+  }
+
+  const rows = statement.all();
 
   return rows.map(rowToMemory);
 }
@@ -110,16 +114,13 @@ export function queryMemories(
 export function listMemories(
   db: RecallDb,
   repo?: string,
+  options: Pick<MemoryQuery, "limit" | "offset"> = {},
 ): MemoryItem[] {
-  if (repo) {
-    return db
-      .select()
-      .from(memories)
-      .where(eq(memories.repo, repo))
-      .all()
-      .map(rowToMemory);
-  }
-  return db.select().from(memories).all().map(rowToMemory);
+  return queryMemories(db, {
+    repo,
+    limit: options.limit,
+    offset: options.offset,
+  });
 }
 
 export function listRepos(db: RecallDb): string[] {

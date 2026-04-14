@@ -338,6 +338,34 @@ describe("pruning", () => {
     expect(getMemory(db, memId)).toBeUndefined();
   });
 
+  it("can prune one repo without touching another", () => {
+    const db = freshDb();
+    const repoA = makeMemory(db, { repo: "test/repo", confidence: 0.7 });
+    const repoB = makeMemory(db, { repo: "other/repo", confidence: 0.7 });
+    confirmMemory(db, repoA);
+    confirmMemory(db, repoB);
+
+    const oldDate = new Date(Date.now() - 100 * 86_400_000).toISOString();
+    db.update(memories)
+      .set({ updated_at: oldDate, last_validated_at: null, last_injected_at: null })
+      .where(eq(memories.id, repoA))
+      .run();
+    db.update(memories)
+      .set({ updated_at: oldDate, last_validated_at: null, last_injected_at: null })
+      .where(eq(memories.id, repoB))
+      .run();
+
+    const result = pruneMemories(db, {
+      repo: "test/repo",
+      stale_days: 90,
+    });
+
+    expect(result.stale_archived).toContain(repoA);
+    expect(result.stale_archived).not.toContain(repoB);
+    expect(getMemory(db, repoA)?.status).toBe("rejected");
+    expect(getMemory(db, repoB)?.status).toBe("active");
+  });
+
   it("formats prune report", () => {
     const result = {
       stale_archived: ["abc"],

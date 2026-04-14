@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,6 +6,7 @@ import { initStandaloneDb } from "../src/db/client.js";
 import {
   createMemory,
   getMemory,
+  listMemories,
   listRepos,
   queryMemories,
   confirmMemory,
@@ -15,14 +16,24 @@ import {
   recordFeedback,
   getMemoryFeedback,
 } from "../src/models/memory.js";
+import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
 import { detectCorrections, processCorrection } from "../src/capture/correction.js";
-import { compileContext } from "../src/compiler/context.js";
+import { compileContext, compileContextHybrid } from "../src/compiler/context.js";
 
 let dbCounter = 0;
 function freshDb() {
   const dir = mkdtempSync(join(tmpdir(), "recall-test-"));
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));
 }
+
+afterEach(async () => {
+  await flushEmbeddingJobs();
+  vi.unstubAllGlobals();
+  delete process.env.RECALL_EMBEDDINGS_ENABLED;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.RECALL_EMBEDDING_DIMS;
+  delete process.env.RECALL_EMBEDDING_VERSION;
+});
 
 describe("memory CRUD", () => {
   it("creates and retrieves a memory", () => {
@@ -100,6 +111,38 @@ describe("memory CRUD", () => {
     const active = queryMemories(db, { status: "active" });
     expect(active).toHaveLength(1);
     expect(active[0].text).toBe("b");
+  });
+
+  it("supports limit/offset pagination", () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "a",
+      scope: "repo",
+      repo: "r1",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "b",
+      scope: "repo",
+      repo: "r1",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "c",
+      scope: "repo",
+      repo: "r1",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+
+    expect(queryMemories(db, { repo: "r1", limit: 2 })).toHaveLength(2);
+    expect(queryMemories(db, { repo: "r1", limit: 2, offset: 1 })).toHaveLength(2);
+    expect(listMemories(db, "r1", { limit: 1, offset: 1 })).toHaveLength(1);
   });
 
   it("lists distinct repos", () => {
@@ -264,9 +307,9 @@ describe("correction detection", () => {
     expect(matches).toHaveLength(0);
   });
 
-  it("processes correction into DB", () => {
+  it("processes correction into DB", async () => {
     const db = freshDb();
-    const ids = processCorrection(db, "never use any types in this repo", {
+    const ids = await processCorrection(db, "never use any types in this repo", {
       sessionId: "test-session",
       repo: "test/repo",
     });
@@ -277,16 +320,16 @@ describe("correction detection", () => {
     expect(mem.repo).toBe("test/repo");
   });
 
-  it("promotes on repeated correction", () => {
+  it("promotes on repeated correction", async () => {
     const db = freshDb();
 
-    processCorrection(db, "always use strict mode", {
+    await processCorrection(db, "always use strict mode", {
       sessionId: "s1",
       repo: "test/repo",
     });
 
     // Same correction again → should promote existing
-    const ids2 = processCorrection(db, "always use strict mode", {
+    const ids2 = await processCorrection(db, "always use strict mode", {
       sessionId: "s2",
       repo: "test/repo",
     });
@@ -295,10 +338,10 @@ describe("correction detection", () => {
     expect(mem.confidence).toBeGreaterThan(0.5);
   });
 
-  it("stores soft decisions as lower-confidence candidates", () => {
+  it("stores soft decisions as lower-confidence candidates", async () => {
     const db = freshDb();
 
-    const ids = processCorrection(db, "let's use editorconfig defaults for indentation", {
+    const ids = await processCorrection(db, "let's use editorconfig defaults for indentation", {
       sessionId: "s1",
       repo: "test/repo",
     });
@@ -307,6 +350,43 @@ describe("correction detection", () => {
     expect(mem.type).toBe("decision");
     expect(mem.status).toBe("candidate");
     expect(mem.confidence).toBeLessThan(0.5);
+  });
+
+  it("uses semantic dedup when embeddings are enabled", async () => {
+    const db = freshDb();
+    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
+      const inputs = Array.isArray(body.input) ? body.input : [body.input];
+      const data = inputs.map((text, index) => ({
+        index,
+        embedding: text.toLowerCase().includes("pnpm")
+          ? [1, 0, 0]
+          : [0, 0, 1],
+      }));
+
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }));
+
+    const ids1 = await processCorrection(db, "don't use npm, use pnpm", {
+      sessionId: "s1",
+      repo: "test/repo",
+    });
+    await flushEmbeddingJobs();
+
+    const ids2 = await processCorrection(db, "don't use npm. use pnpm instead", {
+      sessionId: "s2",
+      repo: "test/repo",
+    });
+
+    expect(ids2).toEqual(ids1);
   });
 });
 
@@ -398,6 +478,105 @@ describe("compiler", () => {
     const result = compileContext(db, { repo: "r" });
     // Default max_commands = 3
     expect(result.memories_included).toHaveLength(3);
+  });
+
+  it("hybrid compile prefers exact lexical command matches for query text", async () => {
+    const db = freshDb();
+    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
+      const inputs = Array.isArray(body.input) ? body.input : [body.input];
+      const data = inputs.map((text, index) => ({
+        index,
+        embedding: text.toLowerCase().includes("pytest")
+          ? [1, 0, 0]
+          : [0, 0, 1],
+      }));
+
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }));
+
+    createMemory(db, {
+      type: "command",
+      text: "Run pytest -q",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    createMemory(db, {
+      type: "decision",
+      text: "Use pytest for local test runs.",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    await flushEmbeddingJobs();
+
+    const result = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "pytest -q",
+    });
+
+    expect(result.memories_included.length).toBeGreaterThan(0);
+    expect(result.text).toContain("Run pytest -q");
+  });
+
+  it("keeps candidate memories opt-in for hybrid compile", async () => {
+    const db = freshDb();
+    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
+      const inputs = Array.isArray(body.input) ? body.input : [body.input];
+      const data = inputs.map((text, index) => ({
+        index,
+        embedding: text.toLowerCase().includes("pnpm")
+          ? [1, 0, 0]
+          : [0, 0, 1],
+      }));
+
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }));
+
+    createMemory(db, {
+      type: "command",
+      text: "pnpm test",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+
+    await flushEmbeddingJobs();
+
+    const withoutCandidates = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "pnpm",
+    });
+    expect(withoutCandidates.memories_included).toHaveLength(0);
+
+    const withCandidates = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "pnpm",
+      config: { include_candidates: true },
+    });
+    expect(withCandidates.memories_included).toHaveLength(1);
   });
 });
 
