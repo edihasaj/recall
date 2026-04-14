@@ -10,6 +10,7 @@
 import { eq, and, lt, sql } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories } from "../db/schema.js";
+import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { queryMemories, getMemory, rejectMemory } from "../models/memory.js";
 import { computeHealthScore } from "../health/scoring.js";
 import { recordAudit } from "../audit/trail.js";
@@ -63,6 +64,7 @@ export function pruneMemories(
           .set({ status: "rejected", updated_at: new Date().toISOString() })
           .where(eq(memories.id, mem.id))
           .run();
+        queueMemoryEmbeddingSync(db, mem.id);
         recordAudit(db, mem.id, "archived", "auto-pruner", `Stale: no activity since ${lastActivity}`);
       }
       result.stale_archived.push(mem.id);
@@ -112,6 +114,7 @@ export function pruneMemories(
           .set({ status: "candidate", updated_at: new Date().toISOString() })
           .where(eq(memories.id, mem.id))
           .run();
+        queueMemoryEmbeddingSync(db, mem.id);
         recordAudit(
           db,
           mem.id,

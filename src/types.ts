@@ -235,6 +235,7 @@ export const EmbeddingConfig = z.object({
   model: z.string().default("text-embedding-3-small"),
   api_key: z.string().optional(),
   dimensions: z.number().default(256),
+  version: z.string().default("v1"),
   similarity_threshold: z.number().default(0.8),
 });
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfig>;

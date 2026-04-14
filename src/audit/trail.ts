@@ -9,6 +9,7 @@ import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { auditTrail, memories } from "../db/schema.js";
+import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { getMemory } from "../models/memory.js";
 import type { AuditAction, AuditEntry, MemoryItem } from "../types.js";
 
@@ -166,6 +167,7 @@ export function rollbackMemory(
     })
     .where(eq(memories.id, memoryId))
     .run();
+  queueMemoryEmbeddingSync(db, memoryId);
 
   recordAuditWithSnapshot(
     db,

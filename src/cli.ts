@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { resolve } from "node:path";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { initDb, getDbPath } from "./db/client.js";
+import { initDb, getDbPath, resetDb } from "./db/client.js";
 import {
   listMemories,
   listRepos,
@@ -20,7 +20,12 @@ import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { inferRepoSlugFromPath } from "./repo/discovery.js";
 import { sync, createTeam, joinTeam } from "./sync/client.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession } from "./eval/harness.js";
-import { embedAllMemories, semanticSearch } from "./embeddings/embeddings.js";
+import {
+  bootstrapEmbeddings,
+  loadEmbeddingConfigFromEnv,
+  semanticSearch,
+  verifyEmbeddings,
+} from "./embeddings/embeddings.js";
 import { recordSignal, getSignalStats } from "./feedback/implicit.js";
 import { inferScope, analyzeScopePatterns } from "./capture/scope.js";
 import { createPolicy, listPolicies, togglePolicy, deletePolicy, evaluatePolicy, requestApproval, resolveApproval, listPendingApprovals } from "./policy/engine.js";
@@ -60,6 +65,26 @@ program
   .action(() => {
     initDb();
     console.log("Recall initialized. Database ready.");
+  });
+
+const dbCmd = program
+  .command("db")
+  .description("Manage the local Recall database");
+
+dbCmd
+  .command("reset")
+  .description("Reset the local Recall database and reinitialize the clean schema")
+  .option("--yes", "Confirm destructive reset")
+  .action((opts) => {
+    if (!opts.yes) {
+      console.error("Refusing to reset without --yes.");
+      process.exit(1);
+    }
+
+    const dbPath = getDbPath();
+    resetDb(dbPath);
+    initDb(dbPath);
+    console.log(`Reset ${dbPath}`);
   });
 
 const setupCmd = program
@@ -550,20 +575,48 @@ evalCmd
     console.log(`Eval session ended: ${sessionId}`);
   });
 
-// --- Phase 2: embed ---
+// --- Phase 1: embeddings ---
 
-program
-  .command("embed")
-  .description("Generate embeddings for all un-embedded memories")
-  .action(async () => {
+const embeddingsCmd = program
+  .command("embeddings")
+  .description("Manage canonical embedding state");
+
+embeddingsCmd
+  .command("bootstrap")
+  .description("Generate or refresh embeddings for eligible memories")
+  .option("-r, --repo <repo>", "Limit bootstrap to one repo")
+  .action(async (opts) => {
     const db = initDb();
-    const config = loadEmbeddingConfig();
+    const config = loadEmbeddingConfigFromEnv();
     if (!config?.enabled) {
       console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
       process.exit(1);
     }
-    const count = await embedAllMemories(db, config);
-    console.log(`Embedded ${count} memories.`);
+
+    const count = await bootstrapEmbeddings(db, config, {
+      repo: opts.repo,
+    });
+    console.log(`Bootstrapped ${count} embeddings.`);
+  });
+
+embeddingsCmd
+  .command("verify")
+  .description("Verify embedding coverage and stale content hashes")
+  .option("-r, --repo <repo>", "Limit verification to one repo")
+  .action((opts) => {
+    const db = initDb();
+    const config = loadEmbeddingConfigFromEnv();
+    if (!config?.enabled) {
+      console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
+      process.exit(1);
+    }
+
+    const result = verifyEmbeddings(db, config, {
+      repo: opts.repo,
+    });
+    console.log(`Eligible: ${result.eligible}`);
+    console.log(`Stored:   ${result.stored}`);
+    console.log(`Stale:    ${result.stale}`);
   });
 
 program
@@ -574,7 +627,7 @@ program
   .option("-n, --limit <n>", "Max results", "10")
   .action(async (query: string, opts) => {
     const db = initDb();
-    const config = loadEmbeddingConfig();
+    const config = loadEmbeddingConfigFromEnv();
     if (!config?.enabled) {
       console.error("Embeddings not enabled.");
       process.exit(1);
@@ -1121,18 +1174,6 @@ function loadSyncConfig(): SyncConfig | null {
     team_id: process.env.RECALL_TEAM_ID,
     auto_sync: false,
     sync_interval_seconds: 300,
-  };
-}
-
-function loadEmbeddingConfig(): EmbeddingConfig | null {
-  if (process.env.RECALL_EMBEDDINGS_ENABLED !== "true") return null;
-  return {
-    enabled: true,
-    provider: "openai",
-    model: process.env.RECALL_EMBEDDING_MODEL ?? "text-embedding-3-small",
-    api_key: process.env.OPENAI_API_KEY,
-    dimensions: parseInt(process.env.RECALL_EMBEDDING_DIMS ?? "256"),
-    similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),
   };
 }
 
