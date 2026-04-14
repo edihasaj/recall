@@ -11,6 +11,7 @@ export interface LaunchdOptions {
   dataDir?: string;
   nodePath?: string;
   daemonScript?: string;
+  maintenanceIntervalSeconds?: number;
 }
 
 export interface LaunchdStatus {
@@ -107,6 +108,7 @@ export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
   lines.push(`Data dir:   ${installed?.dataDir ?? cfg.dataDir}`);
   lines.push(`Node:       ${installed?.nodePath ?? cfg.nodePath}`);
   lines.push(`Script:     ${installed?.daemonScript ?? cfg.daemonScript}`);
+  lines.push(`Maintain:   ${installed?.maintenanceIntervalSeconds ?? cfg.maintenanceIntervalSeconds}s`);
   lines.push(`Stdout:     ${installed?.stdoutPath ?? cfg.stdoutPath}`);
   lines.push(`Stderr:     ${installed?.stderrPath ?? cfg.stderrPath}`);
 
@@ -117,6 +119,9 @@ function resolveConfig(opts: LaunchdOptions) {
   const label = opts.label ?? DEFAULT_LABEL;
   const home = homedir();
   const port = opts.port ?? parseInt(process.env.RECALL_PORT ?? "7890", 10);
+  const maintenanceIntervalSeconds =
+    opts.maintenanceIntervalSeconds ??
+    parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "300", 10);
   const dataDir = resolve(
     opts.dataDir ??
       process.env.RECALL_DATA_DIR ??
@@ -132,6 +137,7 @@ function resolveConfig(opts: LaunchdOptions) {
   return {
     label,
     port,
+    maintenanceIntervalSeconds,
     dataDir,
     nodePath,
     daemonScript,
@@ -144,6 +150,7 @@ function resolveConfig(opts: LaunchdOptions) {
 function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
   const env = {
     RECALL_PORT: String(cfg.port),
+    RECALL_MAINTENANCE_INTERVAL_SECONDS: String(cfg.maintenanceIntervalSeconds),
     RECALL_DATA_DIR: cfg.dataDir,
     PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
   };
@@ -165,6 +172,8 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
     <string>${escapeXml(env.PATH)}</string>
     <key>RECALL_PORT</key>
     <string>${escapeXml(env.RECALL_PORT)}</string>
+    <key>RECALL_MAINTENANCE_INTERVAL_SECONDS</key>
+    <string>${escapeXml(env.RECALL_MAINTENANCE_INTERVAL_SECONDS)}</string>
     <key>RECALL_DATA_DIR</key>
     <string>${escapeXml(env.RECALL_DATA_DIR)}</string>
   </dict>
@@ -224,6 +233,7 @@ function readInstalledConfig(plistPath: string): {
   nodePath?: string;
   daemonScript?: string;
   port?: string;
+  maintenanceIntervalSeconds?: string;
   dataDir?: string;
   stdoutPath?: string;
   stderrPath?: string;
@@ -240,6 +250,7 @@ function readInstalledConfig(plistPath: string): {
       nodePath: parsed?.ProgramArguments?.[0],
       daemonScript: parsed?.ProgramArguments?.[1],
       port: parsed?.EnvironmentVariables?.RECALL_PORT,
+      maintenanceIntervalSeconds: parsed?.EnvironmentVariables?.RECALL_MAINTENANCE_INTERVAL_SECONDS,
       dataDir: parsed?.EnvironmentVariables?.RECALL_DATA_DIR,
       stdoutPath: parsed?.StandardOutPath,
       stderrPath: parsed?.StandardErrorPath,

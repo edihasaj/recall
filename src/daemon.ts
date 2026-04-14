@@ -26,9 +26,12 @@ import {
   startSessionLifecycle,
 } from "./session/lifecycle.js";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
+import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 
 const db = initDb();
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
+const maintenanceConfig = loadMaintenanceConfigFromEnv();
+let maintenanceRunning = false;
 
 function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -47,6 +50,43 @@ function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
 
 function resolveRepo(body: Record<string, any>): string | undefined {
   return body.repo ?? inferRepoSlugFromPath(body.repo_path) ?? undefined;
+}
+
+function scheduleMaintenanceLoop() {
+  if (!maintenanceConfig.enabled) return;
+
+  const run = async () => {
+    if (maintenanceRunning) return;
+    maintenanceRunning = true;
+    try {
+      const result = await runMaintenanceCycle(db, maintenanceConfig);
+      const changed =
+        result.prune_total +
+        result.activity_pruned +
+        result.feedback_pruned +
+        result.signals_pruned +
+        result.embeddings_refreshed +
+        result.vector_rows_rebuilt +
+        result.lexical_rows_rebuilt;
+
+      if (changed > 0 || result.vector_drift !== 0 || result.lexical_drift !== 0 || result.embedding_stale > 0) {
+        console.log(
+          `[recall] maintenance prune=${result.prune_total} activity=${result.activity_pruned} feedback=${result.feedback_pruned} signals=${result.signals_pruned} refreshed=${result.embeddings_refreshed} rebuilt(vec=${result.vector_rows_rebuilt},fts=${result.lexical_rows_rebuilt}) drift(vec=${result.vector_drift},fts=${result.lexical_drift}) stale=${result.embedding_stale}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[recall] maintenance failed: ${message}`);
+    } finally {
+      maintenanceRunning = false;
+    }
+  };
+
+  void run();
+  const timer = setInterval(() => {
+    void run();
+  }, Math.max(30, maintenanceConfig.interval_seconds) * 1000);
+  timer.unref?.();
 }
 
 const server = createServer(async (req, res) => {
@@ -556,6 +596,8 @@ const server = createServer(async (req, res) => {
     send(res, 500, { error: err.message });
   }
 });
+
+scheduleMaintenanceLoop();
 
 function send(
   res: import("node:http").ServerResponse,
