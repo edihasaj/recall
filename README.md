@@ -60,6 +60,14 @@ recall health -r owner/repo
 recall compile -r owner/repo
 ```
 
+Bootstrap local embeddings and the derived sqlite-vec index:
+
+```bash
+RECALL_EMBEDDINGS_ENABLED=true OPENAI_API_KEY=... recall embeddings bootstrap
+recall embeddings verify
+recall embeddings rebuild-index
+```
+
 ## Teach It
 
 Add a correction:

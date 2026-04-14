@@ -23,6 +23,7 @@ import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession }
 import {
   bootstrapEmbeddings,
   loadEmbeddingConfigFromEnv,
+  rebuildEmbeddingIndex,
   semanticSearch,
   verifyEmbeddings,
 } from "./embeddings/embeddings.js";
@@ -617,6 +618,26 @@ embeddingsCmd
     console.log(`Eligible: ${result.eligible}`);
     console.log(`Stored:   ${result.stored}`);
     console.log(`Stale:    ${result.stale}`);
+    console.log(`Indexed:  ${result.indexed}`);
+    console.log(`Drift:    ${result.index_drift}`);
+  });
+
+embeddingsCmd
+  .command("rebuild-index")
+  .description("Rebuild the sqlite-vec memory index from canonical embeddings")
+  .option("-r, --repo <repo>", "Limit rebuild to one repo")
+  .action((opts) => {
+    const db = initDb();
+    const config = loadEmbeddingConfigFromEnv();
+    if (!config?.enabled) {
+      console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
+      process.exit(1);
+    }
+
+    const count = rebuildEmbeddingIndex(db, config, {
+      repo: opts.repo,
+    });
+    console.log(`Rebuilt sqlite-vec index with ${count} rows.`);
   });
 
 program
