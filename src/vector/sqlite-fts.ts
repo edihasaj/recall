@@ -1,0 +1,227 @@
+import type { RecallDb } from "../db/client.js";
+import { eq } from "drizzle-orm";
+import { memories } from "../db/schema.js";
+
+const FTS_MEMORY_INDEX = "fts_memory_index";
+
+type MemoryRow = typeof memories.$inferSelect;
+
+function getSqlite(db: RecallDb) {
+  return db.$client;
+}
+
+function shouldIndexLexically(
+  memory: Pick<MemoryRow, "status" | "confidence">,
+) {
+  return memory.status !== "rejected" && memory.status !== "transient";
+}
+
+function buildFtsQuery(query: string) {
+  const tokens = query
+    .match(/[A-Za-z0-9_.:/-]+/g)
+    ?.map((token) => token.replace(/"/g, '""'))
+    .filter(Boolean) ?? [];
+
+  if (tokens.length === 0) return null;
+  return tokens.map((token) => `"${token}"`).join(" ");
+}
+
+export function ensureMemoryFtsIndex(db: RecallDb) {
+  const sqlite = getSqlite(db);
+  sqlite.exec(`
+    create virtual table if not exists ${FTS_MEMORY_INDEX} using fts5(
+      memory_id UNINDEXED,
+      text,
+      repo UNINDEXED,
+      status UNINDEXED,
+      type UNINDEXED,
+      scope UNINDEXED,
+      path_scope UNINDEXED
+    );
+  `);
+}
+
+export function dropMemoryFtsIndex(db: RecallDb) {
+  getSqlite(db).exec(`drop table if exists ${FTS_MEMORY_INDEX};`);
+}
+
+export function removeMemoryFtsRow(
+  db: RecallDb,
+  memoryId: string,
+) {
+  const sqlite = getSqlite(db);
+  const exists = sqlite
+    .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
+    .get(FTS_MEMORY_INDEX);
+  if (!exists) return;
+  sqlite.prepare(`delete from ${FTS_MEMORY_INDEX} where memory_id = ?`).run(memoryId);
+}
+
+export function upsertMemoryFtsRow(
+  db: RecallDb,
+  memory: Pick<MemoryRow, "id" | "text" | "repo" | "status" | "type" | "scope" | "path_scope" | "confidence">,
+) {
+  ensureMemoryFtsIndex(db);
+
+  if (!shouldIndexLexically(memory)) {
+    removeMemoryFtsRow(db, memory.id);
+    return;
+  }
+
+  const sqlite = getSqlite(db);
+  sqlite.prepare(`delete from ${FTS_MEMORY_INDEX} where memory_id = ?`).run(memory.id);
+  sqlite.prepare(`
+    insert into ${FTS_MEMORY_INDEX} (
+      memory_id,
+      text,
+      repo,
+      status,
+      type,
+      scope,
+      path_scope
+    ) values (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    memory.id,
+    memory.text,
+    memory.repo ?? "",
+    memory.status,
+    memory.type,
+    memory.scope,
+    memory.path_scope ?? "",
+  );
+}
+
+export function syncMemoryFtsIndex(
+  db: RecallDb,
+  memoryId: string,
+) {
+  const memory = db
+    .select()
+    .from(memories)
+    .where(eq(memories.id, memoryId))
+    .get();
+
+  if (!memory) {
+    removeMemoryFtsRow(db, memoryId);
+    return "removed";
+  }
+
+  upsertMemoryFtsRow(db, memory);
+  return shouldIndexLexically(memory) ? "stored" : "removed";
+}
+
+export function rebuildMemoryFtsIndex(
+  db: RecallDb,
+  options: { repo?: string } = {},
+): number {
+  if (options.repo) {
+    ensureMemoryFtsIndex(db);
+    getSqlite(db)
+      .prepare(`delete from ${FTS_MEMORY_INDEX} where repo = ?`)
+      .run(options.repo);
+  } else {
+    dropMemoryFtsIndex(db);
+    ensureMemoryFtsIndex(db);
+  }
+
+  const rows = db.select().from(memories).all()
+    .filter((row) => !options.repo || row.repo === options.repo)
+    .filter((row) => shouldIndexLexically(row));
+
+  const sqlite = getSqlite(db);
+  const stmt = sqlite.prepare(`
+    insert into ${FTS_MEMORY_INDEX} (
+      memory_id,
+      text,
+      repo,
+      status,
+      type,
+      scope,
+      path_scope
+    ) values (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertMany = sqlite.transaction((batch: typeof rows) => {
+    for (const row of batch) {
+      stmt.run(
+        row.id,
+        row.text,
+        row.repo ?? "",
+        row.status,
+        row.type,
+        row.scope,
+        row.path_scope ?? "",
+      );
+    }
+  });
+
+  insertMany(rows);
+  return rows.length;
+}
+
+export function verifyMemoryFtsIndex(
+  db: RecallDb,
+  options: { repo?: string } = {},
+) {
+  const sqlite = getSqlite(db);
+  const exists = sqlite
+    .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
+    .get(FTS_MEMORY_INDEX);
+
+  const expected = db.select().from(memories).all()
+    .filter((row) => !options.repo || row.repo === options.repo)
+    .filter((row) => shouldIndexLexically(row)).length;
+
+  let indexed = 0;
+  if (exists) {
+    if (options.repo) {
+      const result = sqlite
+        .prepare(`select count(*) as count from ${FTS_MEMORY_INDEX} where repo = ?`)
+        .get(options.repo) as { count: number };
+      indexed = result.count;
+    } else {
+      const result = sqlite
+        .prepare(`select count(*) as count from ${FTS_MEMORY_INDEX}`)
+        .get() as { count: number };
+      indexed = result.count;
+    }
+  }
+
+  return {
+    expected,
+    indexed,
+    drift: expected - indexed,
+  };
+}
+
+export function searchMemoryFtsIndex(
+  db: RecallDb,
+  query: string,
+  options: { repo?: string; limit?: number } = {},
+): Array<{ memory_id: string; lexical_rank: number }> {
+  ensureMemoryFtsIndex(db);
+
+  const sqlite = getSqlite(db);
+  const limit = options.limit ?? 10;
+  const ftsQuery = buildFtsQuery(query);
+  if (!ftsQuery) return [];
+
+  if (options.repo) {
+    return sqlite.prepare(`
+      select memory_id, bm25(${FTS_MEMORY_INDEX}) as lexical_rank
+      from ${FTS_MEMORY_INDEX}
+      where ${FTS_MEMORY_INDEX} match ?
+        and repo = ?
+      order by lexical_rank
+      limit ?
+    `).all(ftsQuery, options.repo, limit) as Array<{ memory_id: string; lexical_rank: number }>;
+  }
+
+  return sqlite.prepare(`
+    select memory_id, bm25(${FTS_MEMORY_INDEX}) as lexical_rank
+    from ${FTS_MEMORY_INDEX}
+    where ${FTS_MEMORY_INDEX} match ?
+    order by lexical_rank
+    limit ?
+  `).all(ftsQuery, limit) as Array<{ memory_id: string; lexical_rank: number }>;
+}
