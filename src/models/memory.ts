@@ -2,6 +2,7 @@ import { eq, and, gte, like, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
+import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import {
   CONFIDENCE,
   PROMOTION,
@@ -65,6 +66,7 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
     })
     .run();
 
+  queueMemoryEmbeddingSync(db, id);
   return id;
 }
 
@@ -169,6 +171,7 @@ export function promoteMemory(
     .where(eq(memories.id, id))
     .run();
 
+  queueMemoryEmbeddingSync(db, id);
   return true;
 }
 
@@ -193,6 +196,7 @@ export function demoteMemory(
     .where(eq(memories.id, id))
     .run();
 
+  queueMemoryEmbeddingSync(db, id);
   return true;
 }
 
@@ -209,6 +213,7 @@ export function rejectMemory(db: RecallDb, id: string): boolean {
     .where(eq(memories.id, id))
     .run();
 
+  queueMemoryEmbeddingSync(db, id);
   return true;
 }
 
@@ -241,6 +246,7 @@ export function reactivateMemory(
     .where(eq(memories.id, id))
     .run();
 
+  queueMemoryEmbeddingSync(db, id);
   return true;
 }
 

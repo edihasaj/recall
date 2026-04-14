@@ -1,13 +1,77 @@
 /**
  * Optional embeddings module — feature-gated behind config.
- * Provides semantic search and dedup via cosine similarity.
- * Supports OpenAI text-embedding-3-small (default).
+ * Phase 1 keeps embeddings in a canonical side table and brute-force search in JS.
  */
 
+import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { memories } from "../db/schema.js";
-import type { EmbeddingConfig, MemoryItem } from "../types.js";
+import { memories, memoryEmbeddings } from "../db/schema.js";
+import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
+
+type MemoryRow = typeof memories.$inferSelect;
+type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
+
+const EMBEDDING_BATCH_SIZE = 100;
+const pendingEmbeddingJobs = new Set<Promise<void>>();
+
+// --- Config ---
+
+export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
+  if (process.env.RECALL_EMBEDDINGS_ENABLED !== "true") return null;
+  return {
+    enabled: true,
+    provider: "openai",
+    model: process.env.RECALL_EMBEDDING_MODEL ?? "text-embedding-3-small",
+    api_key: process.env.OPENAI_API_KEY,
+    dimensions: parseInt(process.env.RECALL_EMBEDDING_DIMS ?? "256", 10),
+    version: process.env.RECALL_EMBEDDING_VERSION ?? "v1",
+    similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),
+  };
+}
+
+function getEmbeddingVersion(config: EmbeddingConfig): string {
+  return config.version || `${config.provider}:${config.model}:${config.dimensions}`;
+}
+
+function hashMemoryText(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function shouldEmbedMemory(row: Pick<MemoryRow, "status" | "confidence">): boolean {
+  if (row.status === "rejected" || row.status === "transient") return false;
+  return row.confidence >= CONFIDENCE.TRANSIENT_MAX;
+}
+
+function serializeEmbedding(embedding: Float32Array): Buffer {
+  return Buffer.from(
+    embedding.buffer,
+    embedding.byteOffset,
+    embedding.byteLength,
+  );
+}
+
+function deserializeEmbedding(buffer: Buffer): Float32Array {
+  return new Float32Array(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength / Float32Array.BYTES_PER_ELEMENT,
+  );
+}
+
+function rowNeedsEmbeddingRefresh(
+  row: Pick<MemoryRow, "text">,
+  existing: MemoryEmbeddingRow | undefined,
+  config: EmbeddingConfig,
+): boolean {
+  if (!existing) return true;
+  return (
+    existing.model !== config.model ||
+    existing.dimensions !== config.dimensions ||
+    existing.version !== getEmbeddingVersion(config) ||
+    existing.content_hash !== hashMemoryText(row.text)
+  );
+}
 
 // --- Embedding generation ---
 
@@ -63,7 +127,6 @@ export async function generateEmbeddings(
   const apiKey = config.api_key ?? process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OpenAI API key required for embeddings");
 
-  // OpenAI supports batch input
   const resp = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
@@ -86,43 +149,200 @@ export async function generateEmbeddings(
     data: Array<{ embedding: number[]; index: number }>;
   };
 
-  // Sort by index to maintain order
-  const sorted = data.data.sort((a, b) => a.index - b.index);
-  return sorted.map((d) => new Float32Array(d.embedding));
+  return data.data
+    .sort((a, b) => a.index - b.index)
+    .map((item) => new Float32Array(item.embedding));
 }
 
-// --- Store embedding ---
+// --- Storage ---
 
 export function storeEmbedding(
   db: RecallDb,
   memoryId: string,
+  text: string,
   embedding: Float32Array,
+  config: EmbeddingConfig,
 ) {
-  const buffer = Buffer.from(embedding.buffer);
-  db.update(memories)
-    .set({ embedding: buffer })
-    .where(eq(memories.id, memoryId))
+  const now = new Date().toISOString();
+  const payload = {
+    memory_id: memoryId,
+    model: config.model,
+    dimensions: config.dimensions,
+    version: getEmbeddingVersion(config),
+    content_hash: hashMemoryText(text),
+    updated_at: now,
+    embedding: serializeEmbedding(embedding),
+  };
+
+  db.insert(memoryEmbeddings)
+    .values(payload)
+    .onConflictDoUpdate({
+      target: memoryEmbeddings.memory_id,
+      set: {
+        model: payload.model,
+        dimensions: payload.dimensions,
+        version: payload.version,
+        content_hash: payload.content_hash,
+        updated_at: payload.updated_at,
+        embedding: payload.embedding,
+      },
+    })
     .run();
 }
 
-// --- Load embedding ---
+export function removeStoredEmbedding(
+  db: RecallDb,
+  memoryId: string,
+): boolean {
+  const result = db.delete(memoryEmbeddings)
+    .where(eq(memoryEmbeddings.memory_id, memoryId))
+    .run();
+  return result.changes > 0;
+}
 
 export function loadEmbedding(
   db: RecallDb,
   memoryId: string,
 ): Float32Array | null {
   const row = db
-    .select({ embedding: memories.embedding })
+    .select({ embedding: memoryEmbeddings.embedding })
+    .from(memoryEmbeddings)
+    .where(eq(memoryEmbeddings.memory_id, memoryId))
+    .get();
+
+  if (!row?.embedding) return null;
+  return deserializeEmbedding(row.embedding as Buffer);
+}
+
+// --- Lifecycle ---
+
+export async function syncMemoryEmbedding(
+  db: RecallDb,
+  memoryId: string,
+  config: EmbeddingConfig,
+): Promise<"stored" | "updated" | "removed" | "skipped"> {
+  const memory = db
+    .select()
     .from(memories)
     .where(eq(memories.id, memoryId))
     .get();
 
-  if (!row?.embedding) return null;
-  return new Float32Array(
-    (row.embedding as Buffer).buffer,
-    (row.embedding as Buffer).byteOffset,
-    (row.embedding as Buffer).byteLength / 4,
-  );
+  if (!memory || !shouldEmbedMemory(memory)) {
+    removeStoredEmbedding(db, memoryId);
+    return "removed";
+  }
+
+  const existing = db
+    .select()
+    .from(memoryEmbeddings)
+    .where(eq(memoryEmbeddings.memory_id, memoryId))
+    .get();
+
+  if (!rowNeedsEmbeddingRefresh(memory, existing, config)) {
+    return "skipped";
+  }
+
+  const embedding = await generateEmbedding(memory.text, config);
+  storeEmbedding(db, memory.id, memory.text, embedding, config);
+  return existing ? "updated" : "stored";
+}
+
+export function queueMemoryEmbeddingSync(
+  db: RecallDb,
+  memoryId: string,
+  config: EmbeddingConfig | null = loadEmbeddingConfigFromEnv(),
+): Promise<void> | null {
+  if (!config?.enabled) return null;
+
+  const job = syncMemoryEmbedding(db, memoryId, config)
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[recall] embedding sync failed for ${memoryId.slice(0, 8)}: ${message}`);
+    })
+    .finally(() => {
+      pendingEmbeddingJobs.delete(job);
+    });
+
+  pendingEmbeddingJobs.add(job);
+  return job;
+}
+
+export async function flushEmbeddingJobs() {
+  if (pendingEmbeddingJobs.size === 0) return;
+  await Promise.allSettled([...pendingEmbeddingJobs]);
+}
+
+export async function bootstrapEmbeddings(
+  db: RecallDb,
+  config: EmbeddingConfig,
+  options: { repo?: string } = {},
+): Promise<number> {
+  const rows = db.select().from(memories).all();
+  const existingRows = db.select().from(memoryEmbeddings).all();
+  const existingById = new Map(existingRows.map((row) => [row.memory_id, row]));
+
+  const eligible = rows.filter((row) => {
+    if (options.repo && row.repo !== options.repo) return false;
+    return shouldEmbedMemory(row);
+  });
+
+  const pending = eligible.filter((row) => rowNeedsEmbeddingRefresh(row, existingById.get(row.id), config));
+
+  for (const row of rows) {
+    if (options.repo && row.repo !== options.repo) continue;
+    if (!shouldEmbedMemory(row)) {
+      removeStoredEmbedding(db, row.id);
+    }
+  }
+
+  let total = 0;
+  for (let i = 0; i < pending.length; i += EMBEDDING_BATCH_SIZE) {
+    const batch = pending.slice(i, i + EMBEDDING_BATCH_SIZE);
+    const embeddings = await generateEmbeddings(
+      batch.map((row) => row.text),
+      config,
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      storeEmbedding(db, batch[j].id, batch[j].text, embeddings[j], config);
+      total++;
+    }
+  }
+
+  return total;
+}
+
+export function verifyEmbeddings(
+  db: RecallDb,
+  config: EmbeddingConfig,
+  options: { repo?: string } = {},
+) {
+  const rows = db.select().from(memories).all();
+  const embeddingRows = db.select().from(memoryEmbeddings).all();
+  const embeddingById = new Map(embeddingRows.map((row) => [row.memory_id, row]));
+
+  let eligible = 0;
+  let stale = 0;
+  for (const row of rows) {
+    if (options.repo && row.repo !== options.repo) continue;
+    if (!shouldEmbedMemory(row)) continue;
+    eligible++;
+
+    if (rowNeedsEmbeddingRefresh(row, embeddingById.get(row.id), config)) {
+      stale++;
+    }
+  }
+
+  return {
+    eligible,
+    stored: embeddingRows.filter((row) => {
+      if (!options.repo) return true;
+      const memory = rows.find((item) => item.id === row.memory_id);
+      return memory?.repo === options.repo;
+    }).length,
+    stale,
+  };
 }
 
 // --- Cosine similarity ---
@@ -152,33 +372,29 @@ export async function semanticSearch(
   const queryEmbedding = await generateEmbedding(query, config);
   const limit = options.limit ?? 10;
 
-  // Load all memories with embeddings
   const rows = db.select().from(memories).all();
+  const embeddingsById = new Map(
+    db.select().from(memoryEmbeddings).all().map((row) => [row.memory_id, row]),
+  );
 
-  const results: Array<{ memory: any; similarity: number }> = [];
+  const results: Array<{ memory: MemoryItem; similarity: number }> = [];
 
   for (const row of rows) {
-    if (!row.embedding) continue;
     if (options.repo && row.repo !== options.repo) continue;
-    if (row.status === "rejected") continue;
+    if (!shouldEmbedMemory(row)) continue;
 
-    const emb = new Float32Array(
-      (row.embedding as Buffer).buffer,
-      (row.embedding as Buffer).byteOffset,
-      (row.embedding as Buffer).byteLength / 4,
+    const embeddingRow = embeddingsById.get(row.id);
+    if (!embeddingRow?.embedding) continue;
+
+    const similarity = cosineSimilarity(
+      queryEmbedding,
+      deserializeEmbedding(embeddingRow.embedding as Buffer),
     );
 
-    const sim = cosineSimilarity(queryEmbedding, emb);
-    if (sim >= config.similarity_threshold) {
+    if (similarity >= config.similarity_threshold) {
       results.push({
-        memory: {
-          ...row,
-          evidence:
-            typeof row.evidence === "string"
-              ? JSON.parse(row.evidence as string)
-              : row.evidence,
-        },
-        similarity: sim,
+        memory: rowToMemory(row),
+        similarity,
       });
     }
   }
@@ -200,55 +416,58 @@ export async function findSemanticDuplicates(
   const dupThreshold = threshold ?? config.similarity_threshold;
 
   const rows = db.select().from(memories).all();
+  const embeddingsById = new Map(
+    db.select().from(memoryEmbeddings).all().map((row) => [row.memory_id, row]),
+  );
+
   const duplicates: Array<{ id: string; text: string; similarity: number }> = [];
 
   for (const row of rows) {
-    if (!row.embedding) continue;
-    if (row.status === "rejected") continue;
+    if (!shouldEmbedMemory(row)) continue;
 
-    const emb = new Float32Array(
-      (row.embedding as Buffer).buffer,
-      (row.embedding as Buffer).byteOffset,
-      (row.embedding as Buffer).byteLength / 4,
+    const embeddingRow = embeddingsById.get(row.id);
+    if (!embeddingRow?.embedding) continue;
+
+    const similarity = cosineSimilarity(
+      queryEmbedding,
+      deserializeEmbedding(embeddingRow.embedding as Buffer),
     );
 
-    const sim = cosineSimilarity(queryEmbedding, emb);
-    if (sim >= dupThreshold) {
-      duplicates.push({ id: row.id, text: row.text, similarity: sim });
+    if (similarity >= dupThreshold) {
+      duplicates.push({ id: row.id, text: row.text, similarity });
     }
   }
 
   return duplicates.sort((a, b) => b.similarity - a.similarity);
 }
 
-// --- Embed all un-embedded memories ---
+// --- Helpers ---
 
-export async function embedAllMemories(
-  db: RecallDb,
-  config: EmbeddingConfig,
-): Promise<number> {
-  const rows = db
-    .select({ id: memories.id, text: memories.text, embedding: memories.embedding })
-    .from(memories)
-    .all();
+function rowToMemory(row: MemoryRow): MemoryItem {
+  const evidence =
+    typeof row.evidence === "string"
+      ? JSON.parse(row.evidence as string)
+      : Array.isArray(row.evidence)
+        ? row.evidence
+        : [];
 
-  const unembedded = rows.filter((r) => !r.embedding);
-  if (unembedded.length === 0) return 0;
-
-  // Batch in chunks of 100
-  const BATCH_SIZE = 100;
-  let total = 0;
-
-  for (let i = 0; i < unembedded.length; i += BATCH_SIZE) {
-    const batch = unembedded.slice(i, i + BATCH_SIZE);
-    const texts = batch.map((r) => r.text);
-    const embeddings = await generateEmbeddings(texts, config);
-
-    for (let j = 0; j < batch.length; j++) {
-      storeEmbedding(db, batch[j].id, embeddings[j]);
-      total++;
-    }
-  }
-
-  return total;
+  return {
+    id: row.id,
+    type: row.type,
+    text: row.text,
+    scope: row.scope,
+    path_scope: row.path_scope,
+    repo: row.repo,
+    status: row.status,
+    confidence: row.confidence,
+    source: row.source,
+    evidence: evidence as EvidenceEntry[],
+    supersedes: row.supersedes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    last_validated_at: row.last_validated_at,
+    last_injected_at: row.last_injected_at,
+    injection_count: row.injection_count,
+    override_count: row.override_count,
+  };
 }

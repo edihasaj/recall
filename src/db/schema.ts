@@ -34,12 +34,26 @@ export const memories = sqliteTable("memories", {
   // Phase 2: sync + embeddings
   team_id: text("team_id"),
   sync_version: integer("sync_version").notNull().default(0),
-  embedding: blob("embedding", { mode: "buffer" }),
 }, (table) => ([
   index("idx_memories_repo").on(table.repo),
   index("idx_memories_status").on(table.status),
   index("idx_memories_repo_status").on(table.repo, table.status),
   index("idx_memories_team").on(table.team_id),
+]));
+
+export const memoryEmbeddings = sqliteTable("memory_embeddings", {
+  memory_id: text("memory_id")
+    .primaryKey()
+    .references(() => memories.id, { onDelete: "cascade" }),
+  model: text("model").notNull(),
+  dimensions: integer("dimensions").notNull(),
+  version: text("version").notNull(),
+  content_hash: text("content_hash").notNull(),
+  updated_at: text("updated_at").notNull(),
+  embedding: blob("embedding", { mode: "buffer" }).notNull(),
+}, (table) => ([
+  index("idx_memory_embeddings_model").on(table.model),
+  index("idx_memory_embeddings_updated").on(table.updated_at),
 ]));
 
 export const feedbackEvents = sqliteTable("feedback_events", {

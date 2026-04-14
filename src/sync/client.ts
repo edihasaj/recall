@@ -7,6 +7,7 @@ import { eq, gt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { memories, syncState } from "../db/schema.js";
+import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import type { SyncConfig, SyncResult, MemoryItem } from "../types.js";
 
 // --- Sync state helpers ---
@@ -159,14 +160,16 @@ export async function pullMemories(
           })
           .where(eq(memories.id, localMem.id))
           .run();
+        queueMemoryEmbeddingSync(db, localMem.id);
         pulled++;
         conflicts++;
       }
     } else {
       // New memory from team
+      const memoryId = remote.origin_id ?? randomUUID();
       db.insert(memories)
         .values({
-          id: remote.origin_id ?? randomUUID(),
+          id: memoryId,
           type: remote.type,
           text: remote.text,
           scope: remote.scope,
@@ -183,6 +186,7 @@ export async function pullMemories(
           sync_version: 0,
         })
         .run();
+      queueMemoryEmbeddingSync(db, memoryId);
       pulled++;
     }
   }

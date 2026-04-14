@@ -1,3 +1,20 @@
+CREATE TABLE `activity_events` (
+	`id` text PRIMARY KEY NOT NULL,
+	`session_id` text,
+	`repo` text,
+	`path` text,
+	`source` text NOT NULL,
+	`event_type` text NOT NULL,
+	`memory_ids` text DEFAULT '[]' NOT NULL,
+	`request` text DEFAULT '{}' NOT NULL,
+	`result` text DEFAULT '{}' NOT NULL,
+	`created_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `idx_activity_session` ON `activity_events` (`session_id`);--> statement-breakpoint
+CREATE INDEX `idx_activity_repo` ON `activity_events` (`repo`);--> statement-breakpoint
+CREATE INDEX `idx_activity_event_type` ON `activity_events` (`event_type`);--> statement-breakpoint
+CREATE INDEX `idx_activity_created` ON `activity_events` (`created_at`);--> statement-breakpoint
 CREATE TABLE `approval_requests` (
 	`id` text PRIMARY KEY NOT NULL,
 	`memory_id` text NOT NULL,
@@ -99,14 +116,26 @@ CREATE TABLE `memories` (
 	`injection_count` integer DEFAULT 0 NOT NULL,
 	`override_count` integer DEFAULT 0 NOT NULL,
 	`team_id` text,
-	`sync_version` integer DEFAULT 0 NOT NULL,
-	`embedding` blob
+	`sync_version` integer DEFAULT 0 NOT NULL
 );
 --> statement-breakpoint
 CREATE INDEX `idx_memories_repo` ON `memories` (`repo`);--> statement-breakpoint
 CREATE INDEX `idx_memories_status` ON `memories` (`status`);--> statement-breakpoint
 CREATE INDEX `idx_memories_repo_status` ON `memories` (`repo`,`status`);--> statement-breakpoint
 CREATE INDEX `idx_memories_team` ON `memories` (`team_id`);--> statement-breakpoint
+CREATE TABLE `memory_embeddings` (
+	`memory_id` text PRIMARY KEY NOT NULL,
+	`model` text NOT NULL,
+	`dimensions` integer NOT NULL,
+	`version` text NOT NULL,
+	`content_hash` text NOT NULL,
+	`updated_at` text NOT NULL,
+	`embedding` blob NOT NULL,
+	FOREIGN KEY (`memory_id`) REFERENCES `memories`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `idx_memory_embeddings_model` ON `memory_embeddings` (`model`);--> statement-breakpoint
+CREATE INDEX `idx_memory_embeddings_updated` ON `memory_embeddings` (`updated_at`);--> statement-breakpoint
 CREATE TABLE `policy_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,

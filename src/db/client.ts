@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.js";
 import { join, dirname } from "node:path";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,7 @@ function getMigrationsPath(): string {
 
 let _sqlite: Database.Database | null = null;
 let _db: ReturnType<typeof makeDb> | null = null;
+let _dbPath: string | null = null;
 
 function makeDb(sqlite: Database.Database) {
   return drizzle(sqlite, { schema });
@@ -49,6 +50,7 @@ export function getDb(dbPath?: string): RecallDb {
     _sqlite.pragma("journal_mode = WAL");
     _sqlite.pragma("foreign_keys = ON");
     _db = makeDb(_sqlite);
+    _dbPath = path;
   }
   return _db;
 }
@@ -73,4 +75,28 @@ export function initStandaloneDb(dbPath: string): RecallDb {
   const { db } = createStandaloneDb(dbPath);
   migrate(db, { migrationsFolder: getMigrationsPath() });
   return db;
+}
+
+export function closeDb() {
+  if (_sqlite) {
+    _sqlite.close();
+  }
+  _sqlite = null;
+  _db = null;
+  _dbPath = null;
+}
+
+export function resetDb(dbPath?: string) {
+  const path = dbPath ?? getDbPath();
+
+  if (_dbPath === path) {
+    closeDb();
+  }
+
+  for (const suffix of ["", "-shm", "-wal"]) {
+    const candidate = `${path}${suffix}`;
+    if (existsSync(candidate)) {
+      rmSync(candidate, { force: true });
+    }
+  }
 }

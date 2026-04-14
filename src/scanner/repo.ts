@@ -4,6 +4,7 @@ import { execSync } from "node:child_process";
 import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories } from "../db/schema.js";
+import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { createMemory, queryMemories, statusFromConfidence, type CreateMemoryInput } from "../models/memory.js";
 import { getRepoQualityProfile, seedScannedConfidence } from "../repo/quality.js";
 
@@ -67,6 +68,7 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
           })
           .where(eq(memories.id, duplicate.id))
           .run();
+        queueMemoryEmbeddingSync(db, duplicate.id);
       }
       ids.push(duplicate.id);
       continue;
