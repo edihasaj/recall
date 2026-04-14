@@ -70,6 +70,17 @@ recall embeddings rebuild-index
 recall search -r owner/repo "pnpm"
 ```
 
+Daemon maintenance runs in-process on a timer.
+
+Useful env vars:
+
+```bash
+RECALL_MAINTENANCE_INTERVAL_SECONDS=300
+RECALL_ACTIVITY_RETENTION_DAYS=90
+RECALL_FEEDBACK_RETENTION_DAYS=180
+RECALL_SIGNAL_RETENTION_DAYS=180
+```
+
 ## Teach It
 
 Add a correction:
