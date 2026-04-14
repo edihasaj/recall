@@ -2,6 +2,7 @@ import { queryMemories } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
 import { CONFIDENCE, type CompilerConfig, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
+import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
@@ -9,11 +10,13 @@ const DEFAULT_CONFIG: CompilerConfig = {
   max_commands: 3,
   max_gotchas: 3,
   token_budget: 2000,
+  include_candidates: false,
 };
 
 export interface CompileRequest {
   repo: string;
   path?: string;
+  query_text?: string;
   config?: Partial<CompilerConfig>;
 }
 
@@ -120,6 +123,135 @@ export function compileContext(
   };
 }
 
+export async function compileContextHybrid(
+  db: RecallDb,
+  req: CompileRequest,
+): Promise<CompiledContext> {
+  const profile = getRepoQualityProfile(db, req.repo);
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...req.config,
+    confidence_threshold:
+      req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
+  };
+
+  const allMemories = queryMemories(db, {
+    repo: req.repo,
+  }).filter((memory) =>
+    memory.status === "active" ||
+    (config.include_candidates && memory.status === "candidate")
+  );
+
+  const scoped = req.path
+    ? allMemories.filter((memory) => pathMatches(memory, req.path!))
+    : allMemories;
+
+  const candidateConfidenceFloor = Math.min(config.confidence_threshold, 0.45);
+  const passing = scoped.filter((memory) => {
+    if (memory.status === "active") {
+      return memory.confidence >= config.confidence_threshold;
+    }
+    if (memory.status === "candidate" && config.include_candidates) {
+      return memory.confidence >= candidateConfidenceFloor;
+    }
+    return false;
+  });
+
+  const dropped = scoped.filter((memory) => !passing.includes(memory));
+
+  if (passing.length === 0) {
+    return {
+      text: "",
+      memories_included: [],
+      memories_dropped: dropped.map((m) => m.id),
+      token_estimate: 0,
+    };
+  }
+
+  const retrieval = req.query_text
+    ? await hybridSearch(db, req.query_text, loadEmbeddingConfigFromEnv(), {
+        repo: req.repo,
+        limit: Math.max(50, passing.length * 2),
+      })
+    : [];
+
+  const retrievalById = new Map(
+    retrieval.map((item) => [item.memory.id, item]),
+  );
+
+  const ranked = passing
+    .filter((memory) => {
+      if (memory.status !== "candidate") return true;
+      const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
+      return retrievalScore >= 0.2;
+    })
+    .map((memory) => {
+      const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
+      const score = req.query_text
+        ? (retrievalScore * 0.45) +
+          (memory.confidence * 0.25) +
+          (scopeScore(memory, req.path) * 0.15) +
+          (freshnessScore(memory) * 0.05) +
+          (typeScore(memory.type) * 0.10)
+        : (memory.confidence * 0.55) +
+          (scopeScore(memory, req.path) * 0.20) +
+          (freshnessScore(memory) * 0.10) +
+          (typeScore(memory.type) * 0.15);
+
+      return { memory, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const selected: MemoryItem[] = [];
+  let commandCount = 0;
+  let gotchaCount = 0;
+  let lineCount = 0;
+
+  for (const item of ranked) {
+    const memory = item.memory;
+    const memLines = memory.text.split("\n").length;
+
+    if (lineCount + memLines > config.max_lines) continue;
+    if (memory.type === "command" && commandCount >= config.max_commands) continue;
+    if (memory.type === "gotcha" && gotchaCount >= config.max_gotchas) continue;
+
+    selected.push(memory);
+    lineCount += memLines;
+    if (memory.type === "command") commandCount++;
+    if (memory.type === "gotcha") gotchaCount++;
+  }
+
+  if (selected.length === 0) {
+    return {
+      text: "",
+      memories_included: [],
+      memories_dropped: [...dropped, ...passing].map((m) => m.id),
+      token_estimate: 0,
+    };
+  }
+
+  while (
+    selected.length > 1 &&
+    Math.ceil(renderPack(selected, req.repo).length / 4) > config.token_budget
+  ) {
+    selected.pop();
+  }
+
+  const finalText = renderPack(selected, req.repo);
+  return {
+    text: finalText,
+    memories_included: selected.map((m) => m.id),
+    memories_dropped: [
+      ...dropped.map((m) => m.id),
+      ...ranked
+        .map((item) => item.memory)
+        .filter((memory) => !selected.includes(memory))
+        .map((memory) => memory.id),
+    ],
+    token_estimate: Math.ceil(finalText.length / 4),
+  };
+}
+
 // --- Render ---
 
 function renderPack(items: MemoryItem[], repo: string): string {
@@ -176,6 +308,22 @@ function pathMatches(mem: MemoryItem, targetPath: string): boolean {
   return targetPath.startsWith(pattern);
 }
 
+function scopeScore(mem: MemoryItem, targetPath?: string): number {
+  if (!targetPath) {
+    return mem.scope === "repo" || mem.scope === "team" ? 0.9 : 0.7;
+  }
+  if (mem.scope === "path" && mem.path_scope) return 1;
+  if (mem.scope === "repo" || mem.scope === "team") return 0.75;
+  return pathMatches(mem, targetPath) ? 0.6 : 0;
+}
+
+function freshnessScore(mem: MemoryItem): number {
+  const basis = mem.last_validated_at ?? mem.last_injected_at ?? mem.updated_at;
+  const ageMs = Date.now() - new Date(basis).getTime();
+  const ageDays = ageMs / 86_400_000;
+  return Math.max(0, 1 - (ageDays / 180));
+}
+
 // --- Type priority (lower = higher priority) ---
 
 function typePriority(type: MemoryItem["type"]): number {
@@ -192,5 +340,22 @@ function typePriority(type: MemoryItem["type"]): number {
       return 4;
     default:
       return 5;
+  }
+}
+
+function typeScore(type: MemoryItem["type"]): number {
+  switch (type) {
+    case "rule":
+      return 1.0;
+    case "command":
+      return 0.95;
+    case "decision":
+      return 0.9;
+    case "gotcha":
+      return 0.8;
+    case "review_pattern":
+      return 0.75;
+    default:
+      return 0.5;
   }
 }

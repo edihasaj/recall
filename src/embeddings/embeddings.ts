@@ -530,6 +530,7 @@ export async function findSemanticDuplicates(
   text: string,
   config: EmbeddingConfig,
   threshold?: number,
+  options: { repo?: string; type?: MemoryItem["type"]; limit?: number } = {},
 ): Promise<Array<{ id: string; text: string; similarity: number }>> {
   const queryEmbedding = await generateEmbedding(text, config);
   const dupThreshold = threshold ?? config.similarity_threshold;
@@ -542,6 +543,8 @@ export async function findSemanticDuplicates(
   const duplicates: Array<{ id: string; text: string; similarity: number }> = [];
 
   for (const row of rows) {
+    if (options.repo && row.repo !== options.repo) continue;
+    if (options.type && row.type !== options.type) continue;
     if (!shouldEmbedMemory(row)) continue;
 
     const embeddingRow = embeddingsById.get(row.id);
@@ -557,7 +560,9 @@ export async function findSemanticDuplicates(
     }
   }
 
-  return duplicates.sort((a, b) => b.similarity - a.similarity);
+  return duplicates
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, options.limit ?? 10);
 }
 
 // --- Helpers ---

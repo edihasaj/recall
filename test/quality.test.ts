@@ -249,20 +249,20 @@ describe("dynamic thresholds", () => {
 // --- Integration: review feedback respects maturity gate ---
 
 describe("review feedback maturity gate", () => {
-  it("does not auto-promote on first review in growing repo", () => {
+  it("does not auto-promote on first review in growing repo", async () => {
     const db = freshDb();
     // Build a growing repo
     for (let i = 0; i < 15; i++) makeActive(db, `rule ${i}`);
 
     // Create a candidate via correction
-    const ids1 = processCorrection(db, "always use strict mode", {
+    const ids1 = await processCorrection(db, "always use strict mode", {
       sessionId: "s1",
       repo: "test/repo",
     });
     expect(ids1.length).toBeGreaterThan(0);
 
     // Same correction as review — in growing, needs >= 2 sessions for review promotion
-    const ids2 = processReviewFeedback(db, "review said always use strict mode", {
+    const ids2 = await processReviewFeedback(db, "review said always use strict mode", {
       sessionId: "s2",
       repo: "test/repo",
       reviewer: "alice",

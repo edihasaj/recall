@@ -178,6 +178,7 @@ export const CompilerConfig = z.object({
   max_commands: z.number().default(3),
   max_gotchas: z.number().default(3),
   token_budget: z.number().default(2000),
+  include_candidates: z.boolean().default(false),
 });
 export type CompilerConfig = z.infer<typeof CompilerConfig>;
 
@@ -191,6 +192,8 @@ export const MemoryQuery = z.object({
   status: MemoryStatus.optional(),
   min_confidence: z.number().optional(),
   semantic_query: z.string().optional(),
+  limit: z.number().int().positive().optional(),
+  offset: z.number().int().nonnegative().optional(),
 });
 export type MemoryQuery = z.infer<typeof MemoryQuery>;
 
@@ -368,6 +371,7 @@ export type Contradiction = z.infer<typeof Contradiction>;
 // --- Pruning config (Phase 3) ---
 
 export const PruneConfig = z.object({
+  repo: z.string().optional(),
   stale_days: z.number().default(90),
   rejected_retention_days: z.number().default(30),
   transient_retention_days: z.number().default(7),

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { initDb } from "./db/client.js";
-import { compileContext } from "./compiler/context.js";
+import { compileContext, compileContextHybrid } from "./compiler/context.js";
 import { processCorrection, processReviewFeedback } from "./capture/correction.js";
 import {
   confirmMemory,
@@ -100,11 +100,18 @@ const server = createServer(async (req, res) => {
         });
       }
 
-      const result = compileContext(db, {
-        repo,
-        path: body.path,
-        config: body.config,
-      });
+      const result = body.query_text || body.config?.include_candidates
+        ? await compileContextHybrid(db, {
+            repo,
+            path: body.path,
+            query_text: body.query_text,
+            config: body.config,
+          })
+        : compileContext(db, {
+            repo,
+            path: body.path,
+            config: body.config,
+          });
       createActivityEvent(db, {
         session_id: body.session_id ?? null,
         repo,
@@ -114,6 +121,7 @@ const server = createServer(async (req, res) => {
         memory_ids: result.memories_included,
         request: {
           config: body.config ?? {},
+          query_text: body.query_text ?? null,
           bootstrap_status: bootstrap.status,
         },
         result: {
@@ -189,7 +197,7 @@ const server = createServer(async (req, res) => {
     if (path === "/correct" && method === "POST") {
       const body = await parseBody(req);
       const repo = resolveRepo(body);
-      const ids = processCorrection(db, body.text, {
+      const ids = await processCorrection(db, body.text, {
         sessionId: body.session_id ?? "hook",
         repo,
         path: body.path,
@@ -211,7 +219,7 @@ const server = createServer(async (req, res) => {
     if (path === "/review" && method === "POST") {
       const body = await parseBody(req);
       const repo = resolveRepo(body);
-      const ids = processReviewFeedback(db, body.feedback, {
+      const ids = await processReviewFeedback(db, body.feedback, {
         sessionId: body.session_id ?? "hook-review",
         repo,
         path: body.path,
@@ -269,7 +277,14 @@ const server = createServer(async (req, res) => {
     if (path === "/memories" && method === "GET") {
       const repo = url.searchParams.get("repo") ?? undefined;
       const status = url.searchParams.get("status") as any;
-      const items = queryMemories(db, { repo, status });
+      const limit = url.searchParams.get("limit");
+      const offset = url.searchParams.get("offset");
+      const items = queryMemories(db, {
+        repo,
+        status,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
+      });
       return send(res, 200, { memories: items });
     }
 

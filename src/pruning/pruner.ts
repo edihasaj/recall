@@ -7,14 +7,14 @@
  * - Configurable retention policies
  */
 
-import { eq, and, lt, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories } from "../db/schema.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
-import { queryMemories, getMemory, rejectMemory } from "../models/memory.js";
+import { queryMemories } from "../models/memory.js";
 import { computeHealthScore } from "../health/scoring.js";
 import { recordAudit } from "../audit/trail.js";
-import type { PruneConfig, MemoryItem } from "../types.js";
+import type { PruneConfig } from "../types.js";
 
 const DEFAULT_CONFIG: PruneConfig = {
   stale_days: 90,
@@ -50,11 +50,12 @@ export function pruneMemories(
 
   // 1. Archive stale active/candidate memories
   const staleCutoff = new Date(now - cfg.stale_days * dayMs).toISOString();
-  const allMemories = db.select().from(memories).all();
+  const staleCandidates = queryMemories(db, {
+    repo: cfg.repo,
+    limit: undefined,
+  }).filter((mem) => mem.status !== "rejected" && mem.status !== "transient");
 
-  for (const mem of allMemories) {
-    if (mem.status === "rejected" || mem.status === "transient") continue;
-
+  for (const mem of staleCandidates) {
     const lastActivity =
       mem.last_validated_at ?? mem.last_injected_at ?? mem.updated_at;
 
@@ -75,9 +76,12 @@ export function pruneMemories(
   const rejectedCutoff = new Date(
     now - cfg.rejected_retention_days * dayMs,
   ).toISOString();
+  const rejectedMemories = queryMemories(db, {
+    repo: cfg.repo,
+    status: "rejected",
+  });
 
-  for (const mem of allMemories) {
-    if (mem.status !== "rejected") continue;
+  for (const mem of rejectedMemories) {
     if (mem.updated_at < rejectedCutoff) {
       if (!cfg.dry_run) {
         // Soft delete — keep audit trail but remove from memories
@@ -92,9 +96,12 @@ export function pruneMemories(
   const transientCutoff = new Date(
     now - cfg.transient_retention_days * dayMs,
   ).toISOString();
+  const transientMemories = queryMemories(db, {
+    repo: cfg.repo,
+    status: "transient",
+  });
 
-  for (const mem of allMemories) {
-    if (mem.status !== "transient") continue;
+  for (const mem of transientMemories) {
     if (mem.updated_at < transientCutoff) {
       if (!cfg.dry_run) {
         db.delete(memories).where(eq(memories.id, mem.id)).run();
@@ -105,7 +112,10 @@ export function pruneMemories(
   }
 
   // 4. Demote unhealthy active memories
-  const activeMemories = allMemories.filter((m) => m.status === "active");
+  const activeMemories = queryMemories(db, {
+    repo: cfg.repo,
+    status: "active",
+  });
   for (const mem of activeMemories) {
     const health = computeHealthScore(db, mem.id);
     if (health && health.score < cfg.min_health_score) {

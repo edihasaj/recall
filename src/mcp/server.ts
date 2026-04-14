@@ -10,7 +10,7 @@ import {
   recordFeedback,
   listMemories,
 } from "../models/memory.js";
-import { compileContext } from "../compiler/context.js";
+import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { processCorrection, processReviewFeedback } from "../capture/correction.js";
 import { scanAndStore } from "../scanner/repo.js";
 import { computeMetrics, formatMetricsReport } from "../eval/harness.js";
@@ -53,10 +53,12 @@ server.tool(
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
     repo_path: z.string().optional().describe("Optional local repo path hint for first-time bootstrap"),
     path: z.string().optional().describe("Current file path for path-scoped filtering"),
+    query_text: z.string().optional().describe("Optional task/query text for hybrid reranking"),
+    include_candidates: z.boolean().optional().describe("Allow strong candidate memories into hybrid ranking"),
     min_confidence: z.number().optional().describe("Minimum confidence threshold (default: 0.6)"),
     session_id: z.string().optional().describe("Optional session identifier"),
   },
-  async ({ repo, repo_path, path, min_confidence, session_id }) => {
+  async ({ repo, repo_path, path, query_text, include_candidates, min_confidence, session_id }) => {
     const bootstrap = ensureRepoBootstrapped(db, {
       repo,
       repoPathHint: repo_path,
@@ -79,11 +81,21 @@ server.tool(
       });
     }
 
-    const result = compileContext(db, {
-      repo,
-      path,
-      config: min_confidence ? { confidence_threshold: min_confidence } : {},
-    });
+    const result = query_text || include_candidates
+      ? await compileContextHybrid(db, {
+          repo,
+          path,
+          query_text,
+          config: {
+            ...(min_confidence ? { confidence_threshold: min_confidence } : {}),
+            include_candidates: include_candidates ?? false,
+          },
+        })
+      : compileContext(db, {
+          repo,
+          path,
+          config: min_confidence ? { confidence_threshold: min_confidence } : {},
+        });
     createActivityEvent(db, {
       session_id: session_id ?? null,
       repo,
@@ -93,6 +105,8 @@ server.tool(
       memory_ids: result.memories_included,
       request: {
         min_confidence: min_confidence ?? null,
+        query_text: query_text ?? null,
+        include_candidates: include_candidates ?? false,
         bootstrap_status: bootstrap.status,
       },
       result: {
@@ -129,9 +143,11 @@ server.tool(
       .enum(["transient", "candidate", "active", "rejected"])
       .optional()
       .describe("Filter by memory status"),
+    limit: z.number().optional().describe("Max memories to return"),
+    offset: z.number().optional().describe("Skip first N memories"),
   },
-  async ({ repo, status }) => {
-    const items = queryMemories(db, { repo, status });
+  async ({ repo, status, limit, offset }) => {
+    const items = queryMemories(db, { repo, status, limit, offset });
     if (items.length === 0) {
       return {
         content: [{ type: "text" as const, text: "No memories found." }],
@@ -159,7 +175,7 @@ server.tool(
     session_id: z.string().optional().describe("Session identifier"),
   },
   async ({ text, repo, path, session_id }) => {
-    const ids = processCorrection(db, text, {
+    const ids = await processCorrection(db, text, {
       sessionId: session_id ?? "mcp",
       repo,
       path,
@@ -208,7 +224,7 @@ server.tool(
     session_id: z.string().optional().describe("Optional session identifier"),
   },
   async ({ feedback, repo, path, reviewer, session_id }) => {
-    const ids = processReviewFeedback(db, feedback, {
+    const ids = await processReviewFeedback(db, feedback, {
       sessionId: session_id ?? "mcp-review",
       repo,
       path,
@@ -476,12 +492,13 @@ server.tool(
   "recall_prune",
   "Auto-prune stale, rejected, transient, and unhealthy memories.",
   {
+    repo: z.string().optional().describe("Limit pruning to one repo"),
     dry_run: z.boolean().optional().describe("Preview without making changes (default: false)"),
     stale_days: z.number().optional().describe("Days before archiving stale memories (default: 90)"),
     min_health_score: z.number().optional().describe("Min health score for active (default: 0.2)"),
   },
-  async ({ dry_run, stale_days, min_health_score }) => {
-    const result = pruneMemories(db, { dry_run: dry_run ?? false, stale_days, min_health_score });
+  async ({ repo, dry_run, stale_days, min_health_score }) => {
+    const result = pruneMemories(db, { repo, dry_run: dry_run ?? false, stale_days, min_health_score });
     return {
       content: [{ type: "text" as const, text: formatPruneReport(result, dry_run ?? false) }],
     };
