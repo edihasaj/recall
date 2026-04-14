@@ -66,6 +66,7 @@ Bootstrap local embeddings and the derived sqlite-vec index:
 RECALL_EMBEDDINGS_ENABLED=true OPENAI_API_KEY=... recall embeddings bootstrap
 recall embeddings verify
 recall embeddings rebuild-index
+recall search -r owner/repo "pnpm"
 ```
 
 ## Teach It

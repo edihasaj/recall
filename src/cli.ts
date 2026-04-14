@@ -22,9 +22,9 @@ import { sync, createTeam, joinTeam } from "./sync/client.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession } from "./eval/harness.js";
 import {
   bootstrapEmbeddings,
+  hybridSearch,
   loadEmbeddingConfigFromEnv,
   rebuildEmbeddingIndex,
-  semanticSearch,
   verifyEmbeddings,
 } from "./embeddings/embeddings.js";
 import { recordSignal, getSignalStats } from "./feedback/implicit.js";
@@ -620,40 +620,34 @@ embeddingsCmd
     console.log(`Stale:    ${result.stale}`);
     console.log(`Indexed:  ${result.indexed}`);
     console.log(`Drift:    ${result.index_drift}`);
+    console.log(`Lexical:  ${result.lexical_indexed}`);
+    console.log(`LexDrift: ${result.lexical_drift}`);
   });
 
 embeddingsCmd
   .command("rebuild-index")
-  .description("Rebuild the sqlite-vec memory index from canonical embeddings")
+  .description("Rebuild derived retrieval indexes from canonical memories")
   .option("-r, --repo <repo>", "Limit rebuild to one repo")
   .action((opts) => {
     const db = initDb();
     const config = loadEmbeddingConfigFromEnv();
-    if (!config?.enabled) {
-      console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
-      process.exit(1);
-    }
-
-    const count = rebuildEmbeddingIndex(db, config, {
+    const result = rebuildEmbeddingIndex(db, config, {
       repo: opts.repo,
     });
-    console.log(`Rebuilt sqlite-vec index with ${count} rows.`);
+    console.log(`Rebuilt sqlite-vec index with ${result.vector_rows} rows.`);
+    console.log(`Rebuilt FTS5 index with ${result.lexical_rows} rows.`);
   });
 
 program
   .command("search")
-  .description("Semantic search across memories")
+  .description("Hybrid lexical + vector search across memories")
   .argument("<query>", "Search query")
   .option("-r, --repo <repo>", "Filter by repo")
   .option("-n, --limit <n>", "Max results", "10")
   .action(async (query: string, opts) => {
     const db = initDb();
     const config = loadEmbeddingConfigFromEnv();
-    if (!config?.enabled) {
-      console.error("Embeddings not enabled.");
-      process.exit(1);
-    }
-    const results = await semanticSearch(db, query, config, {
+    const results = await hybridSearch(db, query, config, {
       repo: opts.repo,
       limit: parseInt(opts.limit),
     });
@@ -665,7 +659,7 @@ program
 
     for (const r of results) {
       console.log(
-        `${r.memory.id.slice(0, 8)}  (${r.similarity.toFixed(3)}) [${r.memory.status}] ${r.memory.text}`,
+        `${r.memory.id.slice(0, 8)}  (score=${r.score.toFixed(3)} vec=${r.similarity.toFixed(3)} lex=${r.lexical_score.toFixed(3)}) [${r.memory.status}] ${r.memory.text}`,
       );
     }
   });

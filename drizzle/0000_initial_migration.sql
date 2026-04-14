@@ -156,3 +156,13 @@ CREATE TABLE `sync_state` (
 	`last_push_version` integer DEFAULT 0 NOT NULL,
 	`last_pull_version` integer DEFAULT 0 NOT NULL
 );
+--> statement-breakpoint
+CREATE VIRTUAL TABLE `fts_memory_index` USING fts5(
+	`memory_id` UNINDEXED,
+	`text`,
+	`repo` UNINDEXED,
+	`status` UNINDEXED,
+	`type` UNINDEXED,
+	`scope` UNINDEXED,
+	`path_scope` UNINDEXED
+);

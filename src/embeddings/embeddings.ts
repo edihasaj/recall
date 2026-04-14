@@ -1,6 +1,6 @@
 /**
- * Optional embeddings module — feature-gated behind config.
- * Phase 1 keeps embeddings in a canonical side table and brute-force search in JS.
+ * Optional retrieval module — embeddings remain feature-gated behind config.
+ * Canonical embedding rows live in SQLite; derived vec + FTS indexes sit on top.
  */
 
 import { createHash } from "node:crypto";
@@ -15,6 +15,12 @@ import {
   upsertMemoryVecRow,
   verifyMemoryVecIndex,
 } from "../vector/sqlite-vec.js";
+import {
+  rebuildMemoryFtsIndex,
+  searchMemoryFtsIndex,
+  syncMemoryFtsIndex,
+  verifyMemoryFtsIndex,
+} from "../vector/sqlite-fts.js";
 
 type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
@@ -272,6 +278,8 @@ export function queueMemoryEmbeddingSync(
   memoryId: string,
   config: EmbeddingConfig | null = loadEmbeddingConfigFromEnv(),
 ): Promise<void> | null {
+  syncMemoryFtsIndex(db, memoryId);
+
   if (!config?.enabled) return null;
 
   const job = syncMemoryEmbedding(db, memoryId, config)
@@ -331,6 +339,7 @@ export async function bootstrapEmbeddings(
     }
   }
 
+  rebuildMemoryFtsIndex(db, options);
   rebuildMemoryVecIndex(db, config, options);
   return total;
 }
@@ -357,6 +366,7 @@ export function verifyEmbeddings(
   }
 
   const vec = verifyMemoryVecIndex(db, options);
+  const fts = verifyMemoryFtsIndex(db, options);
   return {
     eligible,
     stored: embeddingRows.filter((row) => {
@@ -367,15 +377,103 @@ export function verifyEmbeddings(
     stale,
     indexed: vec.indexed,
     index_drift: vec.drift,
+    lexical_indexed: fts.indexed,
+    lexical_drift: fts.drift,
   };
 }
 
 export function rebuildEmbeddingIndex(
   db: RecallDb,
-  config: EmbeddingConfig,
+  config: EmbeddingConfig | null,
   options: { repo?: string } = {},
 ) {
-  return rebuildMemoryVecIndex(db, config, options);
+  const lexicalRows = rebuildMemoryFtsIndex(db, options);
+  const vectorRows = config?.enabled
+    ? rebuildMemoryVecIndex(db, config, options)
+    : 0;
+  return {
+    vector_rows: vectorRows,
+    lexical_rows: lexicalRows,
+  };
+}
+
+function lexicalRankToScore(rank: number, position: number): number {
+  const safeRank = Number.isFinite(rank) ? Math.abs(rank) : position + 1;
+  return 1 / (1 + safeRank + position);
+}
+
+export async function hybridSearch(
+  db: RecallDb,
+  query: string,
+  config: EmbeddingConfig | null,
+  options: { repo?: string; limit?: number } = {},
+): Promise<Array<{
+  memory: MemoryItem;
+  score: number;
+  similarity: number;
+  lexical_score: number;
+}>> {
+  const limit = options.limit ?? 10;
+
+  const lexicalMatches = searchMemoryFtsIndex(db, query, {
+    repo: options.repo,
+    limit: Math.max(limit * 2, 20),
+  });
+  const semanticMatches = config?.enabled
+    ? searchMemoryVecIndex(
+        db,
+        await generateEmbedding(query, config),
+        { repo: options.repo, limit: Math.max(limit * 2, 20) },
+      )
+    : [];
+
+  const rowsById = new Map(
+    db.select().from(memories).all().map((row) => [row.id, row]),
+  );
+
+  const merged = new Map<string, {
+    memory: MemoryItem;
+    similarity: number;
+    lexical_score: number;
+    score: number;
+  }>();
+
+  for (let i = 0; i < lexicalMatches.length; i++) {
+    const match = lexicalMatches[i];
+    const row = rowsById.get(match.memory_id);
+    if (!row || !shouldEmbedMemory(row)) continue;
+
+    const lexicalScore = lexicalRankToScore(match.lexical_rank, i);
+    merged.set(match.memory_id, {
+      memory: rowToMemory(row),
+      similarity: 0,
+      lexical_score: lexicalScore,
+      score: lexicalScore * 0.35,
+    });
+  }
+
+  for (const match of semanticMatches) {
+    const row = rowsById.get(match.memory_id);
+    if (!row || !shouldEmbedMemory(row)) continue;
+
+    const similarity = Math.max(0, 1 - match.distance);
+    const existing = merged.get(match.memory_id);
+    if (existing) {
+      existing.similarity = similarity;
+      existing.score = (similarity * 0.65) + (existing.lexical_score * 0.35);
+    } else {
+      merged.set(match.memory_id, {
+        memory: rowToMemory(row),
+        similarity,
+        lexical_score: 0,
+        score: similarity * 0.65,
+      });
+    }
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 // --- Cosine similarity ---

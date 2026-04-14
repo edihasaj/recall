@@ -107,7 +107,8 @@ describe("sqlite-vec phase 2 index sync", () => {
     expect(verify.index_drift).toBe(0);
 
     const rebuilt = rebuildEmbeddingIndex(db, config, { repo: "test/repo" });
-    expect(rebuilt).toBe(2);
+    expect(rebuilt.vector_rows).toBe(2);
+    expect(rebuilt.lexical_rows).toBe(2);
   });
 
   it("removes vec index rows when memories become ineligible", async () => {
