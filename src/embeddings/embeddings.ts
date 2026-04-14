@@ -8,6 +8,13 @@ import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
+import {
+  rebuildMemoryVecIndex,
+  removeMemoryVecRow,
+  searchMemoryVecIndex,
+  upsertMemoryVecRow,
+  verifyMemoryVecIndex,
+} from "../vector/sqlite-vec.js";
 
 type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
@@ -229,6 +236,7 @@ export async function syncMemoryEmbedding(
 
   if (!memory || !shouldEmbedMemory(memory)) {
     removeStoredEmbedding(db, memoryId);
+    removeMemoryVecRow(db, memoryId, config);
     return "removed";
   }
 
@@ -239,11 +247,23 @@ export async function syncMemoryEmbedding(
     .get();
 
   if (!rowNeedsEmbeddingRefresh(memory, existing, config)) {
+    if (existing) {
+      upsertMemoryVecRow(db, memory, existing, config);
+    }
     return "skipped";
   }
 
   const embedding = await generateEmbedding(memory.text, config);
   storeEmbedding(db, memory.id, memory.text, embedding, config);
+  const refreshed = db
+    .select()
+    .from(memoryEmbeddings)
+    .where(eq(memoryEmbeddings.memory_id, memory.id))
+    .get();
+  if (!refreshed) {
+    throw new Error(`Failed to reload embedding row for ${memory.id}`);
+  }
+  upsertMemoryVecRow(db, memory, refreshed, config);
   return existing ? "updated" : "stored";
 }
 
@@ -293,6 +313,7 @@ export async function bootstrapEmbeddings(
     if (options.repo && row.repo !== options.repo) continue;
     if (!shouldEmbedMemory(row)) {
       removeStoredEmbedding(db, row.id);
+      removeMemoryVecRow(db, row.id, config);
     }
   }
 
@@ -310,6 +331,7 @@ export async function bootstrapEmbeddings(
     }
   }
 
+  rebuildMemoryVecIndex(db, config, options);
   return total;
 }
 
@@ -334,6 +356,7 @@ export function verifyEmbeddings(
     }
   }
 
+  const vec = verifyMemoryVecIndex(db, options);
   return {
     eligible,
     stored: embeddingRows.filter((row) => {
@@ -342,7 +365,17 @@ export function verifyEmbeddings(
       return memory?.repo === options.repo;
     }).length,
     stale,
+    indexed: vec.indexed,
+    index_drift: vec.drift,
   };
+}
+
+export function rebuildEmbeddingIndex(
+  db: RecallDb,
+  config: EmbeddingConfig,
+  options: { repo?: string } = {},
+) {
+  return rebuildMemoryVecIndex(db, config, options);
 }
 
 // --- Cosine similarity ---
@@ -370,38 +403,26 @@ export async function semanticSearch(
   options: { repo?: string; limit?: number } = {},
 ): Promise<Array<{ memory: MemoryItem; similarity: number }>> {
   const queryEmbedding = await generateEmbedding(query, config);
-  const limit = options.limit ?? 10;
+  const matches = searchMemoryVecIndex(db, queryEmbedding, options);
+  if (matches.length === 0) return [];
 
-  const rows = db.select().from(memories).all();
-  const embeddingsById = new Map(
-    db.select().from(memoryEmbeddings).all().map((row) => [row.memory_id, row]),
+  const rowsById = new Map(
+    db.select().from(memories).all().map((row) => [row.id, row]),
   );
 
-  const results: Array<{ memory: MemoryItem; similarity: number }> = [];
-
-  for (const row of rows) {
-    if (options.repo && row.repo !== options.repo) continue;
-    if (!shouldEmbedMemory(row)) continue;
-
-    const embeddingRow = embeddingsById.get(row.id);
-    if (!embeddingRow?.embedding) continue;
-
-    const similarity = cosineSimilarity(
-      queryEmbedding,
-      deserializeEmbedding(embeddingRow.embedding as Buffer),
-    );
-
-    if (similarity >= config.similarity_threshold) {
-      results.push({
+  return matches
+    .map((match) => {
+      const row = rowsById.get(match.memory_id);
+      if (!row || !shouldEmbedMemory(row)) return null;
+      const similarity = 1 - match.distance;
+      if (similarity < config.similarity_threshold) return null;
+      return {
         memory: rowToMemory(row),
         similarity,
-      });
-    }
-  }
-
-  return results
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit);
+      };
+    })
+    .filter((item): item is { memory: MemoryItem; similarity: number } => item !== null)
+    .sort((a, b) => b.similarity - a.similarity);
 }
 
 // --- Semantic dedup ---
