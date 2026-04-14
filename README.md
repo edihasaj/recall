@@ -81,6 +81,13 @@ RECALL_FEEDBACK_RETENTION_DAYS=180
 RECALL_SIGNAL_RETENTION_DAYS=180
 ```
 
+Inspect rolled-up session history:
+
+```bash
+recall history list -r owner/repo
+recall history search -r owner/repo "pnpm"
+```
+
 ## Teach It
 
 Add a correction:
