@@ -136,6 +136,35 @@ CREATE TABLE `memory_embeddings` (
 --> statement-breakpoint
 CREATE INDEX `idx_memory_embeddings_model` ON `memory_embeddings` (`model`);--> statement-breakpoint
 CREATE INDEX `idx_memory_embeddings_updated` ON `memory_embeddings` (`updated_at`);--> statement-breakpoint
+CREATE TABLE `history_snippets` (
+	`id` text PRIMARY KEY NOT NULL,
+	`repo` text,
+	`session_id` text,
+	`kind` text NOT NULL,
+	`text` text NOT NULL,
+	`source_activity_ids` text DEFAULT '[]' NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL,
+	`archived_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `idx_history_repo` ON `history_snippets` (`repo`);--> statement-breakpoint
+CREATE INDEX `idx_history_session` ON `history_snippets` (`session_id`);--> statement-breakpoint
+CREATE INDEX `idx_history_kind` ON `history_snippets` (`kind`);--> statement-breakpoint
+CREATE INDEX `idx_history_created` ON `history_snippets` (`created_at`);--> statement-breakpoint
+CREATE TABLE `history_snippet_embeddings` (
+	`snippet_id` text PRIMARY KEY NOT NULL,
+	`model` text NOT NULL,
+	`dimensions` integer NOT NULL,
+	`version` text NOT NULL,
+	`content_hash` text NOT NULL,
+	`updated_at` text NOT NULL,
+	`embedding` blob NOT NULL,
+	FOREIGN KEY (`snippet_id`) REFERENCES `history_snippets`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `idx_history_embeddings_model` ON `history_snippet_embeddings` (`model`);--> statement-breakpoint
+CREATE INDEX `idx_history_embeddings_updated` ON `history_snippet_embeddings` (`updated_at`);--> statement-breakpoint
 CREATE TABLE `policy_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -165,4 +194,11 @@ CREATE VIRTUAL TABLE `fts_memory_index` USING fts5(
 	`type` UNINDEXED,
 	`scope` UNINDEXED,
 	`path_scope` UNINDEXED
+);
+--> statement-breakpoint
+CREATE VIRTUAL TABLE `fts_history_index` USING fts5(
+	`snippet_id` UNINDEXED,
+	`text`,
+	`repo` UNINDEXED,
+	`kind` UNINDEXED
 );

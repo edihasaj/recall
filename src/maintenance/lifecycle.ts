@@ -7,7 +7,11 @@ import {
   rebuildEmbeddingIndex,
   verifyEmbeddings,
 } from "../embeddings/embeddings.js";
+import { createHistorySnippet, findHistorySnippetBySession, listHistorySnippets, updateHistorySnippet } from "../history/snippets.js";
+import { bootstrapHistoryEmbeddings, verifyHistoryEmbeddings } from "../history/retrieval.js";
 import { pruneMemories } from "../pruning/pruner.js";
+import { listActivityEvents } from "../models/activity.js";
+import { syncHistoryFtsIndex } from "../vector/sqlite-fts-history.js";
 
 export interface MaintenanceConfig {
   enabled: boolean;
@@ -34,6 +38,10 @@ export interface MaintenanceResult {
   embedding_stale: number;
   vector_drift: number;
   lexical_drift: number;
+  history_snippets_created: number;
+  history_embeddings_refreshed: number;
+  history_vector_drift: number;
+  history_lexical_drift: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -69,6 +77,10 @@ export async function runMaintenanceCycle(
   let embedding_stale = 0;
   let vector_drift = 0;
   let lexical_drift = 0;
+  const history_snippets_created = rollupSessionHistory(db);
+  let history_embeddings_refreshed = 0;
+  let history_vector_drift = 0;
+  let history_lexical_drift = 0;
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (embeddingConfig?.enabled) {
@@ -85,6 +97,13 @@ export async function runMaintenanceCycle(
       const rebuilt = rebuildEmbeddingIndex(db, embeddingConfig);
       vector_rows_rebuilt = rebuilt.vector_rows;
       lexical_rows_rebuilt = rebuilt.lexical_rows;
+    }
+
+    const historyVerify = verifyHistoryEmbeddings(db, embeddingConfig);
+    history_vector_drift = historyVerify.index_drift;
+    history_lexical_drift = historyVerify.lexical_drift;
+    if (historyVerify.stale > 0 || history_snippets_created > 0) {
+      history_embeddings_refreshed = await bootstrapHistoryEmbeddings(db, embeddingConfig);
     }
   }
 
@@ -103,6 +122,10 @@ export async function runMaintenanceCycle(
     embedding_stale,
     vector_drift,
     lexical_drift,
+    history_snippets_created,
+    history_embeddings_refreshed,
+    history_vector_drift,
+    history_lexical_drift,
   };
 }
 
@@ -134,4 +157,85 @@ export function pruneOldImplicitSignals(
   return db.delete(implicitSignals)
     .where(lt(implicitSignals.timestamp, cutoff))
     .run().changes;
+}
+
+export function rollupSessionHistory(db: RecallDb): number {
+  const sessionEnds = listActivityEvents(db, { event_type: "session_end", limit: 500 });
+  let createdOrUpdated = 0;
+
+  for (const end of sessionEnds) {
+    if (!end.session_id) continue;
+    const existing = findHistorySnippetBySession(db, end.session_id, "session_summary");
+
+    const events = listActivityEvents(db, { session_id: end.session_id })
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    if (events.length === 0) continue;
+
+    const repo = end.repo ?? events.find((event) => event.repo)?.repo ?? null;
+    const summary = summarizeSessionEvents(events);
+    const sourceActivityIds = events.map((event) => event.id);
+
+    if (existing) {
+      if (existing.text !== summary) {
+        updateHistorySnippet(db, existing.id, {
+          text: summary,
+          source_activity_ids: sourceActivityIds,
+        });
+        syncHistoryFtsIndex(db, existing.id);
+        createdOrUpdated++;
+      }
+      continue;
+    }
+
+    const id = createHistorySnippet(db, {
+      repo,
+      session_id: end.session_id,
+      kind: "session_summary",
+      text: summary,
+      source_activity_ids: sourceActivityIds,
+    });
+    syncHistoryFtsIndex(db, id);
+    createdOrUpdated++;
+  }
+
+  return createdOrUpdated;
+}
+
+function summarizeSessionEvents(
+  events: Array<ReturnType<typeof listActivityEvents>[number]>,
+) {
+  const repo = events.find((event) => event.repo)?.repo ?? "unknown";
+  const eventTypes = [...new Set(events.map((event) => event.event_type))];
+  const corrections = events
+    .filter((event) => event.event_type === "correction")
+    .map((event) => String(event.request.text ?? ""))
+    .filter(Boolean);
+  const reviews = events
+    .filter((event) => event.event_type === "review")
+    .map((event) => String(event.request.feedback ?? ""))
+    .filter(Boolean);
+  const compileEvents = events.filter((event) => event.event_type === "compile");
+
+  const lines = [
+    `Repo: ${repo}`,
+    `Event types: ${eventTypes.join(", ")}`,
+  ];
+
+  if (compileEvents.length > 0) {
+    const latestCompile = compileEvents.at(-1);
+    const included = Array.isArray(latestCompile?.result.included)
+      ? latestCompile.result.included.length
+      : 0;
+    lines.push(`Latest compile included ${included} memories.`);
+  }
+
+  if (corrections.length > 0) {
+    lines.push(`Corrections: ${corrections.slice(0, 3).join(" | ")}`);
+  }
+
+  if (reviews.length > 0) {
+    lines.push(`Reviews: ${reviews.slice(0, 3).join(" | ")}`);
+  }
+
+  return lines.join("\n");
 }

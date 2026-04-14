@@ -39,6 +39,8 @@ import { createActivityEvent, listActivityEvents, listActivitySessions } from ".
 import { runLocalSetup } from "./setup/local.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
+import { listHistorySnippets } from "./history/snippets.js";
+import { searchHistorySnippets } from "./history/retrieval.js";
 import {
   getLaunchAgentInfo,
   getLaunchAgentStatus,
@@ -473,6 +475,61 @@ program
       process.exit(1);
     }
     console.log(`Wrote ${artifact.output_path}`);
+  });
+
+const historyCmd = program
+  .command("history")
+  .description("Inspect rolled-up history snippets");
+
+historyCmd
+  .command("list")
+  .description("List history snippets")
+  .option("-r, --repo <repo>", "Filter by repository")
+  .option("-s, --session <id>", "Filter by session id")
+  .option("-k, --kind <kind>", "Filter by kind")
+  .option("-n, --limit <n>", "Limit results", "20")
+  .action((opts) => {
+    const db = initDb();
+    const items = listHistorySnippets(db, {
+      repo: opts.repo,
+      session_id: opts.session,
+      kind: opts.kind,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (items.length === 0) {
+      console.log("No history snippets found.");
+      return;
+    }
+
+    for (const item of items) {
+      console.log(`${item.id.slice(0, 8)}  [${item.kind}] repo=${item.repo ?? "-"} session=${item.session_id ?? "-"} ${item.text.split("\n")[0]}`);
+    }
+  });
+
+historyCmd
+  .command("search")
+  .description("Search history snippets with hybrid lexical/vector retrieval")
+  .argument("<query>", "Search query")
+  .option("-r, --repo <repo>", "Filter by repository")
+  .option("-n, --limit <n>", "Limit results", "10")
+  .action(async (query: string, opts) => {
+    const db = initDb();
+    const results = await searchHistorySnippets(db, query, {
+      repo: opts.repo,
+      limit: parseInt(opts.limit, 10),
+    });
+
+    if (results.length === 0) {
+      console.log("No matching history snippets found.");
+      return;
+    }
+
+    for (const result of results) {
+      console.log(
+        `${result.snippet.id.slice(0, 8)}  (score=${result.score.toFixed(3)} vec=${result.similarity.toFixed(3)} lex=${result.lexical_score.toFixed(3)}) [${result.snippet.kind}] ${result.snippet.text.split("\n")[0]}`,
+      );
+    }
   });
 
 // --- serve (MCP) ---

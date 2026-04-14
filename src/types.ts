@@ -243,6 +243,27 @@ export const EmbeddingConfig = z.object({
 });
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfig>;
 
+export const HistorySnippetKind = z.enum([
+  "session_summary",
+  "correction_summary",
+  "review_summary",
+  "compile_summary",
+]);
+export type HistorySnippetKind = z.infer<typeof HistorySnippetKind>;
+
+export const HistorySnippet = z.object({
+  id: z.string().uuid(),
+  repo: z.string().nullable(),
+  session_id: z.string().nullable(),
+  kind: HistorySnippetKind,
+  text: z.string(),
+  source_activity_ids: z.array(z.string().uuid()),
+  created_at: z.string(),
+  updated_at: z.string(),
+  archived_at: z.string().nullable(),
+});
+export type HistorySnippet = z.infer<typeof HistorySnippet>;
+
 // --- Evaluation (Phase 2) ---
 
 export const EvalSession = z.object({

@@ -56,6 +56,40 @@ export const memoryEmbeddings = sqliteTable("memory_embeddings", {
   index("idx_memory_embeddings_updated").on(table.updated_at),
 ]));
 
+export const historySnippets = sqliteTable("history_snippets", {
+  id: text("id").primaryKey(),
+  repo: text("repo"),
+  session_id: text("session_id"),
+  kind: text("kind", {
+    enum: ["session_summary", "correction_summary", "review_summary", "compile_summary"],
+  }).notNull(),
+  text: text("text").notNull(),
+  source_activity_ids: text("source_activity_ids", { mode: "json" }).notNull().default("[]"),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+  archived_at: text("archived_at"),
+}, (table) => ([
+  index("idx_history_repo").on(table.repo),
+  index("idx_history_session").on(table.session_id),
+  index("idx_history_kind").on(table.kind),
+  index("idx_history_created").on(table.created_at),
+]));
+
+export const historySnippetEmbeddings = sqliteTable("history_snippet_embeddings", {
+  snippet_id: text("snippet_id")
+    .primaryKey()
+    .references(() => historySnippets.id, { onDelete: "cascade" }),
+  model: text("model").notNull(),
+  dimensions: integer("dimensions").notNull(),
+  version: text("version").notNull(),
+  content_hash: text("content_hash").notNull(),
+  updated_at: text("updated_at").notNull(),
+  embedding: blob("embedding", { mode: "buffer" }).notNull(),
+}, (table) => ([
+  index("idx_history_embeddings_model").on(table.model),
+  index("idx_history_embeddings_updated").on(table.updated_at),
+]));
+
 export const feedbackEvents = sqliteTable("feedback_events", {
   id: text("id").primaryKey(),
   memory_id: text("memory_id")
