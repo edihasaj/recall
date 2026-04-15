@@ -66,7 +66,7 @@ export function pruneMemories(
           .where(eq(memories.id, mem.id))
           .run();
         queueMemoryEmbeddingSync(db, mem.id);
-        recordAudit(db, mem.id, "archived", "auto-pruner", `Stale: no activity since ${lastActivity}`);
+        recordAudit(db, mem.id, "rejected", "auto-pruner", `Stale: no activity since ${lastActivity}`);
       }
       result.stale_archived.push(mem.id);
     }

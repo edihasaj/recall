@@ -67,7 +67,6 @@ export const historySnippets = sqliteTable("history_snippets", {
   source_activity_ids: text("source_activity_ids", { mode: "json" }).notNull().default("[]"),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
-  archived_at: text("archived_at"),
 }, (table) => ([
   index("idx_history_repo").on(table.repo),
   index("idx_history_session").on(table.session_id),
@@ -239,7 +238,7 @@ export const auditTrail = sqliteTable("audit_trail", {
   action: text("action", {
     enum: [
       "created", "promoted", "demoted", "rejected", "confirmed",
-      "reactivated", "edited", "pruned", "archived", "policy_applied",
+      "reactivated", "edited", "pruned", "policy_applied",
       "approval_requested", "approval_resolved",
       "contradiction_detected", "contradiction_resolved", "rolled_back",
     ],

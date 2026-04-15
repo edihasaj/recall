@@ -144,8 +144,7 @@ CREATE TABLE `history_snippets` (
 	`text` text NOT NULL,
 	`source_activity_ids` text DEFAULT '[]' NOT NULL,
 	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL,
-	`archived_at` text
+	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
 CREATE INDEX `idx_history_repo` ON `history_snippets` (`repo`);--> statement-breakpoint

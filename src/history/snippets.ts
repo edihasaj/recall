@@ -1,4 +1,4 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets } from "../db/schema.js";
@@ -30,7 +30,6 @@ export function createHistorySnippet(
       source_activity_ids: input.source_activity_ids ?? [],
       created_at: now,
       updated_at: now,
-      archived_at: null,
     })
     .run();
   return id;
@@ -50,7 +49,6 @@ export function listHistorySnippets(
     repo?: string;
     session_id?: string;
     kind?: HistorySnippetKind;
-    include_archived?: boolean;
     limit?: number;
   } = {},
 ): HistorySnippet[] {
@@ -58,7 +56,6 @@ export function listHistorySnippets(
   if (query.repo) conditions.push(eq(historySnippets.repo, query.repo));
   if (query.session_id) conditions.push(eq(historySnippets.session_id, query.session_id));
   if (query.kind) conditions.push(eq(historySnippets.kind, query.kind));
-  if (!query.include_archived) conditions.push(isNull(historySnippets.archived_at));
 
   let stmt = db.select().from(historySnippets).$dynamic();
   if (conditions.length > 0) {
@@ -85,17 +82,30 @@ export function findHistorySnippetBySession(
   return row ? rowToHistorySnippet(row) : undefined;
 }
 
+export function findHistorySnippetByRepoKind(
+  db: RecallDb,
+  repo: string,
+  kind: HistorySnippetKind,
+): HistorySnippet | undefined {
+  const row = db.select().from(historySnippets)
+    .where(and(
+      eq(historySnippets.repo, repo),
+      eq(historySnippets.kind, kind),
+    ))
+    .get();
+  return row ? rowToHistorySnippet(row) : undefined;
+}
+
 export function updateHistorySnippet(
   db: RecallDb,
   id: string,
-  updates: Partial<Pick<HistorySnippet, "text" | "archived_at">> & {
+  updates: Partial<Pick<HistorySnippet, "text">> & {
     source_activity_ids?: string[];
   },
 ) {
   db.update(historySnippets)
     .set({
       ...(updates.text != null ? { text: updates.text } : {}),
-      ...(updates.archived_at !== undefined ? { archived_at: updates.archived_at } : {}),
       ...(updates.source_activity_ids ? { source_activity_ids: updates.source_activity_ids as any } : {}),
       updated_at: new Date().toISOString(),
     })
@@ -120,6 +130,5 @@ function rowToHistorySnippet(row: HistorySnippetRow): HistorySnippet {
     source_activity_ids: sourceActivityIds,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    archived_at: row.archived_at,
   };
 }

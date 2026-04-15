@@ -260,7 +260,6 @@ export const HistorySnippet = z.object({
   source_activity_ids: z.array(z.string().uuid()),
   created_at: z.string(),
   updated_at: z.string(),
-  archived_at: z.string().nullable(),
 });
 export type HistorySnippet = z.infer<typeof HistorySnippet>;
 
@@ -412,7 +411,6 @@ export const AuditAction = z.enum([
   "reactivated",
   "edited",
   "pruned",
-  "archived",
   "policy_applied",
   "approval_requested",
   "approval_resolved",

@@ -118,6 +118,7 @@ describe("phase 5 maintenance lifecycle", () => {
       activity_retention_days: 90,
       feedback_retention_days: 180,
       signal_retention_days: 180,
+      history_session_retention_days: 30,
     });
 
     expect(result.vector_rows_rebuilt).toBe(1);

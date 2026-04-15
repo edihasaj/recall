@@ -30,11 +30,10 @@ function version(config: EmbeddingConfig) {
 }
 
 function rowNeedsRefresh(
-  row: Pick<HistorySnippetRow, "text" | "archived_at">,
+  row: Pick<HistorySnippetRow, "text">,
   existing: HistorySnippetEmbeddingRow | undefined,
   config: EmbeddingConfig,
 ) {
-  if (row.archived_at) return false;
   if (!existing) return true;
   return (
     existing.model !== config.model ||
@@ -68,7 +67,6 @@ function rowToHistorySnippet(row: HistorySnippetRow): HistorySnippet {
     source_activity_ids: sourceActivityIds,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    archived_at: row.archived_at,
   };
 }
 
@@ -136,7 +134,7 @@ export async function syncHistorySnippetEmbedding(
     .get();
 
   syncHistoryFtsIndex(db, snippetId);
-  if (!snippet || snippet.archived_at) {
+  if (!snippet) {
     removeStoredHistoryEmbedding(db, snippetId);
     removeHistoryVecRow(db, snippetId);
     return "removed";
@@ -172,14 +170,10 @@ export async function bootstrapHistoryEmbeddings(
     db.select().from(historySnippetEmbeddings).all().map((row) => [row.snippet_id, row]),
   );
 
-  const pending = rows.filter((row) => !row.archived_at && rowNeedsRefresh(row, existing.get(row.id), config));
+  const pending = rows.filter((row) => rowNeedsRefresh(row, existing.get(row.id), config));
 
   for (const row of rows) {
     syncHistoryFtsIndex(db, row.id);
-    if (row.archived_at) {
-      removeStoredHistoryEmbedding(db, row.id);
-      removeHistoryVecRow(db, row.id);
-    }
   }
 
   const BATCH_SIZE = 100;
@@ -211,7 +205,6 @@ export function verifyHistoryEmbeddings(
   let eligible = 0;
   let stale = 0;
   for (const row of rows) {
-    if (row.archived_at) continue;
     eligible++;
     if (rowNeedsRefresh(row, byId.get(row.id), config)) stale++;
   }
@@ -272,7 +265,7 @@ export async function searchHistorySnippets(
   for (let i = 0; i < lexicalMatches.length; i++) {
     const match = lexicalMatches[i];
     const row = rowsById.get(match.snippet_id);
-    if (!row || row.archived_at) continue;
+    if (!row) continue;
     const lexicalScore = lexicalRankToScore(match.lexical_rank, i);
     merged.set(match.snippet_id, {
       snippet: rowToHistorySnippet(row),
@@ -284,7 +277,7 @@ export async function searchHistorySnippets(
 
   for (const match of vectorMatches) {
     const row = rowsById.get(match.snippet_id);
-    if (!row || row.archived_at) continue;
+    if (!row) continue;
     const similarity = Math.max(0, 1 - match.distance);
     const existing = merged.get(match.snippet_id);
     if (existing) {
