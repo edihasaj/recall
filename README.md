@@ -91,6 +91,13 @@ recall history list -r owner/repo
 recall history search -r owner/repo "pnpm"
 ```
 
+Run retrieval eval fixtures:
+
+```bash
+recall eval retrieval --file docs/retrieval-eval.example.json
+recall eval retrieval --file docs/retrieval-eval.example.json --json
+```
+
 ## Teach It
 
 Add a correction:

@@ -14,6 +14,7 @@ import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { processCorrection, processReviewFeedback } from "../capture/correction.js";
 import { scanAndStore } from "../scanner/repo.js";
 import { computeMetrics, formatMetricsReport } from "../eval/harness.js";
+import { formatRetrievalEvalReport, runRetrievalEval } from "../eval/retrieval.js";
 import { recordSignal, getSignalStats } from "../feedback/implicit.js";
 import { inferScope } from "../capture/scope.js";
 import { evaluatePolicy, listPendingApprovals, resolveApproval } from "../policy/engine.js";
@@ -373,6 +374,21 @@ server.tool(
     const metrics = computeMetrics(db, { repo, since });
     return {
       content: [{ type: "text" as const, text: formatMetricsReport(metrics) }],
+    };
+  },
+);
+
+server.tool(
+  "recall_eval_retrieval",
+  "Run retrieval eval fixtures against baseline vs hybrid retrieval.",
+  {
+    cases_json: z.string().describe("JSON string matching { cases: [...] } retrieval fixture format"),
+  },
+  async ({ cases_json }) => {
+    const parsed = JSON.parse(cases_json);
+    const report = await runRetrievalEval(db, parsed);
+    return {
+      content: [{ type: "text" as const, text: formatRetrievalEvalReport(report) }],
     };
   },
 );
