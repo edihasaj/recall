@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: PruneConfig = {
 };
 
 export interface PruneResult {
-  stale_archived: string[];
+  stale_rejected: string[];
   rejected_pruned: string[];
   transient_pruned: string[];
   unhealthy_demoted: string[];
@@ -41,7 +41,7 @@ export function pruneMemories(
   const dayMs = 86_400_000;
 
   const result: PruneResult = {
-    stale_archived: [],
+    stale_rejected: [],
     rejected_pruned: [],
     transient_pruned: [],
     unhealthy_demoted: [],
@@ -68,7 +68,7 @@ export function pruneMemories(
         queueMemoryEmbeddingSync(db, mem.id);
         recordAudit(db, mem.id, "rejected", "auto-pruner", `Stale: no activity since ${lastActivity}`);
       }
-      result.stale_archived.push(mem.id);
+      result.stale_rejected.push(mem.id);
     }
   }
 
@@ -138,7 +138,7 @@ export function pruneMemories(
   }
 
   result.total =
-    result.stale_archived.length +
+    result.stale_rejected.length +
     result.rejected_pruned.length +
     result.transient_pruned.length +
     result.unhealthy_demoted.length;
@@ -153,16 +153,16 @@ export function formatPruneReport(result: PruneResult, dryRun: boolean): string 
   const lines = [
     `${prefix}Prune Report`,
     ``,
-    `Stale archived:    ${result.stale_archived.length}`,
+    `Stale rejected:    ${result.stale_rejected.length}`,
     `Rejected pruned:   ${result.rejected_pruned.length}`,
     `Transient pruned:  ${result.transient_pruned.length}`,
     `Unhealthy demoted: ${result.unhealthy_demoted.length}`,
     `Total affected:    ${result.total}`,
   ];
 
-  if (result.stale_archived.length > 0) {
-    lines.push("", "Stale:");
-    for (const id of result.stale_archived.slice(0, 10)) {
+  if (result.stale_rejected.length > 0) {
+    lines.push("", "Stale Rejected:");
+    for (const id of result.stale_rejected.slice(0, 10)) {
       lines.push(`  ${id.slice(0, 8)}`);
     }
   }

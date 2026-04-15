@@ -96,6 +96,8 @@ Run retrieval eval fixtures:
 ```bash
 recall eval retrieval --file docs/retrieval-eval.example.json
 recall eval retrieval --file docs/retrieval-eval.example.json --json
+recall eval retrieval --file docs/retrieval-eval.recall.json
+recall eval retrieval --file docs/retrieval-eval.recall-hybrid.json
 ```
 
 ## Teach It

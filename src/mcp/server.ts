@@ -42,7 +42,7 @@ const activityEventTypes = [
 
 const server = new McpServer({
   name: "recall",
-  version: "0.3.0",
+  version: "0.5.0",
 });
 
 // --- Tools ---
@@ -510,7 +510,7 @@ server.tool(
   {
     repo: z.string().optional().describe("Limit pruning to one repo"),
     dry_run: z.boolean().optional().describe("Preview without making changes (default: false)"),
-    stale_days: z.number().optional().describe("Days before archiving stale memories (default: 90)"),
+    stale_days: z.number().optional().describe("Days before rejecting stale memories (default: 90)"),
     min_health_score: z.number().optional().describe("Min health score for active (default: 0.2)"),
   },
   async ({ repo, dry_run, stale_days, min_health_score }) => {

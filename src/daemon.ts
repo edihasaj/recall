@@ -118,7 +118,7 @@ const server = createServer(async (req, res) => {
   try {
     // Health
     if (path === "/health" && method === "GET") {
-      return send(res, 200, { status: "ok", version: "0.3.0" });
+      return send(res, 200, { status: "ok", version: "0.5.0" });
     }
 
     // Compile context (hook injection endpoint)

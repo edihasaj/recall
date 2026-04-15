@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "name": "hybrid compile should prefer exact test command phrasing",
+      "repo": "edihasaj/recall",
+      "query_text": "vitest run",
+      "expected_any_texts": [
+        "test: `vitest run`"
+      ],
+      "forbidden_texts": [
+        "dev: `tsup --watch`"
+      ]
+    },
+    {
+      "name": "hybrid compile should prefer exact dev command phrasing",
+      "repo": "edihasaj/recall",
+      "query_text": "tsup --watch dev",
+      "expected_any_texts": [
+        "dev: `tsup --watch`"
+      ],
+      "forbidden_texts": [
+        "test: `vitest run`"
+      ]
+    }
+  ]
+}

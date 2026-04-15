@@ -71,32 +71,40 @@ Accuracy comes from hybrid ranking plus gating, not from vectors alone.
 - adding a separate networked vector DB
 - changing compile behavior for `candidate` memories without explicit eval gating
 
-## Current Gaps
+## Current State
 
-Current compiler behavior (`compileContext` in `src/compiler/context.ts`):
+This plan is mostly implemented now.
 
-- fetch `active` memories by repo (ignores `candidate` entirely)
-- optional path/scope filtering
-- confidence threshold
-- sort by type priority (`rule=0 > command=1 > gotcha=2 > review_pattern=3 > decision=4`), then confidence descending
-- per-type budget caps (max_lines, max_commands, max_gotchas)
-- render into a markdown text pack
+Shipped:
 
-Existing embedding state:
+- clean `initial_migration`
+- canonical `memory_embeddings`
+- `sqlite-vec` lane for durable memories
+- `FTS5` lane for durable memories
+- repo-first hybrid compile/query path
+- candidate opt-in for hybrid compile/query
+- pagination in memory query/list paths
+- repo-scoped prune
+- semantic dedup wired into correction/review capture
+- daemon maintenance timer
+- TTL cleanup for activity / feedback / implicit signals
+- SQLite maintenance ops:
+  - `ANALYZE`
+  - WAL checkpoint
+  - `PRAGMA optimize`
+  - guarded `VACUUM`
+- separate `history_snippets` lane
+- history lexical + vector retrieval
+- session rollup into history snippets
+- repo-level history summarize
+- cleanup of old covered session summaries
+- retrieval eval harness with fixture files
 
-- `memories` table already has an inline `embedding blob` column
-- no versioning, model tracking, dimensions, or content hash metadata
-- embeddings generated only via manual `recall embed` CLI command (gated behind `RECALL_EMBEDDINGS_ENABLED`)
-- `embedAllMemories` batch-embeds without status filtering — embeds `rejected` rows too
-- no dedup check prevents re-embedding unchanged content
+Still polish / follow-up territory:
 
-Missing:
-
-- semantic search in default compile/query path
-- embedding lifecycle/versioning
-- lexical index for good exact recall at larger scale
-- separate retrieval path for historical snippets
-- `transient` and `rejected` status exclusion from embedding pipeline
+- add more real retrieval-eval fixture files for important repos
+- decide whether low-trust history should participate more directly in compile injection
+- optional path bucketing if eval shows it helps
 
 ## Proposed Architecture
 
@@ -566,54 +574,68 @@ One practical policy:
 
 ### Phase 1: Embedding lifecycle
 
-- add `memory_embeddings` table with versioning/metadata
-- replace current migration history with one clean `initial_migration`
-- add `recall db reset`
-- add `recall embeddings bootstrap`
-- auto-embed on create/update (status-filtered: skip `rejected`/`transient`)
-- remove inline embedding storage from the schema entirely
-- remove manual `recall embed` one-off behavior in favor of bootstrap + background sync
+Status: shipped
+
+- `memory_embeddings` table exists
+- clean `initial_migration` exists
+- `recall db reset` exists
+- `recall embeddings bootstrap` exists
+- auto-embed on create/update exists
+- inline embedding storage is gone
 
 ### Phase 1.5: Fix existing full-scan bottlenecks
 
-- refactor `pruneMemories` to query per-repo instead of `db.select().from(memories).all()`
-- add `repo` parameter to `recall_prune` MCP tool
-- add pagination to `queryMemories` and `listMemories`
-- wire `findSemanticDuplicates` into memory create/confirm path
+Status: shipped for the intended scope
+
+- `pruneMemories` is repo-scoped
+- `recall_prune` accepts `repo`
+- `queryMemories` and `listMemories` have pagination
+- semantic dedup is wired into correction/review capture
 
 ### Phase 2: sqlite-vec index
 
-- add derived vector index tables
-- add rebuild/verify tooling
-- add tests around index sync
+Status: shipped
+
+- durable memory vec index exists
+- rebuild/verify tooling exists
+- index tests exist
 
 ### Phase 3: lexical index
 
-- add `FTS5`
-- merge lexical + vector candidate generation
+Status: shipped
+
+- durable memory FTS exists
+- lexical + vector candidate generation exists
 
 ### Phase 4: compiler integration
 
-- update `compileContext`
-- rerank hybrid candidates
-- keep conservative thresholds
+Status: shipped
+
+- hybrid compile path exists
+- reranking exists
+- candidate opt-in exists
+- thresholds stay conservative
 
 ### Phase 5: background lifecycle
 
-- add daemon maintenance timer (launchd `StartInterval` or internal setInterval)
-- scheduled pruning, index verify, event TTL cleanup
-- `activityEvents` / `feedbackEvents` TTL pruning
-- history compaction jobs (rollup, summarize, archive)
+Status: shipped
+
+- daemon maintenance timer exists
+- prune / index verify / TTL cleanup exist
+- SQLite maintenance ops exist
+- history rollup + summarize + cleanup exist
 
 ### Phase 6: history retrieval
 
-- add separate `history_snippets`
-- vectorize independently from hard memories
-- two-lane compaction (lossless durable memories, lossy history)
+Status: shipped
+
+- separate `history_snippets` lane exists
+- independent history lexical/vector retrieval exists
+- low-trust history remains separate from hard memory injection
 
 ## Testing / Eval
 
-Need offline eval before making hybrid retrieval default.
+Offline retrieval eval exists now.
 
 Measure:
 
@@ -663,13 +685,13 @@ Mitigation:
 - hybrid rerank
 - conservative thresholds
 - status/confidence gating
-- eval harness before default cutover
+- eval harness exists; it should keep growing with real repo fixtures
 
 ### Performance surprises
 
 Naive search may still degrade if we search too broadly.
 
-Current: `pruneMemories`, `semanticSearch`, and `findSemanticDuplicates` all do full table scans in JS. These must be fixed before scale matters (Phase 1.5).
+Current remaining risks are mostly operational polish, not missing core architecture.
 
 Mitigation:
 
@@ -694,15 +716,8 @@ The winning shape for Recall is:
 
 That gets better scale and better selection quality without changing Recall's local-first model.
 
-## Immediate Next Steps
+## Remaining Work
 
-1. Replace current migration history with one clean `initial_migration`.
-2. Define `memory_embeddings`, vec index tables, and `FTS5` in that schema.
-3. Add `recall db reset` and `recall embeddings bootstrap`.
-4. Rewrite `compileContext` to use repo-first hybrid candidate generation + reranking.
-5. Decide on `decision` type priority in reranker (currently lowest at 4).
-6. Fix full-scan bottlenecks in pruner/search/dedup (Phase 1.5).
-7. Add event table TTL pruning (`activityEvents`, `feedbackEvents`).
-8. Add daemon maintenance timer for background jobs.
-9. Add eval fixtures before making hybrid retrieval default.
-10. Gate `candidate` memory inclusion behind eval pass/fail.
+1. Add more real retrieval-eval fixture files for important repos.
+2. Decide whether history snippets should influence compile injection beyond low-trust secondary retrieval.
+3. Add optional path bucketing only if eval shows measurable benefit.
