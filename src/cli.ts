@@ -1048,7 +1048,7 @@ program
   .command("prune")
   .description("Auto-prune stale and unhealthy memories")
   .option("-r, --repo <repo>", "Limit pruning to one repo")
-  .option("--stale-days <n>", "Days before archiving stale memories", "90")
+  .option("--stale-days <n>", "Days before rejecting stale memories", "90")
   .option("--rejected-days <n>", "Days before deleting rejected memories", "30")
   .option("--transient-days <n>", "Days before deleting transient memories", "7")
   .option("--min-health <n>", "Min health score for active memories", "0.2")

@@ -311,7 +311,7 @@ describe("pruning", () => {
       .run();
 
     const result = pruneMemories(db, { stale_days: 90, dry_run: true });
-    expect(result.stale_archived).toContain(memId);
+    expect(result.stale_rejected).toContain(memId);
     expect(result.total).toBeGreaterThanOrEqual(1);
 
     // Dry run: status should be unchanged
@@ -360,22 +360,22 @@ describe("pruning", () => {
       stale_days: 90,
     });
 
-    expect(result.stale_archived).toContain(repoA);
-    expect(result.stale_archived).not.toContain(repoB);
+    expect(result.stale_rejected).toContain(repoA);
+    expect(result.stale_rejected).not.toContain(repoB);
     expect(getMemory(db, repoA)?.status).toBe("rejected");
     expect(getMemory(db, repoB)?.status).toBe("active");
   });
 
   it("formats prune report", () => {
     const result = {
-      stale_archived: ["abc"],
+      stale_rejected: ["abc"],
       rejected_pruned: [],
       transient_pruned: [],
       unhealthy_demoted: [],
       total: 1,
     };
     const report = formatPruneReport(result, false);
-    expect(report).toContain("Stale archived:    1");
+    expect(report).toContain("Stale rejected:    1");
   });
 });
 

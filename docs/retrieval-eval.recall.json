@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {
+      "name": "recall package-manager hygiene rule surfaces for npm link query",
+      "repo": "edihasaj/recall",
+      "query_text": "npm link local cli",
+      "expected_any_texts": [
+        "Do not use package-lock. Use npm link for the local cli instead."
+      ],
+      "forbidden_texts": [
+        "Use package-lock as the package manager"
+      ]
+    },
+    {
+      "name": "recall build command surfaces for tsup build query",
+      "repo": "edihasaj/recall",
+      "query_text": "tsup build cli",
+      "expected_any_texts": [
+        "build: `tsup && node -e \"const f='dist/cli.js';const c=require('fs').readFileSync(f,'utf8');if(!c.startsWith('#!'))require('fs').writeFileSync(f,'#!/usr/bin/env node\\n'+c);require('fs').chmodSync(f,0o755)\"`"
+      ]
+    },
+    {
+      "name": "recall test command surfaces for vitest query",
+      "repo": "edihasaj/recall",
+      "query_text": "vitest run tests",
+      "expected_any_texts": [
+        "test: `vitest run`"
+      ]
+    }
+  ]
+}

@@ -39,7 +39,7 @@ export interface MaintenanceConfig {
 
 export interface MaintenanceResult {
   prune_total: number;
-  stale_archived: number;
+  stale_rejected: number;
   rejected_pruned: number;
   transient_pruned: number;
   unhealthy_demoted: number;
@@ -146,7 +146,7 @@ export async function runMaintenanceCycle(
 
   return {
     prune_total: prune.total,
-    stale_archived: prune.stale_archived.length,
+    stale_rejected: prune.stale_rejected.length,
     rejected_pruned: prune.rejected_pruned.length,
     transient_pruned: prune.transient_pruned.length,
     unhealthy_demoted: prune.unhealthy_demoted.length,
