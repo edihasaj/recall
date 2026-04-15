@@ -8,7 +8,7 @@ import { createMemory } from "../src/models/memory.js";
 import { createActivityEvent, listActivityEvents } from "../src/models/activity.js";
 import { recordFeedback, getMemoryFeedback } from "../src/models/memory.js";
 import { flushEmbeddingJobs, loadEmbeddingConfigFromEnv, verifyEmbeddings } from "../src/embeddings/embeddings.js";
-import { runMaintenanceCycle, pruneOldActivityEvents, pruneOldFeedbackEvents } from "../src/maintenance/lifecycle.js";
+import { runMaintenanceCycle, pruneOldActivityEvents, pruneOldFeedbackEvents, runSqliteMaintenance } from "../src/maintenance/lifecycle.js";
 import { activityEvents, feedbackEvents } from "../src/db/schema.js";
 import { removeMemoryFtsRow } from "../src/vector/sqlite-fts.js";
 import { removeMemoryVecRow } from "../src/vector/sqlite-vec.js";
@@ -127,5 +127,42 @@ describe("phase 5 maintenance lifecycle", () => {
     const after = verifyEmbeddings(db, config);
     expect(after.index_drift).toBe(0);
     expect(after.lexical_drift).toBe(0);
+  });
+
+  it("runs sqlite analyze/checkpoint/optimize and guarded vacuum", () => {
+    const db = freshDb();
+    const sqlite = db.$client;
+
+    sqlite.exec(`
+      create table if not exists maintenance_junk (
+        id integer primary key,
+        payload text not null
+      );
+    `);
+
+    const insert = sqlite.prepare("insert into maintenance_junk (payload) values (?)");
+    const insertMany = sqlite.transaction(() => {
+      for (let i = 0; i < 300; i++) {
+        insert.run("x".repeat(2000));
+      }
+    });
+    insertMany();
+    sqlite.exec("delete from maintenance_junk;");
+
+    const result = runSqliteMaintenance(db, {
+      sqlite_analyze_enabled: true,
+      sqlite_optimize_enabled: true,
+      sqlite_wal_checkpoint_enabled: true,
+      sqlite_vacuum_enabled: true,
+      sqlite_vacuum_min_free_pages: 1,
+      sqlite_vacuum_min_free_ratio: 0,
+    });
+
+    expect(result.analyze_ran).toBe(true);
+    expect(result.optimize_ran).toBe(true);
+    expect(result.checkpoint_ran).toBe(true);
+    expect(result.vacuum_ran).toBe(true);
+    expect(result.page_count).toBeGreaterThan(0);
+    expect(result.freelist_count).toBeGreaterThan(0);
   });
 });

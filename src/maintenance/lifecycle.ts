@@ -29,6 +29,12 @@ export interface MaintenanceConfig {
   feedback_retention_days: number;
   signal_retention_days: number;
   history_session_retention_days: number;
+  sqlite_analyze_enabled: boolean;
+  sqlite_optimize_enabled: boolean;
+  sqlite_wal_checkpoint_enabled: boolean;
+  sqlite_vacuum_enabled: boolean;
+  sqlite_vacuum_min_free_pages: number;
+  sqlite_vacuum_min_free_ratio: number;
 }
 
 export interface MaintenanceResult {
@@ -52,6 +58,12 @@ export interface MaintenanceResult {
   history_embeddings_refreshed: number;
   history_vector_drift: number;
   history_lexical_drift: number;
+  sqlite_analyze_ran: boolean;
+  sqlite_optimize_ran: boolean;
+  sqlite_checkpoint_ran: boolean;
+  sqlite_vacuum_ran: boolean;
+  sqlite_page_count: number;
+  sqlite_freelist_count: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -66,6 +78,12 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     feedback_retention_days: parseInt(process.env.RECALL_FEEDBACK_RETENTION_DAYS ?? "180", 10),
     signal_retention_days: parseInt(process.env.RECALL_SIGNAL_RETENTION_DAYS ?? "180", 10),
     history_session_retention_days: parseInt(process.env.RECALL_HISTORY_SESSION_RETENTION_DAYS ?? "30", 10),
+    sqlite_analyze_enabled: process.env.RECALL_SQLITE_ANALYZE_ENABLED !== "false",
+    sqlite_optimize_enabled: process.env.RECALL_SQLITE_OPTIMIZE_ENABLED !== "false",
+    sqlite_wal_checkpoint_enabled: process.env.RECALL_SQLITE_CHECKPOINT_ENABLED !== "false",
+    sqlite_vacuum_enabled: process.env.RECALL_SQLITE_VACUUM_ENABLED === "true",
+    sqlite_vacuum_min_free_pages: parseInt(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_PAGES ?? "100", 10),
+    sqlite_vacuum_min_free_ratio: parseFloat(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_RATIO ?? "0.1"),
   };
 }
 
@@ -81,6 +99,7 @@ export async function runMaintenanceCycle(
   const activity_pruned = pruneOldActivityEvents(db, config.activity_retention_days);
   const feedback_pruned = pruneOldFeedbackEvents(db, config.feedback_retention_days);
   const signals_pruned = pruneOldImplicitSignals(db, config.signal_retention_days);
+  const sqliteMaintenance = runSqliteMaintenance(db, config);
 
   let embeddings_refreshed = 0;
   let vector_rows_rebuilt = 0;
@@ -146,6 +165,69 @@ export async function runMaintenanceCycle(
     history_embeddings_refreshed,
     history_vector_drift,
     history_lexical_drift,
+    sqlite_analyze_ran: sqliteMaintenance.analyze_ran,
+    sqlite_optimize_ran: sqliteMaintenance.optimize_ran,
+    sqlite_checkpoint_ran: sqliteMaintenance.checkpoint_ran,
+    sqlite_vacuum_ran: sqliteMaintenance.vacuum_ran,
+    sqlite_page_count: sqliteMaintenance.page_count,
+    sqlite_freelist_count: sqliteMaintenance.freelist_count,
+  };
+}
+
+export function runSqliteMaintenance(
+  db: RecallDb,
+  config: Pick<
+    MaintenanceConfig,
+    | "sqlite_analyze_enabled"
+    | "sqlite_optimize_enabled"
+    | "sqlite_wal_checkpoint_enabled"
+    | "sqlite_vacuum_enabled"
+    | "sqlite_vacuum_min_free_pages"
+    | "sqlite_vacuum_min_free_ratio"
+  >,
+) {
+  const sqlite = db.$client;
+
+  const pageCount = Number((sqlite.pragma("page_count", { simple: true }) as number | bigint) ?? 0);
+  const freelistCount = Number((sqlite.pragma("freelist_count", { simple: true }) as number | bigint) ?? 0);
+  const freeRatio = pageCount > 0 ? freelistCount / pageCount : 0;
+
+  let analyzeRan = false;
+  let optimizeRan = false;
+  let checkpointRan = false;
+  let vacuumRan = false;
+
+  if (config.sqlite_analyze_enabled) {
+    sqlite.exec("ANALYZE;");
+    analyzeRan = true;
+  }
+
+  if (config.sqlite_wal_checkpoint_enabled) {
+    sqlite.pragma("wal_checkpoint(PASSIVE)");
+    checkpointRan = true;
+  }
+
+  if (config.sqlite_optimize_enabled) {
+    sqlite.pragma("optimize");
+    optimizeRan = true;
+  }
+
+  if (
+    config.sqlite_vacuum_enabled &&
+    freelistCount >= config.sqlite_vacuum_min_free_pages &&
+    freeRatio >= config.sqlite_vacuum_min_free_ratio
+  ) {
+    sqlite.exec("VACUUM;");
+    vacuumRan = true;
+  }
+
+  return {
+    analyze_ran: analyzeRan,
+    optimize_ran: optimizeRan,
+    checkpoint_ran: checkpointRan,
+    vacuum_ran: vacuumRan,
+    page_count: pageCount,
+    freelist_count: freelistCount,
   };
 }
 
