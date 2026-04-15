@@ -290,6 +290,30 @@ export const EvalMetrics = z.object({
 });
 export type EvalMetrics = z.infer<typeof EvalMetrics>;
 
+export const RetrievalEvalCase = z.object({
+  name: z.string(),
+  repo: z.string(),
+  path: z.string().optional(),
+  query_text: z.string().default(""),
+  include_candidates: z.boolean().default(false),
+  confidence_threshold: z.number().optional(),
+  max_lines: z.number().optional(),
+  max_commands: z.number().optional(),
+  max_gotchas: z.number().optional(),
+  token_budget: z.number().optional(),
+  expected_all_texts: z.array(z.string()).default([]),
+  expected_any_texts: z.array(z.string()).default([]),
+  forbidden_texts: z.array(z.string()).default([]),
+  min_included: z.number().int().nonnegative().optional(),
+  max_included: z.number().int().nonnegative().optional(),
+});
+export type RetrievalEvalCase = z.infer<typeof RetrievalEvalCase>;
+
+export const RetrievalEvalFile = z.object({
+  cases: z.array(RetrievalEvalCase),
+});
+export type RetrievalEvalFile = z.infer<typeof RetrievalEvalFile>;
+
 // --- Implicit feedback (Phase 2) ---
 
 export const ImplicitSignal = z.object({

@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "name": "pytest command should win",
+      "repo": "owner/repo",
+      "query_text": "pytest -q",
+      "max_lines": 1,
+      "expected_all_texts": ["Run pytest -q"],
+      "forbidden_texts": ["Use strict mode"]
+    },
+    {
+      "name": "candidate allowed only when opted in",
+      "repo": "owner/repo",
+      "query_text": "pnpm",
+      "include_candidates": true,
+      "expected_any_texts": ["pnpm test"]
+    }
+  ]
+}

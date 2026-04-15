@@ -20,6 +20,7 @@ import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { inferRepoSlugFromPath } from "./repo/discovery.js";
 import { sync, createTeam, joinTeam } from "./sync/client.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession } from "./eval/harness.js";
+import { formatRetrievalEvalReport, loadRetrievalEvalFile, runRetrievalEval } from "./eval/retrieval.js";
 import {
   bootstrapEmbeddings,
   hybridSearch,
@@ -649,6 +650,24 @@ evalCmd
     const db = initDb();
     endEvalSession(db, sessionId);
     console.log(`Eval session ended: ${sessionId}`);
+  });
+
+evalCmd
+  .command("retrieval")
+  .description("Run retrieval eval fixtures against baseline vs hybrid retrieval")
+  .requiredOption("-f, --file <path>", "Fixture file path")
+  .option("--json", "Emit raw JSON report")
+  .action(async (opts) => {
+    const db = initDb();
+    const input = loadRetrievalEvalFile(opts.file);
+    const report = await runRetrievalEval(db, input);
+
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+
+    console.log(formatRetrievalEvalReport(report));
   });
 
 // --- Phase 1: embeddings ---
