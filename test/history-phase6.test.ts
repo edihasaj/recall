@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
+import { historySnippets } from "../src/db/schema.js";
 import { createActivityEvent } from "../src/models/activity.js";
 import { listHistorySnippets } from "../src/history/snippets.js";
 import { runMaintenanceCycle } from "../src/maintenance/lifecycle.js";
@@ -80,13 +82,14 @@ describe("phase 6 history retrieval", () => {
       activity_retention_days: 90,
       feedback_retention_days: 180,
       signal_retention_days: 180,
+      history_session_retention_days: 30,
     });
 
     expect(result.history_snippets_created).toBe(1);
+    expect(result.history_summaries_created).toBeGreaterThanOrEqual(1);
     const snippets = listHistorySnippets(db, { repo: "test/repo" });
-    expect(snippets).toHaveLength(1);
-    expect(snippets[0].kind).toBe("session_summary");
-    expect(snippets[0].text).toContain("Corrections:");
+    expect(snippets.some((snippet) => snippet.kind === "session_summary")).toBe(true);
+    expect(snippets.some((snippet) => snippet.kind === "correction_summary")).toBe(true);
   });
 
   it("searches history snippets independently from memories", async () => {
@@ -122,6 +125,7 @@ describe("phase 6 history retrieval", () => {
       activity_retention_days: 90,
       feedback_retention_days: 180,
       signal_retention_days: 180,
+      history_session_retention_days: 30,
     });
 
     const results = await searchHistorySnippets(db, "pnpm", {
@@ -129,7 +133,69 @@ describe("phase 6 history retrieval", () => {
       limit: 5,
     });
 
-    expect(results).toHaveLength(1);
+    expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0].snippet.text).toContain("pnpm");
+    expect(results.some((result) => result.snippet.kind === "correction_summary")).toBe(true);
+  });
+
+  it("archives old session summaries after repo summaries exist", async () => {
+    const db = freshDb();
+
+    createActivityEvent(db, {
+      session_id: "sess-3",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "correction",
+      request: { text: "don't use npm, use pnpm" },
+      result: {},
+    });
+    createActivityEvent(db, {
+      session_id: "sess-3",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "session_end",
+      request: {},
+      result: { exit_code: 0 },
+    });
+
+    await runMaintenanceCycle(db, {
+      enabled: true,
+      interval_seconds: 300,
+      stale_days: 90,
+      min_health_score: 0.2,
+      activity_retention_days: 90,
+      feedback_retention_days: 180,
+      signal_retention_days: 180,
+      history_session_retention_days: 30,
+    });
+
+    const session = listHistorySnippets(db, {
+      repo: "test/repo",
+      kind: "session_summary",
+      limit: 10,
+    })[0]!;
+
+    db.update(historySnippets)
+      .set({ created_at: new Date(Date.now() - 40 * 86_400_000).toISOString() })
+      .where(eq(historySnippets.id, session.id))
+      .run();
+
+    const result = await runMaintenanceCycle(db, {
+      enabled: true,
+      interval_seconds: 300,
+      stale_days: 90,
+      min_health_score: 0.2,
+      activity_retention_days: 90,
+      feedback_retention_days: 180,
+      signal_retention_days: 180,
+      history_session_retention_days: 30,
+    });
+
+    expect(result.history_session_deleted).toBe(1);
+    const activeSessions = listHistorySnippets(db, {
+      repo: "test/repo",
+      kind: "session_summary",
+    });
+    expect(activeSessions).toHaveLength(0);
   });
 });

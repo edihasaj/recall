@@ -30,13 +30,9 @@ export function removeHistoryFtsRow(db: RecallDb, snippetId: string) {
 
 export function upsertHistoryFtsRow(
   db: RecallDb,
-  snippet: Pick<typeof historySnippets.$inferSelect, "id" | "text" | "repo" | "kind" | "archived_at">,
+  snippet: Pick<typeof historySnippets.$inferSelect, "id" | "text" | "repo" | "kind">,
 ) {
   ensureHistoryFtsIndex(db);
-  if (snippet.archived_at) {
-    removeHistoryFtsRow(db, snippet.id);
-    return;
-  }
   const sqlite = getSqlite(db);
   sqlite.prepare(`delete from ${FTS_HISTORY_INDEX} where snippet_id = ?`).run(snippet.id);
   sqlite.prepare(`
@@ -56,7 +52,7 @@ export function syncHistoryFtsIndex(db: RecallDb, snippetId: string) {
     return "removed";
   }
   upsertHistoryFtsRow(db, snippet);
-  return snippet.archived_at ? "removed" : "stored";
+  return "stored";
 }
 
 export function rebuildHistoryFtsIndex(
@@ -73,8 +69,7 @@ export function rebuildHistoryFtsIndex(
   }
 
   const rows = db.select().from(historySnippets).all()
-    .filter((row) => !options.repo || row.repo === options.repo)
-    .filter((row) => !row.archived_at);
+    .filter((row) => !options.repo || row.repo === options.repo);
 
   const stmt = sqlite.prepare(`
     insert into ${FTS_HISTORY_INDEX} (
@@ -102,8 +97,7 @@ export function verifyHistoryFtsIndex(
     .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
     .get(FTS_HISTORY_INDEX);
   const expected = db.select().from(historySnippets).all()
-    .filter((row) => !options.repo || row.repo === options.repo)
-    .filter((row) => !row.archived_at).length;
+    .filter((row) => !options.repo || row.repo === options.repo).length;
 
   let indexed = 0;
   if (exists) {

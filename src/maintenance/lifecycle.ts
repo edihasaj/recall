@@ -1,17 +1,24 @@
-import { lt } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { activityEvents, feedbackEvents, implicitSignals } from "../db/schema.js";
+import { activityEvents, feedbackEvents, historySnippets, implicitSignals } from "../db/schema.js";
 import {
   bootstrapEmbeddings,
   loadEmbeddingConfigFromEnv,
   rebuildEmbeddingIndex,
   verifyEmbeddings,
 } from "../embeddings/embeddings.js";
-import { createHistorySnippet, findHistorySnippetBySession, listHistorySnippets, updateHistorySnippet } from "../history/snippets.js";
+import {
+  createHistorySnippet,
+  findHistorySnippetByRepoKind,
+  findHistorySnippetBySession,
+  listHistorySnippets,
+  updateHistorySnippet,
+} from "../history/snippets.js";
 import { bootstrapHistoryEmbeddings, verifyHistoryEmbeddings } from "../history/retrieval.js";
 import { pruneMemories } from "../pruning/pruner.js";
 import { listActivityEvents } from "../models/activity.js";
-import { syncHistoryFtsIndex } from "../vector/sqlite-fts-history.js";
+import { removeHistoryFtsRow, syncHistoryFtsIndex } from "../vector/sqlite-fts-history.js";
+import { removeHistoryVecRow } from "../vector/sqlite-vec-history.js";
 
 export interface MaintenanceConfig {
   enabled: boolean;
@@ -21,6 +28,7 @@ export interface MaintenanceConfig {
   activity_retention_days: number;
   feedback_retention_days: number;
   signal_retention_days: number;
+  history_session_retention_days: number;
 }
 
 export interface MaintenanceResult {
@@ -39,6 +47,8 @@ export interface MaintenanceResult {
   vector_drift: number;
   lexical_drift: number;
   history_snippets_created: number;
+  history_summaries_created: number;
+  history_session_deleted: number;
   history_embeddings_refreshed: number;
   history_vector_drift: number;
   history_lexical_drift: number;
@@ -55,6 +65,7 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "90", 10),
     feedback_retention_days: parseInt(process.env.RECALL_FEEDBACK_RETENTION_DAYS ?? "180", 10),
     signal_retention_days: parseInt(process.env.RECALL_SIGNAL_RETENTION_DAYS ?? "180", 10),
+    history_session_retention_days: parseInt(process.env.RECALL_HISTORY_SESSION_RETENTION_DAYS ?? "30", 10),
   };
 }
 
@@ -78,6 +89,8 @@ export async function runMaintenanceCycle(
   let vector_drift = 0;
   let lexical_drift = 0;
   const history_snippets_created = rollupSessionHistory(db);
+  const history_summaries_created = summarizeHistorySnippets(db);
+  const history_session_deleted = cleanupSessionHistory(db, config.history_session_retention_days);
   let history_embeddings_refreshed = 0;
   let history_vector_drift = 0;
   let history_lexical_drift = 0;
@@ -102,7 +115,12 @@ export async function runMaintenanceCycle(
     const historyVerify = verifyHistoryEmbeddings(db, embeddingConfig);
     history_vector_drift = historyVerify.index_drift;
     history_lexical_drift = historyVerify.lexical_drift;
-    if (historyVerify.stale > 0 || history_snippets_created > 0) {
+    if (
+      historyVerify.stale > 0 ||
+      history_snippets_created > 0 ||
+      history_summaries_created > 0 ||
+      history_session_deleted > 0
+    ) {
       history_embeddings_refreshed = await bootstrapHistoryEmbeddings(db, embeddingConfig);
     }
   }
@@ -123,6 +141,8 @@ export async function runMaintenanceCycle(
     vector_drift,
     lexical_drift,
     history_snippets_created,
+    history_summaries_created,
+    history_session_deleted,
     history_embeddings_refreshed,
     history_vector_drift,
     history_lexical_drift,
@@ -201,6 +221,85 @@ export function rollupSessionHistory(db: RecallDb): number {
   return createdOrUpdated;
 }
 
+export function summarizeHistorySnippets(db: RecallDb): number {
+  const sessionSnippets = listHistorySnippets(db, {
+    kind: "session_summary",
+    limit: 1000,
+  });
+
+  const byRepo = new Map<string, typeof sessionSnippets>();
+  for (const snippet of sessionSnippets) {
+    if (!snippet.repo) continue;
+    const bucket = byRepo.get(snippet.repo) ?? [];
+    bucket.push(snippet);
+    byRepo.set(snippet.repo, bucket);
+  }
+
+  let createdOrUpdated = 0;
+  for (const [repo, snippets] of byRepo.entries()) {
+    const aggregated = aggregateRepoHistory(repo, snippets);
+    for (const item of aggregated) {
+      if (!item.text) continue;
+
+      const existing = findHistorySnippetByRepoKind(db, repo, item.kind);
+      if (existing) {
+        if (existing.text !== item.text) {
+          updateHistorySnippet(db, existing.id, {
+            text: item.text,
+            source_activity_ids: item.source_activity_ids,
+          });
+          syncHistoryFtsIndex(db, existing.id);
+          createdOrUpdated++;
+        }
+        continue;
+      }
+
+      const id = createHistorySnippet(db, {
+        repo,
+        kind: item.kind,
+        text: item.text,
+        source_activity_ids: item.source_activity_ids,
+      });
+      syncHistoryFtsIndex(db, id);
+      createdOrUpdated++;
+    }
+  }
+
+  return createdOrUpdated;
+}
+
+export function cleanupSessionHistory(
+  db: RecallDb,
+  retentionDays: number,
+): number {
+  const cutoff = new Date(Date.now() - (retentionDays * DAY_MS)).toISOString();
+  const sessionSnippets = listHistorySnippets(db, {
+    kind: "session_summary",
+    limit: 1000,
+  });
+
+  let deleted = 0;
+  for (const snippet of sessionSnippets) {
+    if (!snippet.repo) continue;
+    if (snippet.created_at >= cutoff) continue;
+
+    const hasRepoSummary =
+      findHistorySnippetByRepoKind(db, snippet.repo, "correction_summary") ||
+      findHistorySnippetByRepoKind(db, snippet.repo, "review_summary") ||
+      findHistorySnippetByRepoKind(db, snippet.repo, "compile_summary");
+    if (!hasRepoSummary) continue;
+
+    removeHistoryFtsRow(db, snippet.id);
+    removeHistoryVecRow(db, snippet.id);
+    db.delete(historySnippets)
+      .where(eq(historySnippets.id, snippet.id))
+      .run();
+    deleted++;
+  }
+
+  return deleted;
+}
+
 function summarizeSessionEvents(
   events: Array<ReturnType<typeof listActivityEvents>[number]>,
 ) {
@@ -238,4 +337,89 @@ function summarizeSessionEvents(
   }
 
   return lines.join("\n");
+}
+
+function aggregateRepoHistory(
+  repo: string,
+  snippets: ReturnType<typeof listHistorySnippets>,
+): Array<{
+  kind: "correction_summary" | "review_summary" | "compile_summary";
+  text: string;
+  source_activity_ids: string[];
+}> {
+  const corrections = new Map<string, number>();
+  const reviews = new Map<string, number>();
+  let compileObservations = 0;
+  let compileIncludedTotal = 0;
+  const sourceActivityIds = new Set<string>();
+
+  for (const snippet of snippets) {
+    for (const id of snippet.source_activity_ids) {
+      sourceActivityIds.add(id);
+    }
+
+    const lines = snippet.text.split("\n");
+    const correctionsLine = lines.find((line) => line.startsWith("Corrections: "));
+    if (correctionsLine) {
+      for (const item of correctionsLine.replace("Corrections: ", "").split(" | ").filter(Boolean)) {
+        corrections.set(item, (corrections.get(item) ?? 0) + 1);
+      }
+    }
+
+    const reviewsLine = lines.find((line) => line.startsWith("Reviews: "));
+    if (reviewsLine) {
+      for (const item of reviewsLine.replace("Reviews: ", "").split(" | ").filter(Boolean)) {
+        reviews.set(item, (reviews.get(item) ?? 0) + 1);
+      }
+    }
+
+    const compileLine = lines.find((line) => line.startsWith("Latest compile included "));
+    if (compileLine) {
+      compileObservations++;
+      const match = compileLine.match(/included (\d+) memories/);
+      if (match) compileIncludedTotal += parseInt(match[1], 10);
+    }
+  }
+
+  return [
+    {
+      kind: "correction_summary",
+      text: renderSummary(repo, "Frequent corrections", corrections),
+      source_activity_ids: [...sourceActivityIds],
+    },
+    {
+      kind: "review_summary",
+      text: renderSummary(repo, "Frequent review guidance", reviews),
+      source_activity_ids: [...sourceActivityIds],
+    },
+    {
+      kind: "compile_summary",
+      text: compileObservations > 0
+        ? [
+            `Repo: ${repo}`,
+            `Compile observations: ${compileObservations}`,
+            `Average included memories: ${(compileIncludedTotal / compileObservations).toFixed(1)}`,
+          ].join("\n")
+        : "",
+      source_activity_ids: [...sourceActivityIds],
+    },
+  ];
+}
+
+function renderSummary(
+  repo: string,
+  heading: string,
+  counts: Map<string, number>,
+) {
+  if (counts.size === 0) return "";
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([text, count]) => `- (${count}) ${text}`);
+
+  return [
+    `Repo: ${repo}`,
+    `${heading}:`,
+    ...top,
+  ].join("\n");
 }
