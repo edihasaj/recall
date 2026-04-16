@@ -39,6 +39,10 @@ const EMBEDDING_DEFAULTS = {
     model: "Xenova/multilingual-e5-small",
     dimensions: 384,
   },
+  "bge-small-en-v1.5": {
+    model: "Xenova/bge-small-en-v1.5",
+    dimensions: 384,
+  },
 } as const;
 
 // --- Config ---
@@ -64,6 +68,8 @@ export function getEmbeddingModelInfo(
   provider: EmbeddingConfig["provider"];
   model: string;
   dimensions: number;
+  canonical_dimensions: number;
+  index_dimensions: number;
   version: string;
   task_prefix?: string;
   estimated_size_mb?: number;
@@ -86,6 +92,8 @@ export function getEmbeddingModelInfo(
     provider: config.provider,
     model: metadata.model,
     dimensions: metadata.dimensions,
+    canonical_dimensions: metadata.canonical_dimensions,
+    index_dimensions: metadata.index_dimensions,
     version: metadata.version,
     task_prefix: metadata.task_prefix,
     estimated_size_mb: metadata.estimated_size_mb,
@@ -145,13 +153,36 @@ function rowNeedsEmbeddingRefresh(
   existing: MemoryEmbeddingRow | undefined,
   config: EmbeddingConfig,
 ): boolean {
+  const metadata = resolveProvider(config).metadata();
   if (!existing) return true;
   return (
     existing.model !== config.model ||
-    existing.dimensions !== config.dimensions ||
+    existing.embedding_dimensions !== metadata.canonical_dimensions ||
+    existing.index_dimensions !== metadata.index_dimensions ||
     existing.version !== getEmbeddingVersion(config) ||
     existing.content_hash !== hashMemoryText(row.text)
   );
+}
+
+export function projectEmbeddingToIndex(
+  embedding: Float32Array,
+  indexDimensions: number,
+): Float32Array {
+  if (embedding.length === indexDimensions) {
+    return embedding;
+  }
+  if (embedding.length < indexDimensions) {
+    throw new Error(`Embedding width ${embedding.length} is smaller than index width ${indexDimensions}.`);
+  }
+
+  const sliced = embedding.slice(0, indexDimensions);
+  let norm = 0;
+  for (const value of sliced) norm += value * value;
+  const scale = Math.sqrt(norm) || 1;
+  for (let i = 0; i < sliced.length; i++) {
+    sliced[i] /= scale;
+  }
+  return sliced;
 }
 
 // --- Embedding generation ---
@@ -185,10 +216,12 @@ export function storeEmbedding(
   config: EmbeddingConfig,
 ) {
   const now = new Date().toISOString();
+  const metadata = resolveProvider(config).metadata();
   const payload = {
     memory_id: memoryId,
     model: config.model,
-    dimensions: config.dimensions,
+    embedding_dimensions: metadata.canonical_dimensions,
+    index_dimensions: metadata.index_dimensions,
     version: getEmbeddingVersion(config),
     content_hash: hashMemoryText(text),
     updated_at: now,
@@ -201,7 +234,8 @@ export function storeEmbedding(
       target: memoryEmbeddings.memory_id,
       set: {
         model: payload.model,
-        dimensions: payload.dimensions,
+        embedding_dimensions: payload.embedding_dimensions,
+        index_dimensions: payload.index_dimensions,
         version: payload.version,
         content_hash: payload.content_hash,
         updated_at: payload.updated_at,
@@ -431,7 +465,10 @@ export async function hybridSearch(
   const semanticMatches = config
     ? searchMemoryVecIndex(
         db,
-        await generateEmbedding(query, config, "query"),
+        projectEmbeddingToIndex(
+          await generateEmbedding(query, config, "query"),
+          resolveProvider(config).metadata().index_dimensions,
+        ),
         { repo: options.repo, limit: Math.max(limit * 2, 20) },
       )
     : [];
@@ -509,7 +546,10 @@ export async function semanticSearch(
   config: EmbeddingConfig,
   options: { repo?: string; limit?: number } = {},
 ): Promise<Array<{ memory: MemoryItem; similarity: number }>> {
-  const queryEmbedding = await generateEmbedding(query, config, "query");
+  const queryEmbedding = projectEmbeddingToIndex(
+    await generateEmbedding(query, config, "query"),
+    resolveProvider(config).metadata().index_dimensions,
+  );
   const matches = searchMemoryVecIndex(db, queryEmbedding, options);
   if (matches.length === 0) return [];
 

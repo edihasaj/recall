@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { historySnippetEmbeddings, historySnippets } from "../db/schema.js";
 import type { EmbeddingConfig, HistorySnippet } from "../types.js";
-import { generateEmbedding, generateEmbeddings, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { generateEmbedding, generateEmbeddings, loadEmbeddingConfigFromEnv, projectEmbeddingToIndex } from "../embeddings/embeddings.js";
+import { resolveProvider } from "../embeddings/providers/index.js";
 import {
   rebuildHistoryVecIndex,
   removeHistoryVecRow,
@@ -34,10 +35,12 @@ function rowNeedsRefresh(
   existing: HistorySnippetEmbeddingRow | undefined,
   config: EmbeddingConfig,
 ) {
+  const metadata = resolveProvider(config).metadata();
   if (!existing) return true;
   return (
     existing.model !== config.model ||
-    existing.dimensions !== config.dimensions ||
+    existing.embedding_dimensions !== metadata.canonical_dimensions ||
+    existing.index_dimensions !== metadata.index_dimensions ||
     existing.version !== version(config) ||
     existing.content_hash !== hashText(row.text)
   );
@@ -78,10 +81,12 @@ export function storeHistoryEmbedding(
   config: EmbeddingConfig,
 ) {
   const now = new Date().toISOString();
+  const metadata = resolveProvider(config).metadata();
   const payload = {
     snippet_id: snippetId,
     model: config.model,
-    dimensions: config.dimensions,
+    embedding_dimensions: metadata.canonical_dimensions,
+    index_dimensions: metadata.index_dimensions,
     version: version(config),
     content_hash: hashText(text),
     updated_at: now,
@@ -94,7 +99,8 @@ export function storeHistoryEmbedding(
       target: historySnippetEmbeddings.snippet_id,
       set: {
         model: payload.model,
-        dimensions: payload.dimensions,
+        embedding_dimensions: payload.embedding_dimensions,
+        index_dimensions: payload.index_dimensions,
         version: payload.version,
         content_hash: payload.content_hash,
         updated_at: payload.updated_at,
@@ -245,7 +251,10 @@ export async function searchHistorySnippets(
 
   const config = loadEmbeddingConfigFromEnv();
   const vectorMatches = config
-    ? searchHistoryVecIndex(db, await generateEmbedding(query, config, "query"), {
+    ? searchHistoryVecIndex(db, projectEmbeddingToIndex(
+        await generateEmbedding(query, config, "query"),
+        resolveProvider(config).metadata().index_dimensions,
+      ), {
         repo: options.repo,
         limit: Math.max(limit * 2, 20),
       })

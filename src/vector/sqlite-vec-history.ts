@@ -27,9 +27,9 @@ function ensureLoaded(db: RecallDb) {
 }
 
 function getHistoryVecDimension(
-  rows: Array<Pick<typeof historySnippetEmbeddings.$inferSelect, "dimensions">>,
+  rows: Array<Pick<typeof historySnippetEmbeddings.$inferSelect, "index_dimensions">>,
 ): number | null {
-  const dimensions = [...new Set(rows.map((row) => row.dimensions))];
+  const dimensions = [...new Set(rows.map((row) => row.index_dimensions))];
   if (dimensions.length === 0) return null;
   if (dimensions.length > 1) {
     throw new Error(
@@ -72,9 +72,9 @@ export function removeHistoryVecRow(db: RecallDb, snippetId: string) {
 export function upsertHistoryVecRow(
   db: RecallDb,
   snippet: Pick<typeof historySnippets.$inferSelect, "id" | "repo" | "kind">,
-  embeddingRow: Pick<typeof historySnippetEmbeddings.$inferSelect, "embedding" | "dimensions">,
+  embeddingRow: Pick<typeof historySnippetEmbeddings.$inferSelect, "embedding" | "index_dimensions">,
 ) {
-  ensureHistoryVecIndex(db, embeddingRow.dimensions);
+  ensureHistoryVecIndex(db, embeddingRow.index_dimensions);
   const sqlite = getSqlite(db);
   sqlite.prepare(`delete from ${VEC_HISTORY_INDEX} where snippet_id = ?`).run(snippet.id);
   sqlite.prepare(`
@@ -85,7 +85,7 @@ export function upsertHistoryVecRow(
       kind
     ) values (?, ?, ?, ?)
   `).run(
-    embeddingRow.embedding,
+    projectIndexBuffer(embeddingRow.embedding, embeddingRow.index_dimensions),
     snippet.id,
     snippet.repo ?? "",
     snippet.kind,
@@ -101,7 +101,7 @@ export function rebuildHistoryVecIndex(
     id: historySnippets.id,
     repo: historySnippets.repo,
     kind: historySnippets.kind,
-    dimensions: historySnippetEmbeddings.dimensions,
+    index_dimensions: historySnippetEmbeddings.index_dimensions,
     embedding: historySnippetEmbeddings.embedding,
   })
     .from(historySnippets)
@@ -136,12 +136,34 @@ export function rebuildHistoryVecIndex(
 
   const insertMany = getSqlite(db).transaction((batch: typeof rows) => {
     for (const row of batch) {
-      stmt.run(row.embedding, row.id, row.repo ?? "", row.kind);
+      stmt.run(projectIndexBuffer(row.embedding, row.index_dimensions), row.id, row.repo ?? "", row.kind);
     }
   });
 
   insertMany(rows);
   return rows.length;
+}
+
+function projectIndexBuffer(buffer: Buffer, indexDimensions: number): Buffer {
+  const embedding = new Float32Array(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength / Float32Array.BYTES_PER_ELEMENT,
+  );
+  if (embedding.length === indexDimensions) {
+    return buffer;
+  }
+  if (embedding.length < indexDimensions) {
+    throw new Error(`Canonical history embedding width ${embedding.length} is smaller than index width ${indexDimensions}.`);
+  }
+  const sliced = embedding.slice(0, indexDimensions);
+  let norm = 0;
+  for (const value of sliced) norm += value * value;
+  const scale = Math.sqrt(norm) || 1;
+  for (let i = 0; i < sliced.length; i++) {
+    sliced[i] /= scale;
+  }
+  return Buffer.from(sliced.buffer, sliced.byteOffset, sliced.byteLength);
 }
 
 export function verifyHistoryVecIndex(

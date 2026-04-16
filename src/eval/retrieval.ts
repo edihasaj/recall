@@ -311,6 +311,15 @@ function embeddingConfigForProvider(provider: Exclude<RetrievalEvalProvider, "cu
   const overrideDimensions = process.env.RECALL_EMBEDDING_DIMS
     ? parseInt(process.env.RECALL_EMBEDDING_DIMS, 10)
     : null;
+  if (provider === "bge-small-en-v1.5") {
+    return {
+      provider,
+      model: "Xenova/bge-small-en-v1.5",
+      dimensions: overrideDimensions ?? 384,
+      version: "eval",
+      similarity_threshold: 0.8,
+    };
+  }
   if (provider === "multilingual-e5") {
     return {
       provider,

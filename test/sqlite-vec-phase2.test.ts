@@ -156,7 +156,7 @@ describe("sqlite-vec phase 2 index sync", () => {
     await flushEmbeddingJobs();
 
     db.update(memoryEmbeddings)
-      .set({ dimensions: 4 })
+      .set({ index_dimensions: 4 })
       .where(eq(memoryEmbeddings.memory_id, memoryB))
       .run();
 

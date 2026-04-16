@@ -126,7 +126,8 @@ CREATE INDEX `idx_memories_team` ON `memories` (`team_id`);--> statement-breakpo
 CREATE TABLE `memory_embeddings` (
 	`memory_id` text PRIMARY KEY NOT NULL,
 	`model` text NOT NULL,
-	`dimensions` integer NOT NULL,
+	`embedding_dimensions` integer NOT NULL,
+	`index_dimensions` integer NOT NULL,
 	`version` text NOT NULL,
 	`content_hash` text NOT NULL,
 	`updated_at` text NOT NULL,
@@ -154,7 +155,8 @@ CREATE INDEX `idx_history_created` ON `history_snippets` (`created_at`);--> stat
 CREATE TABLE `history_snippet_embeddings` (
 	`snippet_id` text PRIMARY KEY NOT NULL,
 	`model` text NOT NULL,
-	`dimensions` integer NOT NULL,
+	`embedding_dimensions` integer NOT NULL,
+	`index_dimensions` integer NOT NULL,
 	`version` text NOT NULL,
 	`content_hash` text NOT NULL,
 	`updated_at` text NOT NULL,

@@ -64,6 +64,7 @@ recall compile -r owner/repo --query "pytest -q" --include-candidates
 Bootstrap local embeddings and the derived sqlite-vec index:
 
 ```bash
+recall doctor
 recall embeddings setup
 recall embeddings info
 recall embeddings bootstrap

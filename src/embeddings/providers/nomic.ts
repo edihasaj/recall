@@ -78,9 +78,7 @@ async function embedTexts(
     throw new Error("Nomic extractor returned an embedding tensor without dimensions");
   }
 
-  const normalized = layer_norm(rawEmbeddings, [nativeDimensions])
-    .slice(null, [0, getDimensions(config)])
-    .normalize(2, -1);
+  const normalized = layer_norm(rawEmbeddings, [nativeDimensions]).normalize(2, -1);
 
   return tensorToEmbeddings(normalized);
 }
@@ -101,9 +99,12 @@ export function createNomicProvider(config: EmbeddingConfig): EmbeddingProvider 
     },
 
     metadata() {
+      const indexDimensions = getDimensions(config);
       return {
         model: getModel(config),
-        dimensions: getDimensions(config),
+        dimensions: indexDimensions,
+        canonical_dimensions: NOMIC_NATIVE_DIMENSIONS,
+        index_dimensions: indexDimensions,
         version: config.version,
         task_prefix: `${NOMIC_PREFIXES.document.trim()} | ${NOMIC_PREFIXES.query.trim()}`,
         estimated_size_mb: 140,

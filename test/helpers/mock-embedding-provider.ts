@@ -21,6 +21,8 @@ export function installMockEmbeddingProvider(vectorForText: VectorForText) {
         return {
           model: config.model,
           dimensions: config.dimensions,
+          canonical_dimensions: config.dimensions,
+          index_dimensions: config.dimensions,
           version: config.version,
         };
       },

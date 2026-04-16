@@ -3,33 +3,24 @@ import type { EmbeddingConfig } from "../../types.js";
 import { ensureEmbeddingCachePath } from "../cache.js";
 import type { EmbeddingPurpose, EmbeddingProvider } from "./types.js";
 
-const MULTILINGUAL_E5_MODEL = "Xenova/multilingual-e5-small";
-const MULTILINGUAL_E5_NATIVE_DIMENSIONS = 384;
-const MULTILINGUAL_E5_PREFIXES: Record<EmbeddingPurpose, string> = {
-  document: "passage: ",
-  query: "query: ",
-};
+const BGE_MODEL = "Xenova/bge-small-en-v1.5";
+const BGE_DIMENSIONS = 384;
 
 let extractorPromise: Promise<FeatureExtractionPipeline> | null = null;
 
 function getModel(config: EmbeddingConfig): string {
-  return config.model || MULTILINGUAL_E5_MODEL;
+  return config.model || BGE_MODEL;
 }
 
 function getDimensions(config: EmbeddingConfig): number {
-  const dimensions = config.dimensions || MULTILINGUAL_E5_NATIVE_DIMENSIONS;
+  const dimensions = config.dimensions || BGE_DIMENSIONS;
   if (!Number.isInteger(dimensions) || dimensions <= 0) {
-    throw new Error(`Invalid multilingual-e5 embedding dimensions: ${dimensions}`);
+    throw new Error(`Invalid bge-small-en-v1.5 embedding dimensions: ${dimensions}`);
   }
-  if (dimensions > MULTILINGUAL_E5_NATIVE_DIMENSIONS) {
-    throw new Error(`multilingual-e5 embeddings support at most ${MULTILINGUAL_E5_NATIVE_DIMENSIONS} dimensions`);
+  if (dimensions > BGE_DIMENSIONS) {
+    throw new Error(`bge-small-en-v1.5 embeddings support at most ${BGE_DIMENSIONS} dimensions`);
   }
   return dimensions;
-}
-
-function prefixTexts(texts: string[], purpose: EmbeddingPurpose): string[] {
-  const prefix = MULTILINGUAL_E5_PREFIXES[purpose];
-  return texts.map((text) => `${prefix}${text}`);
 }
 
 async function getExtractor(config: EmbeddingConfig): Promise<FeatureExtractionPipeline> {
@@ -49,7 +40,7 @@ function tensorToEmbeddings(tensor: Tensor): Float32Array[] {
     ? [1, tensor.dims[0]]
     : tensor.dims;
   if (!rows || !columns) {
-    throw new Error(`Unexpected multilingual-e5 tensor shape: [${tensor.dims.join(", ")}]`);
+    throw new Error(`Unexpected bge-small-en-v1.5 tensor shape: [${tensor.dims.join(", ")}]`);
   }
 
   const embeddings: Float32Array[] = [];
@@ -64,12 +55,11 @@ function tensorToEmbeddings(tensor: Tensor): Float32Array[] {
 async function embedTexts(
   texts: string[],
   config: EmbeddingConfig,
-  purpose: EmbeddingPurpose,
 ): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
 
   const extractor = await getExtractor(config);
-  const embeddings = await extractor(prefixTexts(texts, purpose), {
+  const embeddings = await extractor(texts, {
     pooling: "mean",
     normalize: true,
   });
@@ -81,15 +71,15 @@ async function embedTexts(
   );
 }
 
-export function createMultilingualE5Provider(config: EmbeddingConfig): EmbeddingProvider {
+export function createBgeSmallEnV15Provider(config: EmbeddingConfig): EmbeddingProvider {
   return {
-    async embed(text: string, purpose: EmbeddingPurpose = "document"): Promise<Float32Array> {
-      const [embedding] = await embedTexts([text], config, purpose);
+    async embed(text: string, _purpose: EmbeddingPurpose = "document"): Promise<Float32Array> {
+      const [embedding] = await embedTexts([text], config);
       return embedding;
     },
 
-    async embedBatch(texts: string[], purpose: EmbeddingPurpose = "document"): Promise<Float32Array[]> {
-      return embedTexts(texts, config, purpose);
+    async embedBatch(texts: string[], _purpose: EmbeddingPurpose = "document"): Promise<Float32Array[]> {
+      return embedTexts(texts, config);
     },
 
     async prepare(): Promise<void> {
@@ -104,8 +94,7 @@ export function createMultilingualE5Provider(config: EmbeddingConfig): Embedding
         canonical_dimensions: dims,
         index_dimensions: dims,
         version: config.version,
-        task_prefix: `${MULTILINGUAL_E5_PREFIXES.document.trim()} | ${MULTILINGUAL_E5_PREFIXES.query.trim()}`,
-        estimated_size_mb: 113,
+        estimated_size_mb: 133,
       };
     },
   };

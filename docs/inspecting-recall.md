@@ -148,6 +148,7 @@ RECALL_EMBEDDINGS_DISABLED=true
 Quick checks:
 
 ```bash
+recall doctor
 recall embeddings setup
 recall embeddings info
 recall embeddings verify

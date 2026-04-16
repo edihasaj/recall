@@ -89,6 +89,11 @@ describe("retrieval eval runner", () => {
           ? [1, 0, 0]
           : [0, 0, 1];
       }
+      if (config.provider === "bge-small-en-v1.5") {
+        return normalized.includes("pytest") || normalized.includes("python checks")
+          ? [1, 0, 0]
+          : [0, 0, 1];
+      }
       return normalized.includes("pytest") || normalized.includes("python checks")
         ? [1, 0, 0]
         : [0, 0, 1];
@@ -127,19 +132,22 @@ describe("retrieval eval runner", () => {
         },
       ],
     }, {
-      providers: ["nomic", "multilingual-e5"],
+      providers: ["nomic", "multilingual-e5", "bge-small-en-v1.5"],
     });
 
-    expect(report.provider_reports).toHaveLength(2);
+    expect(report.provider_reports).toHaveLength(3);
     expect(report.provider_reports[0].provider).toBe("nomic");
     expect(report.provider_reports[0].metrics.recall_at_k).toBe(1);
     expect(report.provider_reports[0].metrics.mrr).toBe(1);
     expect(report.provider_reports[1].provider).toBe("multilingual-e5");
     expect(report.provider_reports[1].metrics.recall_at_k).toBe(0);
+    expect(report.provider_reports[2].provider).toBe("bge-small-en-v1.5");
+    expect(report.provider_reports[2].metrics.recall_at_k).toBe(1);
 
     const text = formatRetrievalEvalReport(report);
     expect(text).toContain("## Provider Comparison");
     expect(text).toContain("- nomic:");
     expect(text).toContain("- multilingual-e5:");
+    expect(text).toContain("- bge-small-en-v1.5:");
   });
 });

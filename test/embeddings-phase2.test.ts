@@ -120,6 +120,8 @@ describe("phase 2 nomic provider", () => {
     expect(provider.metadata()).toMatchObject({
       model: "nomic-ai/nomic-embed-text-v1.5",
       dimensions: 3,
+      canonical_dimensions: 768,
+      index_dimensions: 3,
       version: "test-v2",
       task_prefix: "search_document: | search_query:",
       estimated_size_mb: 140,
@@ -135,9 +137,10 @@ describe("phase 2 nomic provider", () => {
     );
     expect(layerNormMock).toHaveBeenCalledTimes(1);
     expectEmbeddingClose(embedding, [
-      1 / Math.sqrt(14),
-      2 / Math.sqrt(14),
-      3 / Math.sqrt(14),
+      1 / Math.sqrt(30),
+      2 / Math.sqrt(30),
+      3 / Math.sqrt(30),
+      4 / Math.sqrt(30),
     ]);
   });
 
@@ -153,14 +156,16 @@ describe("phase 2 nomic provider", () => {
     );
     expect(embeddings).toHaveLength(2);
     expectEmbeddingClose(embeddings[0], [
-      10 / Math.sqrt(365),
-      11 / Math.sqrt(365),
-      12 / Math.sqrt(365),
+      10 / Math.sqrt(534),
+      11 / Math.sqrt(534),
+      12 / Math.sqrt(534),
+      13 / Math.sqrt(534),
     ]);
     expectEmbeddingClose(embeddings[1], [
-      11 / Math.sqrt(434),
-      12 / Math.sqrt(434),
-      13 / Math.sqrt(434),
+      11 / Math.sqrt(630),
+      12 / Math.sqrt(630),
+      13 / Math.sqrt(630),
+      14 / Math.sqrt(630),
     ]);
   });
 
@@ -176,7 +181,7 @@ describe("phase 2 nomic provider", () => {
     expect(pipelineMock).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects dimensions above the native nomic output width", async () => {
+  it("rejects index dimensions above the native nomic output width", async () => {
     const { createNomicProvider } = await import("../src/embeddings/providers/nomic.js");
 
     const provider = createNomicProvider({
@@ -184,7 +189,7 @@ describe("phase 2 nomic provider", () => {
       dimensions: 1024,
     });
 
-    await expect(provider.embed("too-wide")).rejects.toThrow(/at most 768 dimensions/);
+    expect(() => provider.metadata()).toThrow(/at most 768 dimensions/);
   });
 
   it("keeps the mocked tensor shape sane", () => {

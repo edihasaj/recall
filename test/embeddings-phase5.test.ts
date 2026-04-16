@@ -35,6 +35,8 @@ describe("phase 5 embedding model cache", () => {
         return {
           model: config.model,
           dimensions: config.dimensions,
+          canonical_dimensions: config.dimensions,
+          index_dimensions: config.dimensions,
           version: config.version,
           estimated_size_mb: 140,
         };
@@ -72,6 +74,8 @@ describe("phase 5 embedding model cache", () => {
         return {
           model: config.model,
           dimensions: config.dimensions,
+          canonical_dimensions: config.dimensions,
+          index_dimensions: config.dimensions,
           version: config.version,
           estimated_size_mb: 140,
         };
