@@ -26,6 +26,7 @@ export async function runDestructiveResetRollout(
     dbPath?: string;
     searchRoots?: string[];
     purgeModels?: boolean;
+    logger?: (message: string) => void;
   } = {},
 ): Promise<{ db: RecallDb; result: DestructiveResetRolloutResult }> {
   const dbPath = options.dbPath ?? getDbPath();
@@ -52,11 +53,13 @@ export async function runDestructiveResetRollout(
     };
   }
 
+  options.logger?.("[recall] rollout: resetting local memory store");
   resetDb(dbPath, { purgeModels: options.purgeModels });
   closeDb();
   const db = initDb(dbPath);
 
   const repos = discoverLocalRepos(options.searchRoots);
+  options.logger?.(`[recall] rollout: scanning ${repos.length} local repos`);
   const previousEmbeddingsDisabled = process.env.RECALL_EMBEDDINGS_DISABLED;
   process.env.RECALL_EMBEDDINGS_DISABLED = "true";
   let memoriesCreated = 0;
@@ -75,9 +78,15 @@ export async function runDestructiveResetRollout(
   await flushEmbeddingJobs();
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
+  if (embeddingConfig) {
+    options.logger?.("[recall] rollout: bootstrapping memory embeddings");
+  }
   const embeddingsBootstrapped = embeddingConfig
     ? await bootstrapEmbeddings(db, embeddingConfig)
     : 0;
+  if (embeddingConfig) {
+    options.logger?.("[recall] rollout: bootstrapping history embeddings");
+  }
   const historyEmbeddingsBootstrapped = embeddingConfig
     ? await bootstrapHistoryEmbeddings(db, embeddingConfig)
     : 0;

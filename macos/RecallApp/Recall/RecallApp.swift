@@ -99,6 +99,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     LabeledValue(label: "Launchd", value: controller.launchdState)
                     LabeledValue(label: "Health", value: controller.healthText)
+                    LabeledValue(label: "Setup", value: controller.setupStatus)
                     LabeledValue(label: "Data", value: controller.dataDir)
                     LabeledValue(label: "Logs", value: controller.logDir)
                 }
@@ -126,6 +127,16 @@ struct DashboardView: View {
                 Text(lastError)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red)
+            }
+
+            if controller.setupRunning {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(controller.setupStatus)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             HStack(spacing: 10) {

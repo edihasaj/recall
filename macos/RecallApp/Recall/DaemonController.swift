@@ -6,6 +6,8 @@ final class DaemonController: ObservableObject {
     @Published var launchdState = "Unknown"
     @Published var healthText = "Unavailable"
     @Published var healthOK = false
+    @Published var setupStatus = "Idle"
+    @Published var setupRunning = false
     @Published var lastError: String?
 
     let dataDir = NSHomeDirectory() + "/.recall"
@@ -44,26 +46,37 @@ final class DaemonController: ObservableObject {
             let health = try shell("/usr/bin/curl", "-sf", "http://localhost:7890/health")
             healthOK = health.contains("\"status\":\"ok\"")
             healthText = healthOK ? "OK" : "Unexpected"
+            if healthOK {
+                setupRunning = false
+                setupStatus = "Ready"
+            }
         } catch {
             healthOK = false
             healthText = "Offline"
         }
+
+        if !healthOK {
+            updateSetupStatusFromLogs()
+        }
     }
 
     func installAndStart() {
-        runRecall("daemon", "install", "--node-path", runtimeNodePath, "--daemon-script", runtimeDaemonPath)
+        runRecallInBackground(
+            status: "Installing daemon and rebuilding local memory store",
+            "daemon", "install", "--node-path", runtimeNodePath, "--daemon-script", runtimeDaemonPath
+        )
     }
 
     func startDaemon() {
-        runRecall("daemon", "start")
+        runRecallInBackground(status: "Starting daemon", "daemon", "start")
     }
 
     func stopDaemon() {
-        runRecall("daemon", "stop")
+        runRecallInBackground(status: "Stopping daemon", "daemon", "stop")
     }
 
     func restartDaemon() {
-        runRecall("daemon", "restart")
+        runRecallInBackground(status: "Restarting daemon", "daemon", "restart")
     }
 
     func openDataDir() {
@@ -74,15 +87,61 @@ final class DaemonController: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: logDir))
     }
 
-    private func runRecall(_ args: String...) {
-        do {
-            _ = try shell(runtimeNodePath, [runtimeCliPath] + args)
-            lastError = nil
-            refresh()
-        } catch {
-            lastError = String(describing: error)
-            refresh()
+    private func runRecallInBackground(status: String, _ args: String...) {
+        setupRunning = true
+        setupStatus = status
+        lastError = nil
+
+        let nodePath = runtimeNodePath
+        let cliPath = runtimeCliPath
+
+        Task.detached { [weak self] in
+            do {
+                _ = try Self.runShell(nodePath, [cliPath] + args)
+                await MainActor.run {
+                    self?.lastError = nil
+                    self?.refresh()
+                }
+            } catch {
+                await MainActor.run {
+                    self?.setupRunning = false
+                    self?.lastError = String(describing: error)
+                    self?.refresh()
+                }
+            }
         }
+    }
+
+    private func updateSetupStatusFromLogs() {
+        let logText = recentLogText()
+        if logText.contains("rollout: bootstrapping history embeddings") {
+            setupRunning = true
+            setupStatus = "Bootstrapping history embeddings"
+        } else if logText.contains("rollout: bootstrapping memory embeddings") {
+            setupRunning = true
+            setupStatus = "Bootstrapping memory embeddings"
+        } else if logText.contains("rollout: scanning") {
+            setupRunning = true
+            setupStatus = "Scanning local repositories"
+        } else if logText.contains("rollout: resetting local memory store") {
+            setupRunning = true
+            setupStatus = "Resetting local memory store"
+        } else if logText.contains("Fetching embedding model") {
+            setupRunning = true
+            setupStatus = "Fetching embedding model"
+        } else if launchdState == "Running" || launchdState == "Loaded" {
+            setupRunning = true
+            setupStatus = "Starting daemon"
+        } else if !setupRunning {
+            setupStatus = "Idle"
+        }
+    }
+
+    private func recentLogText() -> String {
+        let stdout = (try? String(contentsOfFile: logDir + "/daemon.stdout.log", encoding: .utf8)) ?? ""
+        let stderr = (try? String(contentsOfFile: logDir + "/daemon.stderr.log", encoding: .utf8)) ?? ""
+        let combined = stdout + "\n" + stderr
+        return String(combined.suffix(4000))
     }
 
     private var runtimeRoot: String {
@@ -105,11 +164,15 @@ final class DaemonController: ObservableObject {
         Int(getuid())
     }
 
-    private func shell(_ launchPath: String, _ args: String...) throws -> String {
-        try shell(launchPath, args)
+    private nonisolated func shell(_ launchPath: String, _ args: String...) throws -> String {
+        try Self.runShell(launchPath, args)
     }
 
-    private func shell(_ launchPath: String, _ args: [String]) throws -> String {
+    private nonisolated func shell(_ launchPath: String, _ args: [String]) throws -> String {
+        try Self.runShell(launchPath, args)
+    }
+
+    private nonisolated static func runShell(_ launchPath: String, _ args: [String]) throws -> String {
         let process = Process()
         let stdout = Pipe()
         let stderr = Pipe()
