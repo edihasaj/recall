@@ -234,7 +234,7 @@ export type TeamMember = z.infer<typeof TeamMember>;
 
 export const EmbeddingConfig = z.object({
   enabled: z.boolean().default(false),
-  provider: z.enum(["openai", "local"]).default("openai"),
+  provider: z.enum(["openai", "nomic", "local"]).default("openai"),
   model: z.string().default("text-embedding-3-small"),
   api_key: z.string().optional(),
   dimensions: z.number().default(256),

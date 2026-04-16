@@ -1,14 +1,5 @@
 import type { EmbeddingConfig } from "../../types.js";
-
-export type EmbeddingProvider = {
-  embed(text: string): Promise<Float32Array>;
-  embedBatch(texts: string[]): Promise<Float32Array[]>;
-  metadata(): {
-    model: string;
-    dimensions: number;
-    version: string;
-  };
-};
+import type { EmbeddingPurpose, EmbeddingProvider } from "./types.js";
 
 function getOpenAIApiKey(config: EmbeddingConfig): string {
   const apiKey = config.api_key ?? process.env.OPENAI_API_KEY;
@@ -46,12 +37,12 @@ async function requestOpenAIEmbeddings(
 
 export function createOpenAIProvider(config: EmbeddingConfig): EmbeddingProvider {
   return {
-    async embed(text: string): Promise<Float32Array> {
+    async embed(text: string, _purpose?: EmbeddingPurpose): Promise<Float32Array> {
       const [item] = await requestOpenAIEmbeddings(text, config);
       return new Float32Array(item.embedding);
     },
 
-    async embedBatch(texts: string[]): Promise<Float32Array[]> {
+    async embedBatch(texts: string[], _purpose?: EmbeddingPurpose): Promise<Float32Array[]> {
       if (texts.length === 0) return [];
 
       const items = await requestOpenAIEmbeddings(texts, config);
