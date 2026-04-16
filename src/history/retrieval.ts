@@ -145,7 +145,7 @@ export async function syncHistorySnippetEmbedding(
     .get();
 
   if (!rowNeedsRefresh(snippet, existing, config)) {
-    if (existing) upsertHistoryVecRow(db, snippet, existing, config);
+    if (existing) upsertHistoryVecRow(db, snippet, existing);
     return "skipped";
   }
 
@@ -155,7 +155,7 @@ export async function syncHistorySnippetEmbedding(
     .where(eq(historySnippetEmbeddings.snippet_id, snippet.id))
     .get();
   if (!refreshed) throw new Error(`Failed to reload history embedding row for ${snippet.id}`);
-  upsertHistoryVecRow(db, snippet, refreshed, config);
+  upsertHistoryVecRow(db, snippet, refreshed);
   return existing ? "updated" : "stored";
 }
 

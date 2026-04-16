@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
-import { historySnippets } from "../src/db/schema.js";
+import { historySnippetEmbeddings, historySnippets } from "../src/db/schema.js";
 import { createActivityEvent } from "../src/models/activity.js";
 import { listHistorySnippets } from "../src/history/snippets.js";
 import { runMaintenanceCycle } from "../src/maintenance/lifecycle.js";
 import { searchHistorySnippets } from "../src/history/retrieval.js";
-import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
+import { flushEmbeddingJobs, loadEmbeddingConfigFromEnv } from "../src/embeddings/embeddings.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
+import { rebuildHistoryVecIndex } from "../src/vector/sqlite-vec-history.js";
 
 let dbCounter = 0;
 
@@ -185,5 +186,54 @@ describe("phase 6 history retrieval", () => {
       kind: "session_summary",
     });
     expect(activeSessions).toHaveLength(0);
+  });
+
+  it("refuses to rebuild a mixed-dimension history vec index", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    installEmbeddingMock();
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    createActivityEvent(db, {
+      session_id: "sess-4",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "correction",
+      request: { text: "don't use npm, use pnpm" },
+      result: {},
+    });
+    createActivityEvent(db, {
+      session_id: "sess-4",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "session_end",
+      request: {},
+      result: { exit_code: 0 },
+    });
+
+    await runMaintenanceCycle(db, {
+      enabled: true,
+      interval_seconds: 300,
+      stale_days: 90,
+      min_health_score: 0.2,
+      activity_retention_days: 90,
+      feedback_retention_days: 180,
+      signal_retention_days: 180,
+      history_session_retention_days: 30,
+    });
+
+    const snippetIds = listHistorySnippets(db, { repo: "test/repo", limit: 10 }).map((snippet) => snippet.id);
+    expect(snippetIds.length).toBeGreaterThan(1);
+
+    db.update(historySnippetEmbeddings)
+      .set({ dimensions: 4 })
+      .where(eq(historySnippetEmbeddings.snippet_id, snippetIds[0]))
+      .run();
+
+    const config = loadEmbeddingConfigFromEnv()!;
+    expect(() => rebuildHistoryVecIndex(db, config, { repo: "test/repo" })).toThrow(
+      /mixed history embedding dimensions: 4, 3|mixed history embedding dimensions: 3, 4/,
+    );
   });
 });

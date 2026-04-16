@@ -14,6 +14,14 @@ function getSqlite(db: RecallDb) {
   return db.$client;
 }
 
+function hasMemoryVecIndex(db: RecallDb): boolean {
+  return Boolean(
+    getSqlite(db)
+      .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
+      .get(VEC_MEMORY_INDEX),
+  );
+}
+
 export function ensureSqliteVecLoaded(db: RecallDb) {
   const sqlite = getSqlite(db);
   if (loadedClients.has(sqlite)) return;
@@ -21,9 +29,20 @@ export function ensureSqliteVecLoaded(db: RecallDb) {
   loadedClients.add(sqlite);
 }
 
+function getMemoryVecDimension(rows: Array<Pick<MemoryEmbeddingRow, "dimensions">>): number | null {
+  const dimensions = [...new Set(rows.map((row) => row.dimensions))];
+  if (dimensions.length === 0) return null;
+  if (dimensions.length > 1) {
+    throw new Error(
+      `sqlite-vec index rebuild refused mixed memory embedding dimensions: ${dimensions.join(", ")}.`,
+    );
+  }
+  return dimensions[0];
+}
+
 export function ensureMemoryVecIndex(
   db: RecallDb,
-  config: EmbeddingConfig,
+  dimensions: number,
 ) {
   ensureSqliteVecLoaded(db);
 
@@ -32,7 +51,7 @@ export function ensureMemoryVecIndex(
     .prepare("select sql from sqlite_master where type = 'table' and name = ?")
     .get(VEC_MEMORY_INDEX) as { sql?: string } | undefined;
 
-  const expectedDimension = `float[${config.dimensions}]`;
+  const expectedDimension = `float[${dimensions}]`;
   if (existing?.sql && !existing.sql.includes(expectedDimension)) {
     throw new Error(
       `sqlite-vec index dimension mismatch. Expected ${expectedDimension}. Run \`recall embeddings rebuild-index\`.`,
@@ -41,7 +60,7 @@ export function ensureMemoryVecIndex(
 
   sqlite.exec(`
     create virtual table if not exists ${VEC_MEMORY_INDEX} using vec0(
-      embedding float[${config.dimensions}] distance_metric=cosine,
+      embedding float[${dimensions}] distance_metric=cosine,
       memory_id text,
       repo text,
       status text,
@@ -59,10 +78,9 @@ export function dropMemoryVecIndex(db: RecallDb) {
 export function upsertMemoryVecRow(
   db: RecallDb,
   memory: Pick<MemoryRow, "id" | "repo" | "status" | "type" | "scope">,
-  embeddingRow: Pick<MemoryEmbeddingRow, "embedding">,
-  config: EmbeddingConfig,
+  embeddingRow: Pick<MemoryEmbeddingRow, "embedding" | "dimensions">,
 ) {
-  ensureMemoryVecIndex(db, config);
+  ensureMemoryVecIndex(db, embeddingRow.dimensions);
   const sqlite = getSqlite(db);
   sqlite.prepare(`delete from ${VEC_MEMORY_INDEX} where memory_id = ?`).run(memory.id);
   sqlite.prepare(`
@@ -90,12 +108,8 @@ export function removeMemoryVecRow(
   config?: EmbeddingConfig,
 ) {
   ensureSqliteVecLoaded(db);
-  const sqlite = getSqlite(db);
-  const exists = sqlite
-    .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
-    .get(VEC_MEMORY_INDEX);
-  if (!exists) return;
-  sqlite.prepare(`delete from ${VEC_MEMORY_INDEX} where memory_id = ?`).run(memoryId);
+  if (!hasMemoryVecIndex(db)) return;
+  getSqlite(db).prepare(`delete from ${VEC_MEMORY_INDEX} where memory_id = ?`).run(memoryId);
 }
 
 export function rebuildMemoryVecIndex(
@@ -103,28 +117,36 @@ export function rebuildMemoryVecIndex(
   config: EmbeddingConfig,
   options: { repo?: string } = {},
 ): number {
-  if (options.repo) {
-    ensureMemoryVecIndex(db, config);
-    getSqlite(db)
-      .prepare(`delete from ${VEC_MEMORY_INDEX} where repo = ?`)
-      .run(options.repo);
-  } else {
-    dropMemoryVecIndex(db);
-    ensureMemoryVecIndex(db, config);
-  }
-
   const rows = db.select({
     id: memories.id,
     repo: memories.repo,
     status: memories.status,
     type: memories.type,
     scope: memories.scope,
+    dimensions: memoryEmbeddings.dimensions,
     embedding: memoryEmbeddings.embedding,
   })
     .from(memories)
     .innerJoin(memoryEmbeddings, eq(memoryEmbeddings.memory_id, memories.id))
     .all()
     .filter((row) => !options.repo || row.repo === options.repo);
+
+  const storedDimension = getMemoryVecDimension(rows);
+  const targetDimension = storedDimension ?? config.dimensions;
+
+  if (options.repo) {
+    if (rows.length > 0) {
+      ensureMemoryVecIndex(db, targetDimension);
+    }
+    if (!hasMemoryVecIndex(db)) return 0;
+    getSqlite(db)
+      .prepare(`delete from ${VEC_MEMORY_INDEX} where repo = ?`)
+      .run(options.repo);
+    if (rows.length === 0) return 0;
+  } else {
+    dropMemoryVecIndex(db);
+    ensureMemoryVecIndex(db, targetDimension);
+  }
 
   const sqlite = getSqlite(db);
   const stmt = sqlite.prepare(`
