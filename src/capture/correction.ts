@@ -7,10 +7,13 @@ import {
   getMemory,
   promoteMemory,
   queryMemories,
+  updateMemoryCaptureContext,
 } from "../models/memory.js";
 import type { CreateMemoryInput } from "../models/memory.js";
-import type { MemoryItem, MemoryType, EvidenceEntry } from "../types.js";
+import type { CaptureContext, MemoryItem, MemoryType, EvidenceEntry } from "../types.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
+import { inferScope } from "./scope.js";
+import type { RecentToolCall } from "../agents/types.js";
 
 // --- Detection patterns ---
 
@@ -122,6 +125,9 @@ export interface CorrectionContext {
   sessionId: string;
   repo?: string;
   path?: string;
+  agent?: string;
+  prev_assistant_turn?: string;
+  recent_tool_calls?: readonly RecentToolCall[];
 }
 
 function stripTrailingPunctuation(text: string): string {
@@ -143,6 +149,7 @@ export async function processCorrection(
   const profile = getRepoQualityProfile(db, ctx.repo);
 
   const ids: string[] = [];
+  const captureContext = buildCaptureContext(ctx);
 
   for (const correction of corrections) {
     const evidence: EvidenceEntry = correction.type === "review_pattern"
@@ -169,6 +176,9 @@ export async function processCorrection(
 
     if (duplicate) {
       appendEvidence(db, duplicate.id, evidence);
+      if (captureContext) {
+        updateMemoryCaptureContext(db, duplicate.id, captureContext);
+      }
       const updated = getMemory(db, duplicate.id);
 
       if (
@@ -184,18 +194,31 @@ export async function processCorrection(
     }
 
     // New candidate
+    const inferredScope = inferScope(
+      correction.text,
+      ctx.path,
+      undefined,
+      {
+        prev_assistant_turn: ctx.prev_assistant_turn,
+        recent_tool_calls: ctx.recent_tool_calls,
+      },
+    );
     const input: CreateMemoryInput = {
       type: correction.type,
       text: correction.text,
-      scope: ctx.path ? "path" : "repo",
-      path_scope: ctx.path ?? null,
+      scope: inferredScope.scope,
+      path_scope: inferredScope.path_scope,
       repo: ctx.repo ?? null,
       source:
         correction.type === "review_pattern"
           ? "user_reported_review"
           : "user_correction",
-      confidence: seedCandidateConfidence(correction.confidence, profile),
+      confidence: seedCandidateConfidence(
+        Math.min(1, correction.confidence + inferredScope.confidence_modifier),
+        profile,
+      ),
       evidence: [evidence],
+      capture_context: captureContext,
     };
 
     const id = createMemory(db, input);
@@ -203,6 +226,41 @@ export async function processCorrection(
   }
 
   return ids;
+}
+
+function buildCaptureContext(ctx: CorrectionContext): CaptureContext | null {
+  const recentToolCalls = (ctx.recent_tool_calls ?? [])
+    .slice(-5)
+    .map((toolCall) => ({
+      name: toolCall.name,
+      path: toolCall.path ?? extractContextPath(toolCall.input_summary),
+      exit_code: toolCall.exit_code,
+    }));
+
+  const hasContext =
+    Boolean(ctx.prev_assistant_turn) ||
+    recentToolCalls.length > 0 ||
+    Boolean(ctx.repo) ||
+    Boolean(ctx.path) ||
+    Boolean(ctx.agent);
+
+  if (!hasContext) return null;
+
+  return {
+    prev_assistant_text: ctx.prev_assistant_turn,
+    recent_tool_calls: recentToolCalls,
+    repo: ctx.repo ?? null,
+    path: ctx.path ?? null,
+    agent: ctx.agent,
+  };
+}
+
+function extractContextPath(text?: string): string | undefined {
+  if (!text) return undefined;
+  const match = text.match(
+    /\b((?:src|lib|app|components|utils|test|spec)\/[\w./-]+|[\w./-]+\.(?:ts|tsx|js|jsx|py|rs|go|swift|java|rb|json|toml|ya?ml))\b/,
+  );
+  return match?.[1];
 }
 
 // --- Report review feedback ---

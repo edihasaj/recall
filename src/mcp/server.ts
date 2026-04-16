@@ -173,20 +173,32 @@ server.tool(
 
 server.tool(
   "recall_report_correction",
-  "Report a correction or rule to be learned. Creates a candidate memory from the correction text.",
+  "Report a correction or rule to be learned. Accepts optional assistant/tool context and creates candidate memories from the correction text.",
   {
     text: z.string().describe("The correction or rule (e.g., 'don't use pip, use uv')"),
     repo: z.string().optional().describe("Repository name"),
     path: z.string().optional().describe("File path context"),
     session_id: z.string().optional().describe("Session identifier"),
+    agent: z.string().optional().describe("Source agent name, such as codex or claude-code."),
+    prev_assistant_turn: z.string().optional().describe("The assistant message that triggered the correction."),
+    recent_tool_calls: z.array(
+      z.object({
+        name: z.string(),
+        path: z.string().optional(),
+        input_summary: z.string().optional(),
+        exit_code: z.number().optional(),
+      }),
+    ).optional().describe("Last 1-3 tool calls leading up to the correction."),
   },
-  async ({ text, repo, path, session_id }) => {
+  async ({ text, repo, path, session_id, agent, prev_assistant_turn, recent_tool_calls }) => {
     const result = await captureCorrectionFallback(db, {
       text,
       repo,
       path,
       session_id,
-      agent: "mcp",
+      agent: agent ?? "mcp",
+      prev_assistant_turn,
+      recent_tool_calls,
     }, "mcp");
 
     if (result.ids.length === 0) {
@@ -224,6 +236,7 @@ server.tool(
     recent_tool_calls: z.array(
       z.object({
         name: z.string(),
+        path: z.string().optional(),
         input_summary: z.string().optional(),
         exit_code: z.number().optional(),
       }),

@@ -19,6 +19,7 @@ export type AdapterDetection = "installed" | "not-installed";
 
 export interface RecentToolCall {
   name: string;
+  path?: string;
   input_summary?: string;
   exit_code?: number;
 }

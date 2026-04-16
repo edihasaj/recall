@@ -57,6 +57,9 @@ export async function captureCorrectionFallback(
     sessionId,
     repo: input.repo,
     path: input.path,
+    agent: input.agent,
+    prev_assistant_turn: input.prev_assistant_turn,
+    recent_tool_calls: input.recent_tool_calls,
   });
 
   createActivityEvent(db, {
@@ -148,6 +151,7 @@ function normalizeRecentToolCalls(
   if (!toolCalls) return [];
   return toolCalls.map((toolCall) => ({
     name: toolCall.name,
+    path: toolCall.path,
     input_summary: toolCall.input_summary,
     exit_code: toolCall.exit_code,
   }));

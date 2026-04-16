@@ -13,12 +13,18 @@
 import { execSync } from "node:child_process";
 import { dirname, extname, basename } from "node:path";
 import type { MemoryScope } from "../types.js";
+import type { RecentToolCall } from "../agents/types.js";
 
 export interface ScopeInference {
   scope: MemoryScope;
   path_scope: string | null;
   confidence_modifier: number;
   reason: string;
+}
+
+export interface ScopeContext {
+  prev_assistant_turn?: string;
+  recent_tool_calls?: readonly RecentToolCall[];
 }
 
 // --- Explicit scope markers ---
@@ -98,6 +104,7 @@ export function inferScope(
   correctionText: string,
   contextPath?: string,
   repoPath?: string,
+  context: ScopeContext = {},
 ): ScopeInference {
   // 1. Check explicit scope markers (highest priority)
   for (const marker of SCOPE_MARKERS) {
@@ -171,6 +178,16 @@ export function inferScope(
     }
   }
 
+  const toolScope = inferFromRecentTools(context.recent_tool_calls);
+  if (toolScope) {
+    return toolScope;
+  }
+
+  const assistantScope = inferFromAssistantTurn(context.prev_assistant_turn);
+  if (assistantScope) {
+    return assistantScope;
+  }
+
   // 4. Analyze correction text for specificity
   if (hasSpecificFileReference(correctionText)) {
     return {
@@ -221,6 +238,74 @@ function extractPathFromText(text: string): string | null {
     /\b((?:src|lib|app|components|utils|test|spec)\/[\w/-]*)/,
   );
   if (dirMatch) return `${dirMatch[1]}/**`;
+
+  return null;
+}
+
+function inferFromRecentTools(
+  toolCalls?: readonly RecentToolCall[],
+): ScopeInference | null {
+  if (!toolCalls || toolCalls.length === 0) return null;
+
+  for (const toolCall of toolCalls) {
+    if (toolCall.path) {
+      return {
+        scope: "path",
+        path_scope: inferPathScope(toolCall.path),
+        confidence_modifier: 0.05,
+        reason: `recent tool path context: ${toolCall.path}`,
+      };
+    }
+
+    const inferredPath = extractPathFromText(toolCall.input_summary ?? "");
+    if (inferredPath) {
+      return {
+        scope: "path",
+        path_scope: inferredPath,
+        confidence_modifier: 0.05,
+        reason: "recent tool summary implies path scope",
+      };
+    }
+
+    const summary = toolCall.input_summary ?? "";
+    if (/\b(pytest|vitest|jest|cargo test|go test)\b/i.test(summary)) {
+      return {
+        scope: "repo",
+        path_scope: null,
+        confidence_modifier: 0.04,
+        reason: "recent test/tool pattern implies repo scope",
+      };
+    }
+  }
+
+  return null;
+}
+
+function inferFromAssistantTurn(
+  assistantTurn?: string,
+): ScopeInference | null {
+  if (!assistantTurn) return null;
+
+  const inferredPath = extractPathFromText(assistantTurn);
+  if (inferredPath) {
+    return {
+      scope: "path",
+      path_scope: inferredPath,
+      confidence_modifier: 0.05,
+      reason: "previous assistant turn referenced a path",
+    };
+  }
+
+  for (const indicator of FRAMEWORK_INDICATORS) {
+    if (indicator.test(assistantTurn)) {
+      return {
+        scope: "repo",
+        path_scope: null,
+        confidence_modifier: 0.03,
+        reason: "previous assistant turn referenced repo-level tooling/framework",
+      };
+    }
+  }
 
   return null;
 }

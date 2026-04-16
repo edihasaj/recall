@@ -6,6 +6,8 @@ import type { ActivitySource } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordHookCall } from "../hooks/calls.js";
 import { performance } from "node:perf_hooks";
+import { detectCorrections } from "../capture/correction.js";
+import { captureCorrectionFallback } from "../mcp/fallback.js";
 import {
   endSessionLifecycle,
   startSessionLifecycle,
@@ -209,6 +211,21 @@ export async function handlePromptHook(
       },
     });
 
+    if (detectCorrections(text).length > 0) {
+      await captureCorrectionFallback(db, {
+        text,
+        repo: repo ?? undefined,
+        path: input.path,
+        session_id: sessionId,
+        agent: input.agent,
+        prev_assistant_turn: truncateOptionalText(
+          input.prev_assistant_turn,
+          MAX_PREV_ASSISTANT_LENGTH,
+        ),
+        recent_tool_calls: recentToolCalls,
+      }, opts.source ?? "cli");
+    }
+
     return {
       event: "prompt_submitted",
       session_id: sessionId,
@@ -230,6 +247,7 @@ export async function handleToolHook(
     const repo = resolveRepo(input.repo, input.repo_path);
     const toolCall = {
       name,
+      path: input.path,
       input_summary: truncateOptionalText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH),
       exit_code: input.exit_code,
     } satisfies RecentToolCall;
@@ -340,6 +358,10 @@ export function parseRecentToolCallsOption(value?: string): RecentToolCall[] | u
       const item = entry as Record<string, unknown>;
       return {
         name: requireNonEmpty(String(item.name ?? ""), "recent tool name"),
+        path:
+          typeof item.path === "string"
+            ? item.path
+            : undefined,
         input_summary:
           typeof item.input_summary === "string"
             ? truncateText(item.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH)
@@ -571,6 +593,12 @@ function loadRecentToolCalls(
     if (typeof name !== "string" || name.trim().length === 0) continue;
     toolCalls.push({
       name: name.trim(),
+      path:
+        typeof input.path === "string"
+          ? input.path
+          : typeof input.file_path === "string"
+            ? input.file_path
+            : undefined,
       input_summary:
         typeof input.input_summary === "string"
           ? truncateText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH)
@@ -592,6 +620,7 @@ function normalizeRecentToolCalls(
     .slice(-MAX_RECENT_TOOL_CALLS)
     .map((toolCall) => ({
       name: truncateText(requireNonEmpty(toolCall.name, "recent tool name"), 256),
+      path: toolCall.path,
       input_summary: truncateOptionalText(
         toolCall.input_summary,
         MAX_TOOL_INPUT_SUMMARY_LENGTH,
