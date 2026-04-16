@@ -1,10 +1,14 @@
 import { claudeCodeAdapter } from "./claude-code.js";
 import { codexAdapter } from "./codex.js";
+import { geminiCliAdapter } from "./gemini-cli.js";
+import { qwenAdapter } from "./qwen.js";
 import type { AgentAdapter, AgentName } from "./types.js";
 
 const adapters: Record<AgentName, AgentAdapter> = {
   "claude-code": claudeCodeAdapter,
   codex: codexAdapter,
+  "gemini-cli": geminiCliAdapter,
+  qwen: qwenAdapter,
 };
 
 export function listAgentNames(): AgentName[] {
@@ -22,7 +26,7 @@ export function resolveAdapter(name: string): AgentAdapter {
   }
 
   throw new Error(
-    `Unknown agent adapter: ${name}. Supported adapters: ${listAgentNames().join(", ")}`,
+    `Unknown agent adapter: ${name}. Supported adapters: ${listAgentNames().join(", ")}. Reserved v2 stubs: gemini-cli, qwen.`,
   );
 }
 

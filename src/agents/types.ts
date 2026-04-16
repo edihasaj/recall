@@ -14,7 +14,7 @@ export const hookProfileV1 = [
 ] as const;
 
 export type HookProfile = readonly CanonicalEventName[];
-export type AgentName = "claude-code" | "codex";
+export type AgentName = "claude-code" | "codex" | "gemini-cli" | "qwen";
 export type AdapterDetection = "installed" | "not-installed";
 
 export interface RecentToolCall {
