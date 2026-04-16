@@ -313,7 +313,6 @@ function embeddingConfigForProvider(provider: Exclude<RetrievalEvalProvider, "cu
     : null;
   if (provider === "multilingual-e5") {
     return {
-      enabled: true,
       provider,
       model: "Xenova/multilingual-e5-small",
       dimensions: overrideDimensions ?? 384,
@@ -323,7 +322,6 @@ function embeddingConfigForProvider(provider: Exclude<RetrievalEvalProvider, "cu
   }
 
   return {
-    enabled: true,
     provider: "nomic",
     model: "nomic-ai/nomic-embed-text-v1.5",
     dimensions: overrideDimensions ?? 512,

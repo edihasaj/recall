@@ -24,7 +24,6 @@ function freshDb() {
 }
 
 const config: EmbeddingConfig = {
-  enabled: true,
   provider: "nomic",
   model: "nomic-ai/nomic-embed-text-v1.5",
   dimensions: 3,
@@ -52,7 +51,6 @@ describe("phase 1 embedding lifecycle", () => {
     process.env[legacyApiKeyEnv] = "legacy-key";
 
     expect(loadEmbeddingConfigFromEnv()).toEqual({
-      enabled: true,
       provider: "nomic",
       model: "nomic-ai/nomic-embed-text-v1.5",
       dimensions: 512,

@@ -244,7 +244,7 @@ export async function searchHistorySnippets(
   });
 
   const config = loadEmbeddingConfigFromEnv();
-  const vectorMatches = config?.enabled
+  const vectorMatches = config
     ? searchHistoryVecIndex(db, await generateEmbedding(query, config, "query"), {
         repo: options.repo,
         limit: Math.max(limit * 2, 20),

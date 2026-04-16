@@ -315,7 +315,7 @@ async function findDuplicateMemory(
   if (best) return best;
 
   const config = loadEmbeddingConfigFromEnv();
-  if (!config?.enabled) return undefined;
+  if (!config) return undefined;
 
   const semantic = await findSemanticDuplicates(
     db,
