@@ -25,6 +25,11 @@ import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from 
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "../models/activity.js";
 import { ensureRepoBootstrapped } from "../repo/discovery.js";
+import {
+  captureCorrectionFallback,
+  sessionEndFallback,
+  signalOutcomeFallback,
+} from "./fallback.js";
 
 const db = initDb();
 const activityEventTypes = [
@@ -176,23 +181,15 @@ server.tool(
     session_id: z.string().optional().describe("Session identifier"),
   },
   async ({ text, repo, path, session_id }) => {
-    const ids = await processCorrection(db, text, {
-      sessionId: session_id ?? "mcp",
+    const result = await captureCorrectionFallback(db, {
+      text,
       repo,
       path,
-    });
-    createActivityEvent(db, {
-      session_id: session_id ?? "mcp",
-      repo: repo ?? null,
-      path: path ?? null,
-      source: "mcp",
-      event_type: "correction",
-      memory_ids: ids,
-      request: { text },
-      result: { created: ids },
-    });
+      session_id,
+      agent: "mcp",
+    }, "mcp");
 
-    if (ids.length === 0) {
+    if (result.ids.length === 0) {
       return {
         content: [
           {
@@ -207,7 +204,58 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: `Created ${ids.length} candidate memory/memories: ${ids.map((id) => id.slice(0, 8)).join(", ")}`,
+          text: `Created ${result.ids.length} candidate memory/memories: ${result.ids.map((id) => id.slice(0, 8)).join(", ")}`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  "recall_capture_correction",
+  "Call this right after the user corrects the assistant or states a repo rule. Captures the correction with richer context so scope inference stays accurate.",
+  {
+    text: z.string().describe("The user correction or rule text to capture."),
+    repo: z.string().optional().describe("Repository name when known."),
+    path: z.string().optional().describe("Current file path context, if the correction is file-specific."),
+    session_id: z.string().optional().describe("Current session identifier."),
+    agent: z.string().optional().describe("Source agent name, such as codex or claude-code."),
+    prev_assistant_turn: z.string().optional().describe("The assistant message that triggered the correction."),
+    recent_tool_calls: z.array(
+      z.object({
+        name: z.string(),
+        input_summary: z.string().optional(),
+        exit_code: z.number().optional(),
+      }),
+    ).optional().describe("Last 1-3 tool calls leading up to the correction."),
+  },
+  async ({ text, repo, path, session_id, agent, prev_assistant_turn, recent_tool_calls }) => {
+    const result = await captureCorrectionFallback(db, {
+      text,
+      repo,
+      path,
+      session_id,
+      agent,
+      prev_assistant_turn,
+      recent_tool_calls,
+    }, "mcp");
+
+    if (result.ids.length === 0) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "No correction pattern detected. Use this when the user is explicitly correcting prior behavior or stating a durable repo rule.",
+          },
+        ],
+      };
+    }
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Captured correction context for ${result.ids.length} memory/memories: ${result.ids.map((id) => id.slice(0, 8)).join(", ")}`,
         },
       ],
     };
@@ -311,21 +359,43 @@ server.tool(
       .describe("What happened with the memory"),
   },
   async ({ memory_id, session_id, injected, outcome }) => {
-    const id = recordFeedback(db, memory_id, session_id, injected, outcome);
-    const mem = getMemory(db, memory_id);
-    createActivityEvent(db, {
+    const result = signalOutcomeFallback(db, {
+      memory_id,
       session_id,
-      repo: mem?.repo ?? null,
-      path: mem?.path_scope ?? null,
-      source: "mcp",
-      event_type: "feedback",
-      memory_ids: [memory_id],
-      request: { injected, outcome },
-      result: { feedback_id: id },
-    });
+      injected,
+      outcome,
+    }, "mcp");
     return {
       content: [
-        { type: "text" as const, text: `Feedback recorded: ${id.slice(0, 8)}` },
+        { type: "text" as const, text: `Feedback recorded: ${result.feedback_id.slice(0, 8)}` },
+      ],
+    };
+  },
+);
+
+server.tool(
+  "recall_signal_outcome",
+  "Call this after acting on an injected memory to report whether it was followed, overridden, ignored, or contradicted in the current session.",
+  {
+    memory_id: z.string().describe("The injected memory being evaluated."),
+    session_id: z.string().describe("Current session ID."),
+    injected: z.boolean().optional().describe("Whether the memory was actually injected; defaults to true."),
+    outcome: z
+      .enum(["followed", "overridden", "ignored", "contradicted"])
+      .describe("What happened after the memory was shown to the model."),
+    context: z.string().optional().describe("Short note explaining the outcome."),
+  },
+  async ({ memory_id, session_id, injected, outcome, context }) => {
+    const result = signalOutcomeFallback(db, {
+      memory_id,
+      session_id,
+      injected,
+      outcome,
+      context,
+    }, "mcp");
+    return {
+      content: [
+        { type: "text" as const, text: `Outcome recorded: ${result.feedback_id.slice(0, 8)}` },
       ],
     };
   },
@@ -423,6 +493,37 @@ server.tool(
         {
           type: "text" as const,
           text: `Signal recorded: ${id.slice(0, 8)}. Stats: ${JSON.stringify(stats)}`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  "recall_session_end",
+  "Call this when the session is ending or being cleared so Recall can record the end-of-session boundary and run follow-up session logic.",
+  {
+    session_id: z.string().describe("Current session ID."),
+    repo: z.string().optional().describe("Repository slug if already known."),
+    repo_path: z.string().optional().describe("Repository path when available."),
+    path: z.string().optional().describe("Current file path context."),
+    agent: z.string().optional().describe("Source agent name."),
+    turn_count: z.number().optional().describe("Completed turn count, if known."),
+  },
+  async ({ session_id, repo, repo_path, path, agent, turn_count }) => {
+    const result = sessionEndFallback(db, {
+      session_id,
+      repo,
+      repo_path,
+      path,
+      agent,
+      turn_count,
+    });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Session end recorded for ${result.session_id}${result.repo ? ` (${result.repo})` : ""}.`,
         },
       ],
     };
