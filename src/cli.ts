@@ -44,6 +44,7 @@ import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
 import { listHistorySnippets } from "./history/snippets.js";
 import { searchHistorySnippets } from "./history/retrieval.js";
+import { formatDoctorReport, getDoctorReport } from "./doctor/report.js";
 import {
   getLaunchAgentInfo,
   getLaunchAgentStatus,
@@ -71,6 +72,19 @@ program
   .action(() => {
     initDb();
     console.log("Recall initialized. Database ready.");
+  });
+
+program
+  .command("doctor")
+  .description("Show local Recall runtime, DB, and embedding health")
+  .option("--json", "Emit raw JSON report")
+  .action((opts) => {
+    const report = getDoctorReport();
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    console.log(formatDoctorReport(report));
   });
 
 const dbCmd = program
@@ -663,7 +677,7 @@ evalCmd
   .command("retrieval")
   .description("Run retrieval eval fixtures against baseline vs hybrid retrieval")
   .requiredOption("-f, --file <path>", "Fixture file path")
-  .option("-p, --provider <providers>", "Providers to compare (comma-separated: current,nomic,multilingual-e5)", "current")
+  .option("-p, --provider <providers>", "Providers to compare (comma-separated: current,nomic,multilingual-e5,bge-small-en-v1.5)", "current")
   .option("--json", "Emit raw JSON report")
   .action(async (opts) => {
     const db = initDb();
@@ -671,7 +685,7 @@ evalCmd
     const providers = String(opts.provider)
       .split(",")
       .map((value) => value.trim())
-      .filter(Boolean) as Array<"current" | "nomic" | "multilingual-e5">;
+      .filter(Boolean) as Array<"current" | "nomic" | "multilingual-e5" | "bge-small-en-v1.5">;
     const report = await runRetrievalEval(db, input, { providers });
 
     if (opts.json) {
@@ -728,7 +742,7 @@ embeddingsCmd
 
     console.log(`Provider: ${info.provider}`);
     console.log(`Model:    ${info.model}`);
-    console.log(`Dims:     ${info.dimensions}`);
+    console.log(`Dims:     index=${info.index_dimensions} canonical=${info.canonical_dimensions}`);
     console.log(`Version:  ${info.version}`);
     console.log(`Cached:   ${info.cached ? "yes" : "no"}`);
     console.log(`Size:     ${info.size_label}`);

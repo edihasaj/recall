@@ -227,7 +227,7 @@ describe("phase 6 history retrieval", () => {
     expect(snippetIds.length).toBeGreaterThan(1);
 
     db.update(historySnippetEmbeddings)
-      .set({ dimensions: 4 })
+      .set({ index_dimensions: 4 })
       .where(eq(historySnippetEmbeddings.snippet_id, snippetIds[0]))
       .run();
 

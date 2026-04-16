@@ -7,6 +7,8 @@ export type EmbeddingProvider = {
   metadata(): {
     model: string;
     dimensions: number;
+    canonical_dimensions: number;
+    index_dimensions: number;
     version: string;
     task_prefix?: string;
     estimated_size_mb?: number;

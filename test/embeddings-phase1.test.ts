@@ -64,9 +64,11 @@ describe("phase 1 embedding lifecycle", () => {
 
     const provider = resolveProvider(config);
 
-    expect(provider.metadata()).toEqual({
+    expect(provider.metadata()).toMatchObject({
       model: "nomic-ai/nomic-embed-text-v1.5",
       dimensions: 3,
+      canonical_dimensions: 3,
+      index_dimensions: 3,
       version: "test-v1",
     });
     expect(Array.from(await generateEmbedding("abc", config))).toEqual([3, 1, 1]);

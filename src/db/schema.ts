@@ -46,7 +46,8 @@ export const memoryEmbeddings = sqliteTable("memory_embeddings", {
     .primaryKey()
     .references(() => memories.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
-  dimensions: integer("dimensions").notNull(),
+  embedding_dimensions: integer("embedding_dimensions").notNull(),
+  index_dimensions: integer("index_dimensions").notNull(),
   version: text("version").notNull(),
   content_hash: text("content_hash").notNull(),
   updated_at: text("updated_at").notNull(),
@@ -79,7 +80,8 @@ export const historySnippetEmbeddings = sqliteTable("history_snippet_embeddings"
     .primaryKey()
     .references(() => historySnippets.id, { onDelete: "cascade" }),
   model: text("model").notNull(),
-  dimensions: integer("dimensions").notNull(),
+  embedding_dimensions: integer("embedding_dimensions").notNull(),
+  index_dimensions: integer("index_dimensions").notNull(),
   version: text("version").notNull(),
   content_hash: text("content_hash").notNull(),
   updated_at: text("updated_at").notNull(),
