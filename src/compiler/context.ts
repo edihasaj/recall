@@ -1,6 +1,6 @@
 import { queryMemories } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
-import { CONFIDENCE, type CompilerConfig, type MemoryItem } from "../types.js";
+import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 
@@ -18,6 +18,7 @@ export interface CompileRequest {
   path?: string;
   query_text?: string;
   config?: Partial<CompilerConfig>;
+  embedding_config?: EmbeddingConfig | null;
 }
 
 export interface CompiledContext {
@@ -169,7 +170,7 @@ export async function compileContextHybrid(
   }
 
   const retrieval = req.query_text
-    ? await hybridSearch(db, req.query_text, loadEmbeddingConfigFromEnv(), {
+    ? await hybridSearch(db, req.query_text, req.embedding_config ?? loadEmbeddingConfigFromEnv(), {
         repo: req.repo,
         limit: Math.max(50, passing.length * 2),
       })

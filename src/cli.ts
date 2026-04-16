@@ -663,11 +663,16 @@ evalCmd
   .command("retrieval")
   .description("Run retrieval eval fixtures against baseline vs hybrid retrieval")
   .requiredOption("-f, --file <path>", "Fixture file path")
+  .option("-p, --provider <providers>", "Providers to compare (comma-separated: current,nomic,multilingual-e5)", "current")
   .option("--json", "Emit raw JSON report")
   .action(async (opts) => {
     const db = initDb();
     const input = loadRetrievalEvalFile(opts.file);
-    const report = await runRetrievalEval(db, input);
+    const providers = String(opts.provider)
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean) as Array<"current" | "nomic" | "multilingual-e5">;
+    const report = await runRetrievalEval(db, input, { providers });
 
     if (opts.json) {
       console.log(JSON.stringify(report, null, 2));
