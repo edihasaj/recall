@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { initDb } from "./db/client.js";
+import type { RecallDb } from "./db/client.js";
 import { compileContext, compileContextHybrid } from "./compiler/context.js";
 import { processCorrection, processReviewFeedback } from "./capture/correction.js";
 import {
@@ -28,8 +28,9 @@ import {
 } from "./session/lifecycle.js";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
+import { runDestructiveResetRollout } from "./reset/rollout.js";
 
-const db = initDb();
+let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
 const maintenanceConfig = loadMaintenanceConfigFromEnv();
 let maintenanceRunning = false;
@@ -611,21 +612,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-scheduleMaintenanceLoop();
-
-const embeddingConfig = loadEmbeddingConfigFromEnv();
-if (embeddingConfig) {
-  const info = getEmbeddingModelInfo(embeddingConfig);
-  if (info && !info.cached) {
-    const approx = info.estimated_size_mb ? `~${info.estimated_size_mb}MB` : "download";
-    console.log(`[recall] Fetching embedding model (one-time, ${approx}) -> ${info.cache_path}`);
-  }
-  void ensureEmbeddingProviderReady(embeddingConfig).catch((error: unknown) => {
-    const message = error instanceof Error ? error.stack ?? error.message : String(error);
-    console.error(`[recall] embedding provider warmup failed: ${message}`);
-  });
-}
-
 function send(
   res: import("node:http").ServerResponse,
   status: number,
@@ -635,6 +621,38 @@ function send(
   res.end(JSON.stringify(data));
 }
 
-server.listen(PORT, () => {
-  console.log(`Recall daemon listening on http://localhost:${PORT}`);
+async function startDaemon() {
+  const rollout = await runDestructiveResetRollout();
+  db = rollout.db;
+
+  if (rollout.result.performed) {
+    console.log(
+      `[recall] destructive reset ${rollout.result.reason} prev=${rollout.result.previous_user_version} target=${rollout.result.target_user_version} repos=${rollout.result.repos_scanned} memories=${rollout.result.memories_created} embeddings=${rollout.result.embeddings_bootstrapped}`,
+    );
+  }
+
+  scheduleMaintenanceLoop();
+
+  const embeddingConfig = loadEmbeddingConfigFromEnv();
+  if (embeddingConfig) {
+    const info = getEmbeddingModelInfo(embeddingConfig);
+    if (info && !info.cached) {
+      const approx = info.estimated_size_mb ? `~${info.estimated_size_mb}MB` : "download";
+      console.log(`[recall] Fetching embedding model (one-time, ${approx}) -> ${info.cache_path}`);
+    }
+    void ensureEmbeddingProviderReady(embeddingConfig).catch((error: unknown) => {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[recall] embedding provider warmup failed: ${message}`);
+    });
+  }
+
+  server.listen(PORT, () => {
+    console.log(`Recall daemon listening on http://localhost:${PORT}`);
+  });
+}
+
+void startDaemon().catch((error: unknown) => {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error(`[recall] daemon startup failed: ${message}`);
+  process.exit(1);
 });

@@ -12,6 +12,10 @@ export interface LaunchdOptions {
   nodePath?: string;
   daemonScript?: string;
   maintenanceIntervalSeconds?: number;
+  repoRoots?: string;
+  embeddingProvider?: string;
+  embeddingDims?: string;
+  embeddingsDisabled?: string;
 }
 
 export interface LaunchdStatus {
@@ -106,6 +110,18 @@ export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
 
   lines.push(`Port:       ${installed?.port ?? cfg.port}`);
   lines.push(`Data dir:   ${installed?.dataDir ?? cfg.dataDir}`);
+  if (installed?.repoRoots ?? cfg.repoRoots) {
+    lines.push(`Repos:      ${installed?.repoRoots ?? cfg.repoRoots}`);
+  }
+  if (installed?.embeddingProvider ?? cfg.embeddingProvider) {
+    lines.push(`EmbedProv:  ${installed?.embeddingProvider ?? cfg.embeddingProvider}`);
+  }
+  if (installed?.embeddingDims ?? cfg.embeddingDims) {
+    lines.push(`EmbedDims:  ${installed?.embeddingDims ?? cfg.embeddingDims}`);
+  }
+  if (installed?.embeddingsDisabled ?? cfg.embeddingsDisabled) {
+    lines.push(`EmbedOff:   ${installed?.embeddingsDisabled ?? cfg.embeddingsDisabled}`);
+  }
   lines.push(`Node:       ${installed?.nodePath ?? cfg.nodePath}`);
   lines.push(`Script:     ${installed?.daemonScript ?? cfg.daemonScript}`);
   lines.push(`Maintain:   ${installed?.maintenanceIntervalSeconds ?? cfg.maintenanceIntervalSeconds}s`);
@@ -144,6 +160,10 @@ function resolveConfig(opts: LaunchdOptions) {
     plistPath,
     stdoutPath: join(logDir, "daemon.stdout.log"),
     stderrPath: join(logDir, "daemon.stderr.log"),
+    repoRoots: opts.repoRoots ?? process.env.RECALL_REPO_ROOTS,
+    embeddingProvider: opts.embeddingProvider ?? process.env.RECALL_EMBEDDING_PROVIDER,
+    embeddingDims: opts.embeddingDims ?? process.env.RECALL_EMBEDDING_DIMS,
+    embeddingsDisabled: opts.embeddingsDisabled ?? process.env.RECALL_EMBEDDINGS_DISABLED,
   };
 }
 
@@ -153,6 +173,10 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
     RECALL_MAINTENANCE_INTERVAL_SECONDS: String(cfg.maintenanceIntervalSeconds),
     RECALL_DATA_DIR: cfg.dataDir,
     PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+    ...(cfg.repoRoots ? { RECALL_REPO_ROOTS: cfg.repoRoots } : {}),
+    ...(cfg.embeddingProvider ? { RECALL_EMBEDDING_PROVIDER: cfg.embeddingProvider } : {}),
+    ...(cfg.embeddingDims ? { RECALL_EMBEDDING_DIMS: cfg.embeddingDims } : {}),
+    ...(cfg.embeddingsDisabled ? { RECALL_EMBEDDINGS_DISABLED: cfg.embeddingsDisabled } : {}),
   };
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -176,7 +200,15 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
     <string>${escapeXml(env.RECALL_MAINTENANCE_INTERVAL_SECONDS)}</string>
     <key>RECALL_DATA_DIR</key>
     <string>${escapeXml(env.RECALL_DATA_DIR)}</string>
-  </dict>
+${env.RECALL_REPO_ROOTS ? `    <key>RECALL_REPO_ROOTS</key>
+    <string>${escapeXml(env.RECALL_REPO_ROOTS)}</string>
+` : ""}${env.RECALL_EMBEDDING_PROVIDER ? `    <key>RECALL_EMBEDDING_PROVIDER</key>
+    <string>${escapeXml(env.RECALL_EMBEDDING_PROVIDER)}</string>
+` : ""}${env.RECALL_EMBEDDING_DIMS ? `    <key>RECALL_EMBEDDING_DIMS</key>
+    <string>${escapeXml(env.RECALL_EMBEDDING_DIMS)}</string>
+` : ""}${env.RECALL_EMBEDDINGS_DISABLED ? `    <key>RECALL_EMBEDDINGS_DISABLED</key>
+    <string>${escapeXml(env.RECALL_EMBEDDINGS_DISABLED)}</string>
+` : ""}  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -232,11 +264,15 @@ function tryOutput(cmd: string, args: string[]) {
 function readInstalledConfig(plistPath: string): {
   nodePath?: string;
   daemonScript?: string;
-  port?: string;
-  maintenanceIntervalSeconds?: string;
-  dataDir?: string;
-  stdoutPath?: string;
-  stderrPath?: string;
+      port?: string;
+      maintenanceIntervalSeconds?: string;
+      dataDir?: string;
+      repoRoots?: string;
+      embeddingProvider?: string;
+      embeddingDims?: string;
+      embeddingsDisabled?: string;
+      stdoutPath?: string;
+      stderrPath?: string;
 } | null {
   if (!exists(plistPath)) return null;
 
@@ -252,6 +288,10 @@ function readInstalledConfig(plistPath: string): {
       port: parsed?.EnvironmentVariables?.RECALL_PORT,
       maintenanceIntervalSeconds: parsed?.EnvironmentVariables?.RECALL_MAINTENANCE_INTERVAL_SECONDS,
       dataDir: parsed?.EnvironmentVariables?.RECALL_DATA_DIR,
+      repoRoots: parsed?.EnvironmentVariables?.RECALL_REPO_ROOTS,
+      embeddingProvider: parsed?.EnvironmentVariables?.RECALL_EMBEDDING_PROVIDER,
+      embeddingDims: parsed?.EnvironmentVariables?.RECALL_EMBEDDING_DIMS,
+      embeddingsDisabled: parsed?.EnvironmentVariables?.RECALL_EMBEDDINGS_DISABLED,
       stdoutPath: parsed?.StandardOutPath,
       stderrPath: parsed?.StandardErrorPath,
     };

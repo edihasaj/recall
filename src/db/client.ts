@@ -5,8 +5,10 @@ import * as schema from "./schema.js";
 import { join, dirname } from "node:path";
 import { mkdirSync, existsSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { getEmbeddingCacheRoot } from "../embeddings/cache.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+export const RECALL_DB_USER_VERSION = 1;
 
 export function getDbPath(): string {
   const dataDir =
@@ -41,14 +43,22 @@ function makeDb(sqlite: Database.Database) {
   return drizzle(sqlite, { schema });
 }
 
+function applyPragmas(sqlite: Database.Database) {
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
+}
+
+function setDbUserVersion(sqlite: Database.Database, version = RECALL_DB_USER_VERSION) {
+  sqlite.pragma(`user_version = ${version}`);
+}
+
 export type RecallDb = ReturnType<typeof makeDb>;
 
 export function getDb(dbPath?: string): RecallDb {
   if (!_db) {
     const path = dbPath ?? getDbPath();
     _sqlite = new Database(path);
-    _sqlite.pragma("journal_mode = WAL");
-    _sqlite.pragma("foreign_keys = ON");
+    applyPragmas(_sqlite);
     _db = makeDb(_sqlite);
     _dbPath = path;
   }
@@ -58,8 +68,7 @@ export function getDb(dbPath?: string): RecallDb {
 /** Create a standalone DB instance (useful for tests). */
 export function createStandaloneDb(dbPath: string): { db: RecallDb; sqlite: Database.Database } {
   const sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
+  applyPragmas(sqlite);
   const db = makeDb(sqlite);
   return { db, sqlite };
 }
@@ -67,13 +76,15 @@ export function createStandaloneDb(dbPath: string): { db: RecallDb; sqlite: Data
 export function initDb(dbPath?: string): RecallDb {
   const db = getDb(dbPath);
   migrate(db, { migrationsFolder: getMigrationsPath() });
+  setDbUserVersion(db.$client);
   return db;
 }
 
 /** Init a standalone DB (for tests — no module-level singleton). */
 export function initStandaloneDb(dbPath: string): RecallDb {
-  const { db } = createStandaloneDb(dbPath);
+  const { db, sqlite } = createStandaloneDb(dbPath);
   migrate(db, { migrationsFolder: getMigrationsPath() });
+  setDbUserVersion(sqlite);
   return db;
 }
 
@@ -86,7 +97,22 @@ export function closeDb() {
   _dbPath = null;
 }
 
-export function resetDb(dbPath?: string) {
+export function getDbUserVersion(dbPath?: string): number {
+  const path = dbPath ?? getDbPath();
+  if (!existsSync(path)) return 0;
+
+  const sqlite = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    return Number(sqlite.pragma("user_version", { simple: true }) ?? 0);
+  } finally {
+    sqlite.close();
+  }
+}
+
+export function resetDb(
+  dbPath?: string,
+  options: { purgeModels?: boolean } = {},
+) {
   const path = dbPath ?? getDbPath();
 
   if (_dbPath === path) {
@@ -98,5 +124,9 @@ export function resetDb(dbPath?: string) {
     if (existsSync(candidate)) {
       rmSync(candidate, { force: true });
     }
+  }
+
+  if (options.purgeModels) {
+    rmSync(getEmbeddingCacheRoot(), { recursive: true, force: true });
   }
 }
