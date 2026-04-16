@@ -90,6 +90,20 @@ interface ClaudeCodeHookPayload {
   transcript_path?: string;
 }
 
+interface CodexNotifyPayload {
+  cwd?: string;
+  event?: string;
+  event_name?: string;
+  kind?: string;
+  last_assistant_message?: string;
+  prompt?: string;
+  session_id?: string;
+  tool_input?: Record<string, unknown>;
+  tool_name?: string;
+  type?: string;
+  user_prompt?: string;
+}
+
 export async function executePromptHook(
   input: PromptHookInput,
   opts: HookExecutionOptions = {},
@@ -383,6 +397,58 @@ export async function readClaudeCodeSessionEndInputFromStdin(): Promise<SessionE
   };
 }
 
+export async function dispatchCodexNotify(
+  rawPayload?: string,
+  opts: HookExecutionOptions = {},
+): Promise<HookResult | null> {
+  const payload = parseCodexNotifyPayload(
+    rawPayload ?? await readOptionalStdinText(),
+  );
+  if (!payload) return null;
+
+  const eventName = normalizeCodexNotifyEventName(payload);
+  switch (eventName) {
+    case "user_prompt_submit":
+    case "prompt_submit":
+      return executePromptHook({
+        agent: "codex",
+        prev_assistant_turn: payload.last_assistant_message,
+        repo_path: payload.cwd,
+        session_id: payload.session_id,
+        text: requireNonEmpty(payload.prompt ?? payload.user_prompt ?? "", "prompt"),
+      }, opts);
+    case "post_tool_use":
+    case "tool_result":
+    case "job_completed":
+      return executeToolHook({
+        agent: "codex",
+        exit_code: 0,
+        input_summary: summarizeClaudeToolInput(payload.tool_name, payload.tool_input),
+        name: requireNonEmpty(payload.tool_name ?? "tool", "tool_name"),
+        path: extractClaudeToolPath(payload.tool_input),
+        repo_path: payload.cwd,
+        session_id: payload.session_id,
+      }, opts);
+    case "session_start":
+    case "conversation_starts":
+      return executeSessionStartHook({
+        agent: "codex",
+        repo_path: payload.cwd,
+        session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
+      }, opts);
+    case "stopped":
+    case "session_end":
+    case "session_complete":
+      return executeSessionEndHook({
+        agent: "codex",
+        repo_path: payload.cwd,
+        session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
+      }, opts);
+    default:
+      return null;
+  }
+}
+
 async function postHookToDaemon<T>(
   path: string,
   body: unknown,
@@ -453,11 +519,13 @@ function loadRecentToolCalls(
 ): RecentToolCall[] {
   const toolCalls: RecentToolCall[] = [];
 
-  for (const event of listActivityEvents(db, {
+  const events = listActivityEvents(db, {
     session_id: sessionId,
     event_type: "session_event",
     limit: 25,
-  })) {
+  }).sort((left, right) => left.created_at.localeCompare(right.created_at));
+
+  for (const event of events) {
     if (event.request.name !== "tool_invoked") continue;
     const toolCall = event.result.tool_call;
     if (!toolCall || typeof toolCall !== "object") continue;
@@ -465,19 +533,19 @@ function loadRecentToolCalls(
     const name = input.name;
     if (typeof name !== "string" || name.trim().length === 0) continue;
     toolCalls.push({
-        name: name.trim(),
-        input_summary:
-          typeof input.input_summary === "string"
-            ? truncateText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH)
-            : undefined,
-        exit_code:
-          typeof input.exit_code === "number"
-            ? input.exit_code
-            : undefined,
-      });
+      name: name.trim(),
+      input_summary:
+        typeof input.input_summary === "string"
+          ? truncateText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH)
+          : undefined,
+      exit_code:
+        typeof input.exit_code === "number"
+          ? input.exit_code
+          : undefined,
+    });
   }
 
-  return toolCalls.slice(0, MAX_RECENT_TOOL_CALLS).reverse();
+  return toolCalls.slice(-MAX_RECENT_TOOL_CALLS);
 }
 
 function normalizeRecentToolCalls(
@@ -495,6 +563,15 @@ function normalizeRecentToolCalls(
     }));
 }
 
+function normalizeCodexNotifyEventName(payload: CodexNotifyPayload): string {
+  return String(payload.event ?? payload.event_name ?? payload.kind ?? payload.type ?? "")
+    .trim()
+    .replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)
+    .replace(/[-\s]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
 function summarizeClaudeToolInput(
   toolName?: string,
   toolInput?: Record<string, unknown>,
@@ -505,7 +582,10 @@ function summarizeClaudeToolInput(
     return truncateText(toolInput.file_path.trim(), MAX_TOOL_INPUT_SUMMARY_LENGTH);
   }
 
-  if (toolName === "Bash" && typeof toolInput.command === "string") {
+  if (
+    (toolName === "Bash" || toolName?.toLowerCase() === "shell") &&
+    typeof toolInput.command === "string"
+  ) {
     return truncateText(toolInput.command.trim(), MAX_TOOL_INPUT_SUMMARY_LENGTH);
   }
 
@@ -542,6 +622,24 @@ function requireNonEmpty(value: string, field: string): string {
   return trimmed;
 }
 
+function parseCodexNotifyPayload(rawPayload: string): CodexNotifyPayload | null {
+  const trimmed = rawPayload.trim();
+  if (trimmed.length === 0) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("Codex notify payload must be valid JSON");
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Codex notify payload must be a JSON object");
+  }
+
+  return parsed as CodexNotifyPayload;
+}
+
 function readStdinText(): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -549,6 +647,13 @@ function readStdinText(): Promise<string> {
     process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     process.stdin.on("error", reject);
   });
+}
+
+function readOptionalStdinText(): Promise<string> {
+  if (process.stdin.isTTY) {
+    return Promise.resolve("");
+  }
+  return readStdinText();
 }
 
 function truncateOptionalText(value: string | undefined, limit: number): string | undefined {

@@ -54,6 +54,7 @@ import {
   uninstallLaunchAgent,
 } from "./daemon/launchd.js";
 import {
+  dispatchCodexNotify,
   executePromptHook,
   executeSessionEndHook,
   executeSessionStartHook,
@@ -255,6 +256,14 @@ hookCmd
           turn_count: opts.turnCount ? parseInteger(opts.turnCount, "turn-count") : undefined,
         };
     await executeSessionEndHook(input);
+  });
+
+hookCmd
+  .command("codex-notify")
+  .description("Bridge a Codex notify payload into Recall hook handlers")
+  .argument("[payload]", "Codex notify payload JSON")
+  .action(async (payload?: string) => {
+    await dispatchCodexNotify(payload);
   });
 
 // --- scan ---
