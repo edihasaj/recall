@@ -23,6 +23,8 @@ import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession }
 import { formatRetrievalEvalReport, loadRetrievalEvalFile, runRetrievalEval } from "./eval/retrieval.js";
 import {
   bootstrapEmbeddings,
+  ensureEmbeddingProviderReady,
+  getEmbeddingModelInfo,
   hybridSearch,
   loadEmbeddingConfigFromEnv,
   rebuildEmbeddingIndex,
@@ -675,6 +677,56 @@ evalCmd
 const embeddingsCmd = program
   .command("embeddings")
   .description("Manage canonical embedding state");
+
+embeddingsCmd
+  .command("setup")
+  .description("Pre-fetch the active embedding model into the local cache")
+  .action(async () => {
+    const config = loadEmbeddingConfigFromEnv();
+    if (!config) {
+      console.error("Embeddings are disabled. Unset RECALL_EMBEDDINGS_DISABLED=true to enable local embeddings.");
+      process.exit(1);
+    }
+
+    const before = getEmbeddingModelInfo(config)!;
+    if (!before.cached) {
+      const approx = before.estimated_size_mb ? `~${before.estimated_size_mb}MB` : "download";
+      console.log(`Fetching embedding model (one-time, ${approx}) -> ${before.cache_path}`);
+    }
+
+    const info = await ensureEmbeddingProviderReady(config);
+    if (!info) {
+      console.error("Failed to initialize embedding provider.");
+      process.exit(1);
+    }
+
+    console.log(`Provider: ${info.provider}`);
+    console.log(`Model:    ${info.model}`);
+    console.log(`Cache:    ${info.cache_path}`);
+    console.log(`Size:     ${info.size_label}`);
+  });
+
+embeddingsCmd
+  .command("info")
+  .description("Show active embedding provider and cache details")
+  .action(() => {
+    const info = getEmbeddingModelInfo();
+    if (!info) {
+      console.error("Embeddings are disabled. Unset RECALL_EMBEDDINGS_DISABLED=true to enable local embeddings.");
+      process.exit(1);
+    }
+
+    console.log(`Provider: ${info.provider}`);
+    console.log(`Model:    ${info.model}`);
+    console.log(`Dims:     ${info.dimensions}`);
+    console.log(`Version:  ${info.version}`);
+    console.log(`Cached:   ${info.cached ? "yes" : "no"}`);
+    console.log(`Size:     ${info.size_label}`);
+    console.log(`Cache:    ${info.cache_path}`);
+    if (info.task_prefix) {
+      console.log(`Prefix:   ${info.task_prefix}`);
+    }
+  });
 
 embeddingsCmd
   .command("bootstrap")

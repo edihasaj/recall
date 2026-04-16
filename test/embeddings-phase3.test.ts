@@ -115,16 +115,17 @@ describe("phase 3 multilingual-e5 provider", () => {
     const provider = resolveProvider(multilingualConfig);
     const embedding = await provider.embed("bonjour");
 
-    expect(provider.metadata()).toEqual({
+    expect(provider.metadata()).toMatchObject({
       model: "Xenova/multilingual-e5-small",
       dimensions: 3,
       version: "test-v3",
       task_prefix: "passage: | query:",
+      estimated_size_mb: 113,
     });
     expect(pipelineMock).toHaveBeenCalledWith(
       "feature-extraction",
       "Xenova/multilingual-e5-small",
-      { dtype: "q8" },
+      expect.objectContaining({ dtype: "q8", cache_dir: expect.any(String) }),
     );
     expect(extractorMock).toHaveBeenCalledWith(
       ["passage: bonjour"],

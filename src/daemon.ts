@@ -20,6 +20,7 @@ import { getAuditTrail, getRecentAudit, rollbackMemory } from "./audit/trail.js"
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "./repo/discovery.js";
+import { ensureEmbeddingProviderReady, getEmbeddingModelInfo, loadEmbeddingConfigFromEnv } from "./embeddings/embeddings.js";
 import {
   endSessionLifecycle,
   recordSessionLifecycleEvent,
@@ -118,7 +119,11 @@ const server = createServer(async (req, res) => {
   try {
     // Health
     if (path === "/health" && method === "GET") {
-      return send(res, 200, { status: "ok", version: "0.5.0" });
+      return send(res, 200, {
+        status: "ok",
+        version: "0.5.0",
+        embeddings: getEmbeddingModelInfo(),
+      });
     }
 
     // Compile context (hook injection endpoint)
@@ -607,6 +612,19 @@ const server = createServer(async (req, res) => {
 });
 
 scheduleMaintenanceLoop();
+
+const embeddingConfig = loadEmbeddingConfigFromEnv();
+if (embeddingConfig) {
+  const info = getEmbeddingModelInfo(embeddingConfig);
+  if (info && !info.cached) {
+    const approx = info.estimated_size_mb ? `~${info.estimated_size_mb}MB` : "download";
+    console.log(`[recall] Fetching embedding model (one-time, ${approx}) -> ${info.cache_path}`);
+  }
+  void ensureEmbeddingProviderReady(embeddingConfig).catch((error: unknown) => {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(`[recall] embedding provider warmup failed: ${message}`);
+  });
+}
 
 function send(
   res: import("node:http").ServerResponse,
