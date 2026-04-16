@@ -77,6 +77,19 @@ export interface HookResult {
   recent_tool_calls?: RecentToolCall[];
 }
 
+interface ClaudeCodeHookPayload {
+  cwd?: string;
+  hook_event_name?: string;
+  permission_mode?: string;
+  prompt?: string;
+  reason?: string;
+  session_id?: string;
+  source?: string;
+  tool_input?: Record<string, unknown>;
+  tool_name?: string;
+  transcript_path?: string;
+}
+
 export async function executePromptHook(
   input: PromptHookInput,
   opts: HookExecutionOptions = {},
@@ -326,6 +339,50 @@ export function parseInteger(value: string, field: string): number {
   return parsed;
 }
 
+export async function readClaudeCodePromptInputFromStdin(): Promise<PromptHookInput> {
+  const payload = await readClaudeCodeHookPayloadFromStdin();
+  return {
+    agent: "claude-code",
+    path: extractClaudeToolPath(payload.tool_input),
+    repo_path: payload.cwd,
+    session_id: payload.session_id,
+    text: requireNonEmpty(payload.prompt ?? "", "prompt"),
+  };
+}
+
+export async function readClaudeCodeToolInputFromStdin(): Promise<ToolHookInput> {
+  const payload = await readClaudeCodeHookPayloadFromStdin();
+  return {
+    agent: "claude-code",
+    exit_code: 0,
+    input_summary: summarizeClaudeToolInput(payload.tool_name, payload.tool_input),
+    name: requireNonEmpty(payload.tool_name ?? "", "tool_name"),
+    path: extractClaudeToolPath(payload.tool_input),
+    repo_path: payload.cwd,
+    session_id: payload.session_id,
+  };
+}
+
+export async function readClaudeCodeSessionStartInputFromStdin(): Promise<SessionStartHookInput> {
+  const payload = await readClaudeCodeHookPayloadFromStdin();
+  return {
+    agent: "claude-code",
+    path: extractClaudeToolPath(payload.tool_input),
+    repo_path: payload.cwd,
+    session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
+  };
+}
+
+export async function readClaudeCodeSessionEndInputFromStdin(): Promise<SessionEndHookInput> {
+  const payload = await readClaudeCodeHookPayloadFromStdin();
+  return {
+    agent: "claude-code",
+    path: extractClaudeToolPath(payload.tool_input),
+    repo_path: payload.cwd,
+    session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
+  };
+}
+
 async function postHookToDaemon<T>(
   path: string,
   body: unknown,
@@ -368,6 +425,26 @@ async function postHookToDaemon<T>(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function readClaudeCodeHookPayloadFromStdin(): Promise<ClaudeCodeHookPayload> {
+  const raw = await readStdinText();
+  if (raw.trim().length === 0) {
+    throw new Error("Claude Code hook stdin was empty");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Claude Code hook stdin must be valid JSON");
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Claude Code hook stdin must be a JSON object");
+  }
+
+  return parsed as ClaudeCodeHookPayload;
 }
 
 function loadRecentToolCalls(
@@ -418,6 +495,41 @@ function normalizeRecentToolCalls(
     }));
 }
 
+function summarizeClaudeToolInput(
+  toolName?: string,
+  toolInput?: Record<string, unknown>,
+): string | undefined {
+  if (!toolInput || typeof toolInput !== "object") return undefined;
+
+  if (typeof toolInput.file_path === "string" && toolInput.file_path.trim().length > 0) {
+    return truncateText(toolInput.file_path.trim(), MAX_TOOL_INPUT_SUMMARY_LENGTH);
+  }
+
+  if (toolName === "Bash" && typeof toolInput.command === "string") {
+    return truncateText(toolInput.command.trim(), MAX_TOOL_INPUT_SUMMARY_LENGTH);
+  }
+
+  if (typeof toolInput.path === "string" && toolInput.path.trim().length > 0) {
+    return truncateText(toolInput.path.trim(), MAX_TOOL_INPUT_SUMMARY_LENGTH);
+  }
+
+  const serialized = JSON.stringify(toolInput);
+  return serialized && serialized !== "{}"
+    ? truncateText(serialized, MAX_TOOL_INPUT_SUMMARY_LENGTH)
+    : undefined;
+}
+
+function extractClaudeToolPath(toolInput?: Record<string, unknown>): string | undefined {
+  if (!toolInput || typeof toolInput !== "object") return undefined;
+  if (typeof toolInput.file_path === "string" && toolInput.file_path.trim().length > 0) {
+    return toolInput.file_path.trim();
+  }
+  if (typeof toolInput.path === "string" && toolInput.path.trim().length > 0) {
+    return toolInput.path.trim();
+  }
+  return undefined;
+}
+
 function resolveRepo(repo?: string, repoPath?: string): string | null {
   return repo?.trim() || inferRepoSlugFromPath(repoPath) || null;
 }
@@ -428,6 +540,15 @@ function requireNonEmpty(value: string, field: string): string {
     throw new Error(`${field} is required`);
   }
   return trimmed;
+}
+
+function readStdinText(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    process.stdin.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+    process.stdin.on("error", reject);
+  });
 }
 
 function truncateOptionalText(value: string | undefined, limit: number): string | undefined {
