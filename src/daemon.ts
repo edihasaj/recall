@@ -622,7 +622,9 @@ function send(
 }
 
 async function startDaemon() {
-  const rollout = await runDestructiveResetRollout();
+  const rollout = await runDestructiveResetRollout({
+    logger: (message) => console.log(message),
+  });
   db = rollout.db;
 
   if (rollout.result.performed) {

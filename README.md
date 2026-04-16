@@ -80,6 +80,12 @@ RECALL_EMBEDDING_DIMS=384
 RECALL_EMBEDDINGS_DISABLED=true
 ```
 
+Upgrade note:
+
+- First launch after the local-embeddings upgrade resets Recall's local DB.
+- Recall rescans discovered repos and rebuilds embeddings/indexes in the background.
+- Recall.app now surfaces that setup progress while the daemon comes up.
+
 Daemon maintenance runs in-process on a timer.
 
 Useful env vars:
