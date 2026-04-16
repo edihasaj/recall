@@ -81,16 +81,21 @@ dbCmd
   .command("reset")
   .description("Reset the local Recall database and reinitialize the clean schema")
   .option("--yes", "Confirm destructive reset")
+  .option("--yes-i-know", "Confirm destructive reset")
+  .option("--purge-models", "Also remove the local embedding model cache")
   .action((opts) => {
-    if (!opts.yes) {
-      console.error("Refusing to reset without --yes.");
+    if (!opts.yes && !opts.yesIKnow) {
+      console.error("Refusing to reset without --yes or --yes-i-know.");
       process.exit(1);
     }
 
     const dbPath = getDbPath();
-    resetDb(dbPath);
+    resetDb(dbPath, { purgeModels: opts.purgeModels });
     initDb(dbPath);
     console.log(`Reset ${dbPath}`);
+    if (opts.purgeModels) {
+      console.log("Purged local embedding model cache.");
+    }
   });
 
 const setupCmd = program

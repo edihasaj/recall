@@ -36,6 +36,11 @@ export interface RepoBootstrapResult {
     | "unresolved";
 }
 
+export interface DiscoveredRepo {
+  repo: string | null;
+  repo_path: string;
+}
+
 export function ensureRepoBootstrapped(
   db: RecallDb,
   opts: RepoBootstrapOptions,
@@ -144,6 +149,21 @@ export function inferRepoSlugFromPath(repoPath?: string | null): string | null {
     const parts = root.split("/").filter(Boolean);
     return parts.at(-1) ?? null;
   }
+}
+
+export function discoverLocalRepos(searchRoots?: string[]): DiscoveredRepo[] {
+  const seen = new Set<string>();
+  const repos: DiscoveredRepo[] = [];
+
+  for (const repoPath of collectCandidateRepos(searchRoots ?? getDefaultSearchRoots())) {
+    const repo = inferRepoSlugFromPath(repoPath);
+    const key = `${repo ?? "-"}::${repoPath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    repos.push({ repo, repo_path: repoPath });
+  }
+
+  return repos;
 }
 
 export function extractRepoSlugFromRemote(remote: string): string | null {
