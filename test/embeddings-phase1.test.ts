@@ -3,9 +3,12 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
+import { resolveProvider } from "../src/embeddings/providers/index.js";
 import {
   bootstrapEmbeddings,
   flushEmbeddingJobs,
+  generateEmbedding,
+  generateEmbeddings,
   loadEmbedding,
 } from "../src/embeddings/embeddings.js";
 import { createMemory, rejectMemory } from "../src/models/memory.js";
@@ -56,6 +59,32 @@ afterEach(async () => {
 });
 
 describe("phase 1 embedding lifecycle", () => {
+  it("resolves the OpenAI provider and delegates single and batch embedding calls", async () => {
+    mockEmbeddingFetch();
+
+    const provider = resolveProvider(config);
+
+    expect(provider.metadata()).toEqual({
+      model: "text-embedding-3-small",
+      dimensions: 3,
+      version: "test-v1",
+    });
+    expect(Array.from(await generateEmbedding("abc", config))).toEqual([3, 1, 1]);
+    expect((await generateEmbeddings(["a", "abcd"], config)).map((embedding) => Array.from(embedding))).toEqual([
+      [1, 1, 1],
+      [4, 2, 1],
+    ]);
+  });
+
+  it("throws for providers without a registered implementation yet", () => {
+    expect(() =>
+      resolveProvider({
+        ...config,
+        provider: "local",
+      }),
+    ).toThrow(/Unsupported embedding provider: local/);
+  });
+
   it("bootstraps embeddings only for candidate and active memories", async () => {
     const db = freshDb();
     mockEmbeddingFetch();

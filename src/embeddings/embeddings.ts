@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
+import { resolveProvider } from "./providers/index.js";
 import {
   rebuildMemoryVecIndex,
   removeMemoryVecRow,
@@ -92,41 +93,7 @@ export async function generateEmbedding(
   text: string,
   config: EmbeddingConfig,
 ): Promise<Float32Array> {
-  if (config.provider === "openai") {
-    return generateOpenAIEmbedding(text, config);
-  }
-  throw new Error(`Unsupported embedding provider: ${config.provider}`);
-}
-
-async function generateOpenAIEmbedding(
-  text: string,
-  config: EmbeddingConfig,
-): Promise<Float32Array> {
-  const apiKey = config.api_key ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key required for embeddings");
-
-  const resp = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      input: text,
-      model: config.model,
-      dimensions: config.dimensions,
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`OpenAI embedding failed: ${err}`);
-  }
-
-  const data = (await resp.json()) as {
-    data: Array<{ embedding: number[] }>;
-  };
-  return new Float32Array(data.data[0].embedding);
+  return resolveProvider(config).embed(text);
 }
 
 // --- Batch embedding ---
@@ -136,35 +103,7 @@ export async function generateEmbeddings(
   config: EmbeddingConfig,
 ): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-
-  const apiKey = config.api_key ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key required for embeddings");
-
-  const resp = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      input: texts,
-      model: config.model,
-      dimensions: config.dimensions,
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`OpenAI embedding failed: ${err}`);
-  }
-
-  const data = (await resp.json()) as {
-    data: Array<{ embedding: number[]; index: number }>;
-  };
-
-  return data.data
-    .sort((a, b) => a.index - b.index)
-    .map((item) => new Float32Array(item.embedding));
+  return resolveProvider(config).embedBatch(texts);
 }
 
 // --- Storage ---
