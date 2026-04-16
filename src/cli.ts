@@ -53,6 +53,14 @@ import {
   stopLaunchAgent,
   uninstallLaunchAgent,
 } from "./daemon/launchd.js";
+import {
+  executePromptHook,
+  executeSessionEndHook,
+  executeSessionStartHook,
+  executeToolHook,
+  parseInteger,
+  parseRecentToolCallsOption,
+} from "./cli/hook.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -135,6 +143,98 @@ setupCmd
     console.log("");
     console.log(`Codex:  ${formatSetupStep(result.codex)}`);
     console.log(`Claude: ${formatSetupStep(result.claude)}`);
+  });
+
+// --- hook ---
+
+const hookCmd = program
+  .command("hook")
+  .description("Run lifecycle hook handlers for agent integrations");
+
+hookCmd
+  .command("prompt")
+  .description("Record a submitted prompt")
+  .requiredOption("--text <text>", "Prompt text")
+  .option("--repo <repo>", "Repository slug")
+  .option("--repo-path <path>", "Repository path")
+  .option("--session <id>", "Session ID")
+  .option("--path <path>", "File path context")
+  .option("--agent <agent>", "Agent name")
+  .option("--prev-assistant <text>", "Previous assistant turn")
+  .option("--recent-tools <json>", "Recent tool calls as a JSON array")
+  .action(async (opts) => {
+    await executePromptHook({
+      text: opts.text,
+      repo: opts.repo,
+      repo_path: opts.repoPath,
+      session_id: opts.session,
+      path: opts.path,
+      agent: opts.agent,
+      prev_assistant_turn: opts.prevAssistant,
+      recent_tool_calls: parseRecentToolCallsOption(opts.recentTools),
+    });
+  });
+
+hookCmd
+  .command("tool")
+  .description("Record a completed tool invocation")
+  .requiredOption("--name <name>", "Tool name")
+  .requiredOption("--exit <code>", "Tool exit code")
+  .option("--repo <repo>", "Repository slug")
+  .option("--repo-path <path>", "Repository path")
+  .option("--session <id>", "Session ID")
+  .option("--path <path>", "File path context")
+  .option("--agent <agent>", "Agent name")
+  .option("--input-summary <text>", "Tool input summary")
+  .action(async (opts) => {
+    await executeToolHook({
+      name: opts.name,
+      exit_code: parseInteger(opts.exit, "exit"),
+      repo: opts.repo,
+      repo_path: opts.repoPath,
+      session_id: opts.session,
+      path: opts.path,
+      agent: opts.agent,
+      input_summary: opts.inputSummary,
+    });
+  });
+
+hookCmd
+  .command("session-start")
+  .description("Record session start")
+  .requiredOption("--session <id>", "Session ID")
+  .requiredOption("--agent <agent>", "Agent name")
+  .option("--repo <repo>", "Repository slug")
+  .option("--repo-path <path>", "Repository path")
+  .option("--path <path>", "File path context")
+  .action(async (opts) => {
+    await executeSessionStartHook({
+      session_id: opts.session,
+      agent: opts.agent,
+      repo: opts.repo,
+      repo_path: opts.repoPath,
+      path: opts.path,
+    });
+  });
+
+hookCmd
+  .command("session-end")
+  .description("Record session end")
+  .requiredOption("--session <id>", "Session ID")
+  .option("--repo <repo>", "Repository slug")
+  .option("--repo-path <path>", "Repository path")
+  .option("--path <path>", "File path context")
+  .option("--agent <agent>", "Agent name")
+  .option("--turn-count <count>", "Turn count")
+  .action(async (opts) => {
+    await executeSessionEndHook({
+      session_id: opts.session,
+      repo: opts.repo,
+      repo_path: opts.repoPath,
+      path: opts.path,
+      agent: opts.agent,
+      turn_count: opts.turnCount ? parseInteger(opts.turnCount, "turn-count") : undefined,
+    });
   });
 
 // --- scan ---
@@ -1386,4 +1486,4 @@ function findByPrefix(db: ReturnType<typeof initDb>, prefix: string) {
   return undefined;
 }
 
-program.parse();
+await program.parseAsync(process.argv);

@@ -29,6 +29,12 @@ import {
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { runDestructiveResetRollout } from "./reset/rollout.js";
+import {
+  handlePromptHook,
+  handleSessionEndHook,
+  handleSessionStartHook,
+  handleToolHook,
+} from "./cli/hook.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -246,6 +252,58 @@ const server = createServer(async (req, res) => {
         payload: body.payload ?? {},
       });
       return send(res, 200, result);
+    }
+
+    // Hook prompt
+    if (path === "/hook/prompt" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.text) {
+        return send(res, 400, { error: "text required" });
+      }
+      const result = await handlePromptHook(body, {
+        db,
+        source: "daemon",
+      });
+      return send(res, 200, { ...result, transport: "daemon" });
+    }
+
+    // Hook tool
+    if (path === "/hook/tool" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.name || typeof body.exit_code !== "number") {
+        return send(res, 400, { error: "name and numeric exit_code required" });
+      }
+      const result = await handleToolHook(body, {
+        db,
+        source: "daemon",
+      });
+      return send(res, 200, { ...result, transport: "daemon" });
+    }
+
+    // Hook session start
+    if (path === "/hook/session-start" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.session_id || !body.agent) {
+        return send(res, 400, { error: "session_id and agent required" });
+      }
+      const result = await handleSessionStartHook(body, {
+        db,
+        source: "daemon",
+      });
+      return send(res, 200, { ...result, transport: "daemon" });
+    }
+
+    // Hook session end
+    if (path === "/hook/session-end" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.session_id) {
+        return send(res, 400, { error: "session_id required" });
+      }
+      const result = await handleSessionEndHook(body, {
+        db,
+        source: "daemon",
+      });
+      return send(res, 200, { ...result, transport: "daemon" });
     }
 
     // Report correction
