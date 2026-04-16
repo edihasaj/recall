@@ -148,6 +148,8 @@ RECALL_EMBEDDINGS_DISABLED=true
 Quick checks:
 
 ```bash
+recall embeddings setup
+recall embeddings info
 recall embeddings verify
 recall search -r owner/repo "pnpm"
 ```

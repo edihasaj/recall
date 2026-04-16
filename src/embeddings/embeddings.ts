@@ -1,5 +1,5 @@
 /**
- * Optional retrieval module — embeddings remain feature-gated behind config.
+ * Local embedding lifecycle.
  * Canonical embedding rows live in SQLite; derived vec + FTS indexes sit on top.
  */
 
@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
+import { formatBytes, getDirectorySize, getEmbeddingCachePath } from "./cache.js";
 import { resolveProvider } from "./providers/index.js";
 import type { EmbeddingPurpose } from "./providers/types.js";
 import {
@@ -56,6 +57,59 @@ export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
     version: process.env.RECALL_EMBEDDING_VERSION ?? "v1",
     similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),
   };
+}
+
+export function getEmbeddingModelInfo(
+  config: EmbeddingConfig | null = loadEmbeddingConfigFromEnv(),
+): {
+  provider: EmbeddingConfig["provider"];
+  model: string;
+  dimensions: number;
+  version: string;
+  task_prefix?: string;
+  estimated_size_mb?: number;
+  cache_path: string;
+  cached: boolean;
+  size_bytes: number;
+  size_label: string;
+} | null {
+  if (!config) return null;
+
+  const provider = resolveProvider(config);
+  const metadata = provider.metadata();
+  const cachePath = getEmbeddingCachePath({
+    provider: config.provider,
+    model: metadata.model,
+  });
+  const sizeBytes = getDirectorySize(cachePath);
+
+  return {
+    provider: config.provider,
+    model: metadata.model,
+    dimensions: metadata.dimensions,
+    version: metadata.version,
+    task_prefix: metadata.task_prefix,
+    estimated_size_mb: metadata.estimated_size_mb,
+    cache_path: cachePath,
+    cached: sizeBytes > 0,
+    size_bytes: sizeBytes,
+    size_label: formatBytes(sizeBytes),
+  };
+}
+
+export async function ensureEmbeddingProviderReady(
+  config: EmbeddingConfig | null = loadEmbeddingConfigFromEnv(),
+) {
+  if (!config) return null;
+
+  const provider = resolveProvider(config);
+  if (provider.prepare) {
+    await provider.prepare();
+  } else {
+    await provider.embed("recall provider warmup", "document");
+  }
+
+  return getEmbeddingModelInfo(config);
 }
 
 function getEmbeddingVersion(config: EmbeddingConfig): string {

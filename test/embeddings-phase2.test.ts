@@ -118,16 +118,17 @@ describe("phase 2 nomic provider", () => {
     const provider = resolveProvider(nomicConfig);
     const embedding = await provider.embed("alpha");
 
-    expect(provider.metadata()).toEqual({
+    expect(provider.metadata()).toMatchObject({
       model: "nomic-ai/nomic-embed-text-v1.5",
       dimensions: 3,
       version: "test-v2",
       task_prefix: "search_document: | search_query:",
+      estimated_size_mb: 140,
     });
     expect(pipelineMock).toHaveBeenCalledWith(
       "feature-extraction",
       "nomic-ai/nomic-embed-text-v1.5",
-      { dtype: "q8" },
+      expect.objectContaining({ dtype: "q8", cache_dir: expect.any(String) }),
     );
     expect(extractorMock).toHaveBeenCalledWith(
       ["search_document: alpha"],

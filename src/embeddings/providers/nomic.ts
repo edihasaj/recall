@@ -1,5 +1,6 @@
 import { layer_norm, pipeline, type FeatureExtractionPipeline, type Tensor } from "@huggingface/transformers";
 import type { EmbeddingConfig } from "../../types.js";
+import { ensureEmbeddingCachePath } from "../cache.js";
 import type { EmbeddingPurpose, EmbeddingProvider } from "./types.js";
 
 const NOMIC_MODEL = "nomic-ai/nomic-embed-text-v1.5";
@@ -32,7 +33,12 @@ function prefixTexts(texts: string[], purpose: EmbeddingPurpose): string[] {
 }
 
 async function getExtractor(config: EmbeddingConfig): Promise<FeatureExtractionPipeline> {
+  const cacheDir = ensureEmbeddingCachePath({
+    provider: config.provider,
+    model: getModel(config),
+  });
   extractorPromise ??= pipeline("feature-extraction", getModel(config), {
+    cache_dir: cacheDir,
     dtype: "q8",
   });
   return extractorPromise;
@@ -90,12 +96,17 @@ export function createNomicProvider(config: EmbeddingConfig): EmbeddingProvider 
       return embedTexts(texts, config, purpose);
     },
 
+    async prepare(): Promise<void> {
+      await getExtractor(config);
+    },
+
     metadata() {
       return {
         model: getModel(config),
         dimensions: getDimensions(config),
         version: config.version,
         task_prefix: `${NOMIC_PREFIXES.document.trim()} | ${NOMIC_PREFIXES.query.trim()}`,
+        estimated_size_mb: 140,
       };
     },
   };
