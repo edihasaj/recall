@@ -276,6 +276,25 @@ export function appendEvidence(
   return true;
 }
 
+export function updateMemoryCaptureContext(
+  db: RecallDb,
+  id: string,
+  captureContext: CaptureContext,
+): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+
+  db.update(memories)
+    .set({
+      capture_context: captureContext as any,
+      updated_at: new Date().toISOString(),
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
 export function countDistinctCorrectionSessions(mem: MemoryItem): number {
   const sessions = new Set<string>();
 
