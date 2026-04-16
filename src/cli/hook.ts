@@ -4,6 +4,8 @@ import { inferRepoSlugFromPath } from "../repo/discovery.js";
 import type { RecallDb } from "../db/client.js";
 import type { ActivitySource } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
+import { recordHookCall } from "../hooks/calls.js";
+import { performance } from "node:perf_hooks";
 import {
   endSessionLifecycle,
   startSessionLifecycle,
@@ -176,83 +178,87 @@ export async function handlePromptHook(
   input: PromptHookInput,
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
-  const text = truncateText(requireNonEmpty(input.text, "text"), MAX_PROMPT_TEXT_LENGTH);
   const db = opts.db ?? initDb();
-  const sessionId = input.session_id?.trim() || "hook";
-  const repo = resolveRepo(input.repo, input.repo_path);
-  const recentToolCalls = normalizeRecentToolCalls(
-    input.recent_tool_calls ?? loadRecentToolCalls(db, sessionId),
-  );
+  return withHookTelemetry(db, "prompt_submitted", input.agent ?? "hook", async () => {
+    const text = truncateText(requireNonEmpty(input.text, "text"), MAX_PROMPT_TEXT_LENGTH);
+    const sessionId = input.session_id?.trim() || "hook";
+    const repo = resolveRepo(input.repo, input.repo_path);
+    const recentToolCalls = normalizeRecentToolCalls(
+      input.recent_tool_calls ?? loadRecentToolCalls(db, sessionId),
+    );
 
-  createActivityEvent(db, {
-    session_id: sessionId,
-    repo,
-    path: input.path ?? null,
-    source: opts.source ?? "cli",
-    event_type: "session_event",
-    request: {
-      client: input.agent ?? "hook",
-      name: "prompt_submitted",
-      repo_path: input.repo_path ?? null,
-    },
-    result: {
-      text,
-      prev_assistant_turn: truncateOptionalText(
-        input.prev_assistant_turn,
-        MAX_PREV_ASSISTANT_LENGTH,
-      ),
+    createActivityEvent(db, {
+      session_id: sessionId,
+      repo,
+      path: input.path ?? null,
+      source: opts.source ?? "cli",
+      event_type: "session_event",
+      request: {
+        client: input.agent ?? "hook",
+        name: "prompt_submitted",
+        repo_path: input.repo_path ?? null,
+      },
+      result: {
+        text,
+        prev_assistant_turn: truncateOptionalText(
+          input.prev_assistant_turn,
+          MAX_PREV_ASSISTANT_LENGTH,
+        ),
+        recent_tool_calls: recentToolCalls,
+        submitted_at: new Date().toISOString(),
+      },
+    });
+
+    return {
+      event: "prompt_submitted",
+      session_id: sessionId,
+      repo,
       recent_tool_calls: recentToolCalls,
-      submitted_at: new Date().toISOString(),
-    },
+      transport: "direct",
+    };
   });
-
-  return {
-    event: "prompt_submitted",
-    session_id: sessionId,
-    repo,
-    recent_tool_calls: recentToolCalls,
-    transport: "direct",
-  };
 }
 
 export async function handleToolHook(
   input: ToolHookInput,
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
-  const name = requireNonEmpty(input.name, "name");
   const db = opts.db ?? initDb();
-  const sessionId = input.session_id?.trim() || "hook";
-  const repo = resolveRepo(input.repo, input.repo_path);
-  const toolCall = {
-    name,
-    input_summary: truncateOptionalText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH),
-    exit_code: input.exit_code,
-  } satisfies RecentToolCall;
+  return withHookTelemetry(db, "tool_invoked", input.agent ?? "hook", async () => {
+    const name = requireNonEmpty(input.name, "name");
+    const sessionId = input.session_id?.trim() || "hook";
+    const repo = resolveRepo(input.repo, input.repo_path);
+    const toolCall = {
+      name,
+      input_summary: truncateOptionalText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH),
+      exit_code: input.exit_code,
+    } satisfies RecentToolCall;
 
-  createActivityEvent(db, {
-    session_id: sessionId,
-    repo,
-    path: input.path ?? null,
-    source: opts.source ?? "cli",
-    event_type: "session_event",
-    request: {
-      client: input.agent ?? "hook",
-      name: "tool_invoked",
-      repo_path: input.repo_path ?? null,
-    },
-    result: {
-      tool_call: toolCall,
-      invoked_at: new Date().toISOString(),
-    },
+    createActivityEvent(db, {
+      session_id: sessionId,
+      repo,
+      path: input.path ?? null,
+      source: opts.source ?? "cli",
+      event_type: "session_event",
+      request: {
+        client: input.agent ?? "hook",
+        name: "tool_invoked",
+        repo_path: input.repo_path ?? null,
+      },
+      result: {
+        tool_call: toolCall,
+        invoked_at: new Date().toISOString(),
+      },
+    });
+
+    return {
+      event: "tool_invoked",
+      session_id: sessionId,
+      repo,
+      recent_tool_calls: [toolCall],
+      transport: "direct",
+    };
   });
-
-  return {
-    event: "tool_invoked",
-    session_id: sessionId,
-    repo,
-    recent_tool_calls: [toolCall],
-    transport: "direct",
-  };
 }
 
 export async function handleSessionStartHook(
@@ -260,24 +266,26 @@ export async function handleSessionStartHook(
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
   const db = opts.db ?? initDb();
-  const result = startSessionLifecycle(db, {
-    session_id: requireNonEmpty(input.session_id, "session_id"),
-    client: requireNonEmpty(input.agent, "agent"),
-    repo: input.repo ?? null,
-    repo_path: input.repo_path ?? null,
-    path: input.path ?? null,
-    meta: {
-      hook_event: "session_started",
-      started_at: new Date().toISOString(),
-    },
-  });
+  return withHookTelemetry(db, "session_started", input.agent ?? "hook", async () => {
+    const result = startSessionLifecycle(db, {
+      session_id: requireNonEmpty(input.session_id, "session_id"),
+      client: requireNonEmpty(input.agent, "agent"),
+      repo: input.repo ?? null,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+      meta: {
+        hook_event: "session_started",
+        started_at: new Date().toISOString(),
+      },
+    });
 
-  return {
-    event: "session_started",
-    session_id: result.session_id,
-    repo: result.repo,
-    transport: "direct",
-  };
+    return {
+      event: "session_started",
+      session_id: result.session_id,
+      repo: result.repo,
+      transport: "direct",
+    };
+  });
 }
 
 export async function handleSessionEndHook(
@@ -285,27 +293,29 @@ export async function handleSessionEndHook(
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
   const db = opts.db ?? initDb();
-  const sessionId = requireNonEmpty(input.session_id, "session_id");
-  const repo = resolveRepo(input.repo, input.repo_path);
+  return withHookTelemetry(db, "session_ended", input.agent ?? "hook", async () => {
+    const sessionId = requireNonEmpty(input.session_id, "session_id");
+    const repo = resolveRepo(input.repo, input.repo_path);
 
-  endSessionLifecycle(db, {
-    session_id: sessionId,
-    client: input.agent ?? "hook",
-    repo,
-    repo_path: input.repo_path ?? null,
-    path: input.path ?? null,
-    payload: {
-      ended_at: new Date().toISOString(),
-      turn_count: input.turn_count ?? null,
-    },
+    endSessionLifecycle(db, {
+      session_id: sessionId,
+      client: input.agent ?? "hook",
+      repo,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+      payload: {
+        ended_at: new Date().toISOString(),
+        turn_count: input.turn_count ?? null,
+      },
+    });
+
+    return {
+      event: "session_ended",
+      session_id: sessionId,
+      repo,
+      transport: "direct",
+    };
   });
-
-  return {
-    event: "session_ended",
-    session_id: sessionId,
-    repo,
-    transport: "direct",
-  };
 }
 
 export function parseRecentToolCallsOption(value?: string): RecentToolCall[] | undefined {
@@ -490,6 +500,33 @@ async function postHookToDaemon<T>(
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function withHookTelemetry<T>(
+  db: RecallDb,
+  event: "session_started" | "prompt_submitted" | "tool_invoked" | "session_ended",
+  agent: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    const result = await run();
+    recordHookCall(db, {
+      event,
+      agent,
+      duration_ms: performance.now() - startedAt,
+      ok: true,
+    });
+    return result;
+  } catch (error) {
+    recordHookCall(db, {
+      event,
+      agent,
+      duration_ms: performance.now() - startedAt,
+      ok: false,
+    });
+    throw error;
   }
 }
 

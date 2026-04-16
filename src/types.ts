@@ -68,6 +68,22 @@ export const EvidenceEntry = z.discriminatedUnion("type", [
 ]);
 export type EvidenceEntry = z.infer<typeof EvidenceEntry>;
 
+export const CaptureContextToolCall = z.object({
+  name: z.string(),
+  path: z.string().optional(),
+  exit_code: z.number().optional(),
+});
+export type CaptureContextToolCall = z.infer<typeof CaptureContextToolCall>;
+
+export const CaptureContext = z.object({
+  prev_assistant_text: z.string().optional(),
+  recent_tool_calls: z.array(CaptureContextToolCall).max(5).optional(),
+  repo: z.string().nullable().optional(),
+  path: z.string().nullable().optional(),
+  agent: z.string().optional(),
+});
+export type CaptureContext = z.infer<typeof CaptureContext>;
+
 // --- Memory Item ---
 
 export const MemoryItem = z.object({
@@ -81,6 +97,7 @@ export const MemoryItem = z.object({
   confidence: z.number().min(0).max(1),
   source: MemorySource,
   evidence: z.array(EvidenceEntry),
+  capture_context: CaptureContext.nullable(),
   supersedes: z.string().uuid().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -102,6 +119,17 @@ export const FeedbackEvent = z.object({
   timestamp: z.string(),
 });
 export type FeedbackEvent = z.infer<typeof FeedbackEvent>;
+
+export const MemoryInjection = z.object({
+  id: z.string().uuid(),
+  memory_id: z.string().uuid(),
+  session_id: z.string(),
+  repo: z.string().nullable(),
+  injected_at: z.string(),
+  outcome: FeedbackOutcome.nullable(),
+  outcome_at: z.string().nullable(),
+});
+export type MemoryInjection = z.infer<typeof MemoryInjection>;
 
 // --- Activity events ---
 
@@ -145,6 +173,43 @@ export const ActivityEventQuery = z.object({
   limit: z.number().int().positive().optional(),
 });
 export type ActivityEventQuery = z.infer<typeof ActivityEventQuery>;
+
+export const HookCallEvent = z.enum([
+  "session_started",
+  "prompt_submitted",
+  "tool_invoked",
+  "session_ended",
+]);
+export type HookCallEvent = z.infer<typeof HookCallEvent>;
+
+export const HookCall = z.object({
+  id: z.string().uuid(),
+  event: HookCallEvent,
+  agent: z.string(),
+  duration_ms: z.number().int().nonnegative(),
+  ok: z.boolean(),
+  created_at: z.string(),
+});
+export type HookCall = z.infer<typeof HookCall>;
+
+export const HookCallStatsQuery = z.object({
+  agent: z.string().optional(),
+  event: HookCallEvent.optional(),
+  limit: z.number().int().positive().optional(),
+});
+export type HookCallStatsQuery = z.infer<typeof HookCallStatsQuery>;
+
+export const HookCallStatsRow = z.object({
+  event: HookCallEvent,
+  agent: z.string(),
+  total_calls: z.number().int().nonnegative(),
+  ok_calls: z.number().int().nonnegative(),
+  error_calls: z.number().int().nonnegative(),
+  avg_duration_ms: z.number().nonnegative(),
+  max_duration_ms: z.number().int().nonnegative(),
+  last_called_at: z.string(),
+});
+export type HookCallStatsRow = z.infer<typeof HookCallStatsRow>;
 
 // --- Confidence thresholds ---
 

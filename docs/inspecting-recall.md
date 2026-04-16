@@ -18,7 +18,7 @@ read_when:
   - `~/.recall/logs/daemon.stdout.log`
   - `~/.recall/logs/daemon.stderr.log`
 - Codex MCP config: `~/.codex/config.toml`
-- Claude MCP config: `~/.claude.json`
+- Claude MCP config: `~/.claude/settings.json`
 
 ## What Was Shipped
 
@@ -99,12 +99,23 @@ Direct config grep:
 
 ```bash
 rg -n "mcp_servers.recall|Runtime/bin/node|dist/mcp.js" ~/.codex/config.toml
-python3 - <<'PY'
-import json, pathlib
-p = pathlib.Path.home()/'.claude.json'
-obj = json.loads(p.read_text())
-print(json.dumps(obj.get('mcpServers', {}).get('recall'), indent=2))
-PY
+rg -n '"mcpServers"|dist/mcp.js|Runtime/bin/node' ~/.claude/settings.json
+```
+
+Inspect setup planning / uninstall:
+
+```bash
+recall setup --dry-run
+recall setup --scope project --dry-run
+recall setup --uninstall-hooks --dry-run
+```
+
+Inspect hook telemetry:
+
+```bash
+recall hook stats
+recall hook stats --agent claude-code
+recall hook stats --json
 ```
 
 ## Inspect Stored Memory
@@ -164,7 +175,10 @@ Read path:
 Write path:
 
 - `recall_report_correction`
+- `recall_capture_correction`
 - `recall_report_review`
+- `recall_signal_outcome`
+- `recall_session_end`
 
 So Recall memory improves only when the agent actually calls those MCP tools.
 

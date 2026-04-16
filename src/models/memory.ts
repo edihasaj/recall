@@ -13,6 +13,7 @@ import {
   type MemoryScope,
   type MemorySource,
   type EvidenceEntry,
+  type CaptureContext,
   type FeedbackOutcome,
 } from "../types.js";
 
@@ -29,6 +30,7 @@ export interface CreateMemoryInput {
   source: MemorySource;
   confidence?: number;
   evidence?: EvidenceEntry[];
+  capture_context?: CaptureContext | null;
   supersedes?: string | null;
 }
 
@@ -56,6 +58,7 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       confidence,
       source: input.source,
       evidence: (input.evidence ?? []) as any,
+      capture_context: input.capture_context ? input.capture_context as any : null,
       supersedes: input.supersedes ?? null,
       created_at: now,
       updated_at: now,
@@ -356,6 +359,10 @@ function rowToMemory(row: MemoryRow): MemoryItem {
       : Array.isArray(row.evidence)
         ? row.evidence
         : [];
+  const captureContext =
+    typeof row.capture_context === "string"
+      ? JSON.parse(row.capture_context as string)
+      : row.capture_context ?? null;
   return {
     id: row.id,
     type: row.type,
@@ -367,6 +374,7 @@ function rowToMemory(row: MemoryRow): MemoryItem {
     confidence: row.confidence,
     source: row.source,
     evidence: evidence as EvidenceEntry[],
+    capture_context: captureContext as MemoryItem["capture_context"],
     supersedes: row.supersedes,
     created_at: row.created_at,
     updated_at: row.updated_at,

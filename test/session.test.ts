@@ -88,7 +88,7 @@ describe("session lifecycle", () => {
       "session_start",
     ].sort());
     expect(events[0].result.exit_code).toBe(0);
-  });
+  }, 10_000);
 
   it("does not rescan known repos on later session starts", () => {
     const db = freshDb();

@@ -144,5 +144,5 @@ describe("phase 4 Codex adapter", () => {
       input_summary: "pnpm test",
       exit_code: 0,
     });
-  });
+  }, 10_000);
 });

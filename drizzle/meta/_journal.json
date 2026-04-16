@@ -8,6 +8,20 @@
       "when": 1776207282646,
       "tag": "0000_initial_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776381000000,
+      "tag": "0001_hook_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776382000000,
+      "tag": "0002_memory_quality_phase1",
+      "breakpoints": true
     }
   ]
 }

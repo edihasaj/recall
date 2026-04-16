@@ -163,6 +163,7 @@ export function rollbackMemory(
       confidence: restored.confidence,
       source: restored.source,
       evidence: restored.evidence as any,
+      capture_context: restored.capture_context as any,
       updated_at: new Date().toISOString(),
     })
     .where(eq(memories.id, memoryId))
