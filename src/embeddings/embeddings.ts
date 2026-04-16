@@ -30,10 +30,6 @@ type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
 const EMBEDDING_BATCH_SIZE = 100;
 const pendingEmbeddingJobs = new Set<Promise<void>>();
 const EMBEDDING_DEFAULTS = {
-  openai: {
-    model: "text-embedding-3-small",
-    dimensions: 256,
-  },
   nomic: {
     model: "nomic-ai/nomic-embed-text-v1.5",
     dimensions: 512,
@@ -47,14 +43,15 @@ const EMBEDDING_DEFAULTS = {
 // --- Config ---
 
 export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
-  if (process.env.RECALL_EMBEDDINGS_ENABLED !== "true") return null;
-  const provider = (process.env.RECALL_EMBEDDING_PROVIDER ?? "openai") as EmbeddingConfig["provider"];
-  const defaults = EMBEDDING_DEFAULTS[provider as keyof typeof EMBEDDING_DEFAULTS] ?? EMBEDDING_DEFAULTS.openai;
+  if (process.env.RECALL_EMBEDDINGS_DISABLED === "true") return null;
+  const provider = process.env.RECALL_EMBEDDING_PROVIDER === "multilingual-e5"
+    ? "multilingual-e5"
+    : "nomic";
+  const defaults = EMBEDDING_DEFAULTS[provider];
   return {
     enabled: true,
     provider,
     model: process.env.RECALL_EMBEDDING_MODEL ?? defaults.model,
-    api_key: process.env.OPENAI_API_KEY,
     dimensions: parseInt(process.env.RECALL_EMBEDDING_DIMS ?? `${defaults.dimensions}`, 10),
     version: process.env.RECALL_EMBEDDING_VERSION ?? "v1",
     similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),

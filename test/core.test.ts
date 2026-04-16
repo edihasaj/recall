@@ -19,18 +19,19 @@ import {
 import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
 import { detectCorrections, processCorrection } from "../src/capture/correction.js";
 import { compileContext, compileContextHybrid } from "../src/compiler/context.js";
+import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
 let dbCounter = 0;
 function freshDb() {
+  process.env.RECALL_EMBEDDINGS_DISABLED = "true";
   const dir = mkdtempSync(join(tmpdir(), "recall-test-"));
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));
 }
 
 afterEach(async () => {
   await flushEmbeddingJobs();
-  vi.unstubAllGlobals();
-  delete process.env.RECALL_EMBEDDINGS_ENABLED;
-  delete process.env.OPENAI_API_KEY;
+  vi.restoreAllMocks();
+  delete process.env.RECALL_EMBEDDINGS_DISABLED;
   delete process.env.RECALL_EMBEDDING_DIMS;
   delete process.env.RECALL_EMBEDDING_VERSION;
 });
@@ -354,26 +355,12 @@ describe("correction detection", () => {
 
   it("uses semantic dedup when embeddings are enabled", async () => {
     const db = freshDb();
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
-    process.env.OPENAI_API_KEY = "test-key";
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
     process.env.RECALL_EMBEDDING_DIMS = "3";
     process.env.RECALL_EMBEDDING_VERSION = "test-v1";
-
-    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
-      const inputs = Array.isArray(body.input) ? body.input : [body.input];
-      const data = inputs.map((text, index) => ({
-        index,
-        embedding: text.toLowerCase().includes("pnpm")
-          ? [1, 0, 0]
-          : [0, 0, 1],
-      }));
-
-      return new Response(JSON.stringify({ data }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }));
+    installMockEmbeddingProvider((text) => (
+      text.toLowerCase().includes("pnpm") ? [1, 0, 0] : [0, 0, 1]
+    ));
 
     const ids1 = await processCorrection(db, "don't use npm, use pnpm", {
       sessionId: "s1",
@@ -482,26 +469,12 @@ describe("compiler", () => {
 
   it("hybrid compile prefers exact lexical command matches for query text", async () => {
     const db = freshDb();
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
-    process.env.OPENAI_API_KEY = "test-key";
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
     process.env.RECALL_EMBEDDING_DIMS = "3";
     process.env.RECALL_EMBEDDING_VERSION = "test-v1";
-
-    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
-      const inputs = Array.isArray(body.input) ? body.input : [body.input];
-      const data = inputs.map((text, index) => ({
-        index,
-        embedding: text.toLowerCase().includes("pytest")
-          ? [1, 0, 0]
-          : [0, 0, 1],
-      }));
-
-      return new Response(JSON.stringify({ data }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }));
+    installMockEmbeddingProvider((text) => (
+      text.toLowerCase().includes("pytest") ? [1, 0, 0] : [0, 0, 1]
+    ));
 
     createMemory(db, {
       type: "command",
@@ -533,26 +506,12 @@ describe("compiler", () => {
 
   it("keeps candidate memories opt-in for hybrid compile", async () => {
     const db = freshDb();
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
-    process.env.OPENAI_API_KEY = "test-key";
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
     process.env.RECALL_EMBEDDING_DIMS = "3";
     process.env.RECALL_EMBEDDING_VERSION = "test-v1";
-
-    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
-      const inputs = Array.isArray(body.input) ? body.input : [body.input];
-      const data = inputs.map((text, index) => ({
-        index,
-        embedding: text.toLowerCase().includes("pnpm")
-          ? [1, 0, 0]
-          : [0, 0, 1],
-      }));
-
-      return new Response(JSON.stringify({ data }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }));
+    installMockEmbeddingProvider((text) => (
+      text.toLowerCase().includes("pnpm") ? [1, 0, 0] : [0, 0, 1]
+    ));
 
     createMemory(db, {
       type: "command",

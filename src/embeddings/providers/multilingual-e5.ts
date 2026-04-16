@@ -12,9 +12,7 @@ const MULTILINGUAL_E5_PREFIXES: Record<EmbeddingPurpose, string> = {
 let extractorPromise: Promise<FeatureExtractionPipeline> | null = null;
 
 function getModel(config: EmbeddingConfig): string {
-  return !config.model || config.model === "text-embedding-3-small"
-    ? MULTILINGUAL_E5_MODEL
-    : config.model;
+  return config.model || MULTILINGUAL_E5_MODEL;
 }
 
 function getDimensions(config: EmbeddingConfig): number {

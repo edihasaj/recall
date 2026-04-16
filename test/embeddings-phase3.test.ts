@@ -100,7 +100,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.RECALL_EMBEDDINGS_ENABLED;
+  delete process.env.RECALL_EMBEDDINGS_DISABLED;
   delete process.env.RECALL_EMBEDDING_PROVIDER;
   delete process.env.RECALL_EMBEDDING_MODEL;
   delete process.env.RECALL_EMBEDDING_DIMS;
@@ -175,25 +175,28 @@ describe("phase 3 multilingual-e5 provider", () => {
   it("loads multilingual-e5 from env only when explicitly selected", async () => {
     const { loadEmbeddingConfigFromEnv } = await import("../src/embeddings/embeddings.js");
 
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
     process.env.RECALL_EMBEDDING_PROVIDER = "multilingual-e5";
 
     expect(loadEmbeddingConfigFromEnv()).toEqual({
       enabled: true,
       provider: "multilingual-e5",
       model: "Xenova/multilingual-e5-small",
-      api_key: undefined,
       dimensions: 384,
       version: "v1",
       similarity_threshold: 0.8,
     });
   });
 
-  it("keeps openai as the default provider until phase 4", async () => {
+  it("uses nomic as the default provider after the cutover", async () => {
     const { loadEmbeddingConfigFromEnv } = await import("../src/embeddings/embeddings.js");
 
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
-
-    expect(loadEmbeddingConfigFromEnv()?.provider).toBe("openai");
+    expect(loadEmbeddingConfigFromEnv()).toEqual({
+      enabled: true,
+      provider: "nomic",
+      model: "nomic-ai/nomic-embed-text-v1.5",
+      dimensions: 512,
+      version: "v1",
+      similarity_threshold: 0.8,
+    });
   });
 });

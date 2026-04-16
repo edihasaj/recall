@@ -233,11 +233,10 @@ export type TeamMember = z.infer<typeof TeamMember>;
 // --- Embeddings (Phase 2) ---
 
 export const EmbeddingConfig = z.object({
-  enabled: z.boolean().default(false),
-  provider: z.enum(["openai", "nomic", "multilingual-e5", "local"]).default("openai"),
-  model: z.string().default("text-embedding-3-small"),
-  api_key: z.string().optional(),
-  dimensions: z.number().default(256),
+  enabled: z.boolean().default(true),
+  provider: z.enum(["nomic", "multilingual-e5"]).default("nomic"),
+  model: z.string().default("nomic-ai/nomic-embed-text-v1.5"),
+  dimensions: z.number().default(512),
   version: z.string().default("v1"),
   similarity_threshold: z.number().default(0.8),
 });
