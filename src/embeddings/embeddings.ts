@@ -263,7 +263,7 @@ export async function syncMemoryEmbedding(
 
   if (!rowNeedsEmbeddingRefresh(memory, existing, config)) {
     if (existing) {
-      upsertMemoryVecRow(db, memory, existing, config);
+      upsertMemoryVecRow(db, memory, existing);
     }
     return "skipped";
   }
@@ -278,7 +278,7 @@ export async function syncMemoryEmbedding(
   if (!refreshed) {
     throw new Error(`Failed to reload embedding row for ${memory.id}`);
   }
-  upsertMemoryVecRow(db, memory, refreshed, config);
+  upsertMemoryVecRow(db, memory, refreshed);
   return existing ? "updated" : "stored";
 }
 

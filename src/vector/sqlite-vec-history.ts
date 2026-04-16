@@ -11,6 +11,14 @@ function getSqlite(db: RecallDb) {
   return db.$client;
 }
 
+function hasHistoryVecIndex(db: RecallDb): boolean {
+  return Boolean(
+    getSqlite(db)
+      .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
+      .get(VEC_HISTORY_INDEX),
+  );
+}
+
 function ensureLoaded(db: RecallDb) {
   const sqlite = getSqlite(db);
   if (loadedClients.has(sqlite)) return;
@@ -18,14 +26,27 @@ function ensureLoaded(db: RecallDb) {
   loadedClients.add(sqlite);
 }
 
-export function ensureHistoryVecIndex(db: RecallDb, config: EmbeddingConfig) {
+function getHistoryVecDimension(
+  rows: Array<Pick<typeof historySnippetEmbeddings.$inferSelect, "dimensions">>,
+): number | null {
+  const dimensions = [...new Set(rows.map((row) => row.dimensions))];
+  if (dimensions.length === 0) return null;
+  if (dimensions.length > 1) {
+    throw new Error(
+      `sqlite-vec history index rebuild refused mixed history embedding dimensions: ${dimensions.join(", ")}.`,
+    );
+  }
+  return dimensions[0];
+}
+
+export function ensureHistoryVecIndex(db: RecallDb, dimensions: number) {
   ensureLoaded(db);
   const sqlite = getSqlite(db);
   const existing = sqlite
     .prepare("select sql from sqlite_master where type = 'table' and name = ?")
     .get(VEC_HISTORY_INDEX) as { sql?: string } | undefined;
 
-  const expectedDimension = `float[${config.dimensions}]`;
+  const expectedDimension = `float[${dimensions}]`;
   if (existing?.sql && !existing.sql.includes(expectedDimension)) {
     throw new Error(
       `sqlite-vec history index dimension mismatch. Expected ${expectedDimension}. Run history index rebuild.`,
@@ -34,7 +55,7 @@ export function ensureHistoryVecIndex(db: RecallDb, config: EmbeddingConfig) {
 
   sqlite.exec(`
     create virtual table if not exists ${VEC_HISTORY_INDEX} using vec0(
-      embedding float[${config.dimensions}] distance_metric=cosine,
+      embedding float[${dimensions}] distance_metric=cosine,
       snippet_id text,
       repo text,
       kind text
@@ -44,21 +65,16 @@ export function ensureHistoryVecIndex(db: RecallDb, config: EmbeddingConfig) {
 
 export function removeHistoryVecRow(db: RecallDb, snippetId: string) {
   ensureLoaded(db);
-  const sqlite = getSqlite(db);
-  const exists = sqlite
-    .prepare("select 1 from sqlite_master where type = 'table' and name = ?")
-    .get(VEC_HISTORY_INDEX);
-  if (!exists) return;
-  sqlite.prepare(`delete from ${VEC_HISTORY_INDEX} where snippet_id = ?`).run(snippetId);
+  if (!hasHistoryVecIndex(db)) return;
+  getSqlite(db).prepare(`delete from ${VEC_HISTORY_INDEX} where snippet_id = ?`).run(snippetId);
 }
 
 export function upsertHistoryVecRow(
   db: RecallDb,
   snippet: Pick<typeof historySnippets.$inferSelect, "id" | "repo" | "kind">,
-  embeddingRow: Pick<typeof historySnippetEmbeddings.$inferSelect, "embedding">,
-  config: EmbeddingConfig,
+  embeddingRow: Pick<typeof historySnippetEmbeddings.$inferSelect, "embedding" | "dimensions">,
 ) {
-  ensureHistoryVecIndex(db, config);
+  ensureHistoryVecIndex(db, embeddingRow.dimensions);
   const sqlite = getSqlite(db);
   sqlite.prepare(`delete from ${VEC_HISTORY_INDEX} where snippet_id = ?`).run(snippet.id);
   sqlite.prepare(`
@@ -81,25 +97,33 @@ export function rebuildHistoryVecIndex(
   config: EmbeddingConfig,
   options: { repo?: string } = {},
 ) {
-  ensureHistoryVecIndex(db, config);
-  const sqlite = getSqlite(db);
-  if (options.repo) {
-    sqlite.prepare(`delete from ${VEC_HISTORY_INDEX} where repo = ?`).run(options.repo);
-  } else {
-    sqlite.exec(`drop table if exists ${VEC_HISTORY_INDEX};`);
-    ensureHistoryVecIndex(db, config);
-  }
-
   const rows = db.select({
     id: historySnippets.id,
     repo: historySnippets.repo,
     kind: historySnippets.kind,
+    dimensions: historySnippetEmbeddings.dimensions,
     embedding: historySnippetEmbeddings.embedding,
   })
     .from(historySnippets)
     .innerJoin(historySnippetEmbeddings, eq(historySnippetEmbeddings.snippet_id, historySnippets.id))
     .all()
     .filter((row) => !options.repo || row.repo === options.repo);
+
+  const storedDimension = getHistoryVecDimension(rows);
+  const targetDimension = storedDimension ?? config.dimensions;
+  const sqlite = getSqlite(db);
+
+  if (options.repo) {
+    if (rows.length > 0) {
+      ensureHistoryVecIndex(db, targetDimension);
+    }
+    if (!hasHistoryVecIndex(db)) return 0;
+    sqlite.prepare(`delete from ${VEC_HISTORY_INDEX} where repo = ?`).run(options.repo);
+    if (rows.length === 0) return 0;
+  } else {
+    sqlite.exec(`drop table if exists ${VEC_HISTORY_INDEX};`);
+    ensureHistoryVecIndex(db, targetDimension);
+  }
 
   const stmt = getSqlite(db).prepare(`
     insert into ${VEC_HISTORY_INDEX} (
