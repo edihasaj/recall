@@ -135,6 +135,23 @@ curl -s 'http://localhost:7890/activity?limit=20'
 curl -s 'http://localhost:7890/sessions?limit=20'
 ```
 
+## Embeddings
+
+Recall now runs local embeddings by default. Useful overrides:
+
+```bash
+RECALL_EMBEDDING_PROVIDER=multilingual-e5
+RECALL_EMBEDDING_DIMS=384
+RECALL_EMBEDDINGS_DISABLED=true
+```
+
+Quick checks:
+
+```bash
+recall embeddings verify
+recall search -r owner/repo "pnpm"
+```
+
 ## How Memory Writes Happen
 
 Read path:

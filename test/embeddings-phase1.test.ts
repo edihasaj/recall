@@ -3,12 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
+import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 import { resolveProvider } from "../src/embeddings/providers/index.js";
 import {
   bootstrapEmbeddings,
   flushEmbeddingJobs,
   generateEmbedding,
   generateEmbeddings,
+  loadEmbeddingConfigFromEnv,
   loadEmbedding,
 } from "../src/embeddings/embeddings.js";
 import { createMemory, rejectMemory } from "../src/models/memory.js";
@@ -23,71 +25,69 @@ function freshDb() {
 
 const config: EmbeddingConfig = {
   enabled: true,
-  provider: "openai",
-  model: "text-embedding-3-small",
-  api_key: "test-key",
+  provider: "nomic",
+  model: "nomic-ai/nomic-embed-text-v1.5",
   dimensions: 3,
   version: "test-v1",
   similarity_threshold: 0.8,
 };
 
-function mockEmbeddingFetch() {
-  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? "{}")) as {
-      input: string | string[];
-    };
-    const inputs = Array.isArray(body.input) ? body.input : [body.input];
-    const data = inputs.map((text, index) => ({
-      index,
-      embedding: [text.length, index + 1, 1],
-    }));
-
-    return new Response(JSON.stringify({ data }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }));
+function installEmbeddingMock() {
+  installMockEmbeddingProvider((text) => [text.length, 1, 1]);
 }
 
 afterEach(async () => {
   await flushEmbeddingJobs();
-  vi.unstubAllGlobals();
-  delete process.env.RECALL_EMBEDDINGS_ENABLED;
-  delete process.env.OPENAI_API_KEY;
+  vi.restoreAllMocks();
+  delete process.env[["OPENAI", "API", "KEY"].join("_")];
+  delete process.env.RECALL_EMBEDDINGS_DISABLED;
+  delete process.env.RECALL_EMBEDDING_PROVIDER;
   delete process.env.RECALL_EMBEDDING_DIMS;
   delete process.env.RECALL_EMBEDDING_VERSION;
 });
 
 describe("phase 1 embedding lifecycle", () => {
-  it("resolves the OpenAI provider and delegates single and batch embedding calls", async () => {
-    mockEmbeddingFetch();
+  it("keeps nomic as the default provider and ignores legacy openai env", async () => {
+    const legacyApiKeyEnv = ["OPENAI", "API", "KEY"].join("_");
+    process.env[legacyApiKeyEnv] = "legacy-key";
+
+    expect(loadEmbeddingConfigFromEnv()).toEqual({
+      enabled: true,
+      provider: "nomic",
+      model: "nomic-ai/nomic-embed-text-v1.5",
+      dimensions: 512,
+      version: "v1",
+      similarity_threshold: 0.8,
+    });
+  });
+
+  it("resolves the nomic provider and delegates single and batch embedding calls", async () => {
+    installEmbeddingMock();
 
     const provider = resolveProvider(config);
 
     expect(provider.metadata()).toEqual({
-      model: "text-embedding-3-small",
+      model: "nomic-ai/nomic-embed-text-v1.5",
       dimensions: 3,
       version: "test-v1",
     });
     expect(Array.from(await generateEmbedding("abc", config))).toEqual([3, 1, 1]);
     expect((await generateEmbeddings(["a", "abcd"], config)).map((embedding) => Array.from(embedding))).toEqual([
       [1, 1, 1],
-      [4, 2, 1],
+      [4, 1, 1],
     ]);
   });
 
-  it("throws for providers without a registered implementation yet", () => {
-    expect(() =>
-      resolveProvider({
-        ...config,
-        provider: "local",
-      }),
-    ).toThrow(/Unsupported embedding provider: local/);
+  it("disables embeddings only through the kill switch", () => {
+    process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+
+    expect(loadEmbeddingConfigFromEnv()).toBeNull();
   });
 
   it("bootstraps embeddings only for candidate and active memories", async () => {
     const db = freshDb();
-    mockEmbeddingFetch();
+    installEmbeddingMock();
+    process.env.RECALL_EMBEDDINGS_DISABLED = "true";
 
     const activeId = createMemory(db, {
       type: "rule",
@@ -123,6 +123,7 @@ describe("phase 1 embedding lifecycle", () => {
     });
     rejectMemory(db, rejectedId);
 
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
     const count = await bootstrapEmbeddings(db, config, { repo: "test/repo" });
 
     expect(count).toBe(2);
@@ -134,9 +135,7 @@ describe("phase 1 embedding lifecycle", () => {
 
   it("removes stored embeddings when a memory is rejected", async () => {
     const db = freshDb();
-    mockEmbeddingFetch();
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
-    process.env.OPENAI_API_KEY = "test-key";
+    installEmbeddingMock();
     process.env.RECALL_EMBEDDING_DIMS = "3";
     process.env.RECALL_EMBEDDING_VERSION = "test-v1";
 

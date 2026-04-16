@@ -64,10 +64,18 @@ recall compile -r owner/repo --query "pytest -q" --include-candidates
 Bootstrap local embeddings and the derived sqlite-vec index:
 
 ```bash
-RECALL_EMBEDDINGS_ENABLED=true OPENAI_API_KEY=... recall embeddings bootstrap
+recall embeddings bootstrap
 recall embeddings verify
 recall embeddings rebuild-index
 recall search -r owner/repo "pnpm"
+```
+
+Optional embedding env vars:
+
+```bash
+RECALL_EMBEDDING_PROVIDER=multilingual-e5
+RECALL_EMBEDDING_DIMS=384
+RECALL_EMBEDDINGS_DISABLED=true
 ```
 
 Daemon maintenance runs in-process on a timer.

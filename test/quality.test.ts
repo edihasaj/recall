@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -18,6 +18,10 @@ import { CONFIDENCE } from "../src/types.js";
 import { scanAndStore } from "../src/scanner/repo.js";
 
 let dbCounter = 0;
+
+beforeEach(() => {
+  process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+});
 function freshDb() {
   const dir = mkdtempSync(join(tmpdir(), "recall-quality-"));
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));

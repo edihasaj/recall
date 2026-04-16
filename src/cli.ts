@@ -683,8 +683,8 @@ embeddingsCmd
   .action(async (opts) => {
     const db = initDb();
     const config = loadEmbeddingConfigFromEnv();
-    if (!config?.enabled) {
-      console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
+    if (!config) {
+      console.error("Embeddings are disabled. Unset RECALL_EMBEDDINGS_DISABLED=true to enable local embeddings.");
       process.exit(1);
     }
 
@@ -701,8 +701,8 @@ embeddingsCmd
   .action((opts) => {
     const db = initDb();
     const config = loadEmbeddingConfigFromEnv();
-    if (!config?.enabled) {
-      console.error("Embeddings not enabled. Set RECALL_EMBEDDINGS_ENABLED=true and OPENAI_API_KEY.");
+    if (!config) {
+      console.error("Embeddings are disabled. Unset RECALL_EMBEDDINGS_DISABLED=true to enable local embeddings.");
       process.exit(1);
     }
 

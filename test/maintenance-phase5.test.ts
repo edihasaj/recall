@@ -12,37 +12,26 @@ import { runMaintenanceCycle, pruneOldActivityEvents, pruneOldFeedbackEvents, ru
 import { activityEvents, feedbackEvents } from "../src/db/schema.js";
 import { removeMemoryFtsRow } from "../src/vector/sqlite-fts.js";
 import { removeMemoryVecRow } from "../src/vector/sqlite-vec.js";
+import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
 let dbCounter = 0;
 
 function freshDb() {
+  process.env.RECALL_EMBEDDINGS_DISABLED = "true";
   const dir = mkdtempSync(join(tmpdir(), "recall-maintenance-phase5-"));
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));
 }
 
 function installEmbeddingMock() {
-  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? "{}")) as { input: string | string[] };
-    const inputs = Array.isArray(body.input) ? body.input : [body.input];
-    const data = inputs.map((text, index) => ({
-      index,
-      embedding: text.toLowerCase().includes("pnpm")
-        ? [1, 0, 0]
-        : [0, 0, 1],
-    }));
-
-    return new Response(JSON.stringify({ data }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }));
+  installMockEmbeddingProvider((text) => (
+    text.toLowerCase().includes("pnpm") ? [1, 0, 0] : [0, 0, 1]
+  ));
 }
 
 afterEach(async () => {
   await flushEmbeddingJobs();
-  vi.unstubAllGlobals();
-  delete process.env.RECALL_EMBEDDINGS_ENABLED;
-  delete process.env.OPENAI_API_KEY;
+  vi.restoreAllMocks();
+  delete process.env.RECALL_EMBEDDINGS_DISABLED;
   delete process.env.RECALL_EMBEDDING_DIMS;
   delete process.env.RECALL_EMBEDDING_VERSION;
 });
@@ -85,9 +74,8 @@ describe("phase 5 maintenance lifecycle", () => {
 
   it("repairs embedding index drift during maintenance", async () => {
     const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
     installEmbeddingMock();
-    process.env.RECALL_EMBEDDINGS_ENABLED = "true";
-    process.env.OPENAI_API_KEY = "test-key";
     process.env.RECALL_EMBEDDING_DIMS = "3";
     process.env.RECALL_EMBEDDING_VERSION = "test-v1";
 

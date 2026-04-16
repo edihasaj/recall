@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,6 +21,10 @@ import { eq } from "drizzle-orm";
 import { memories } from "../src/db/schema.js";
 
 let dbCounter = 0;
+
+beforeEach(() => {
+  process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+});
 function freshDb() {
   const dir = mkdtempSync(join(tmpdir(), "recall-p3-"));
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));

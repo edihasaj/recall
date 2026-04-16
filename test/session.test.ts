@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,6 +12,10 @@ import {
 } from "../src/session/lifecycle.js";
 
 let dbCounter = 0;
+
+beforeEach(() => {
+  process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+});
 
 function freshDb() {
   const dir = mkdtempSync(join(tmpdir(), "recall-session-db-"));
