@@ -9,6 +9,7 @@ import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
 import { resolveProvider } from "./providers/index.js";
+import type { EmbeddingPurpose } from "./providers/types.js";
 import {
   rebuildMemoryVecIndex,
   removeMemoryVecRow,
@@ -92,8 +93,9 @@ function rowNeedsEmbeddingRefresh(
 export async function generateEmbedding(
   text: string,
   config: EmbeddingConfig,
+  purpose: EmbeddingPurpose = "document",
 ): Promise<Float32Array> {
-  return resolveProvider(config).embed(text);
+  return resolveProvider(config).embed(text, purpose);
 }
 
 // --- Batch embedding ---
@@ -101,9 +103,10 @@ export async function generateEmbedding(
 export async function generateEmbeddings(
   texts: string[],
   config: EmbeddingConfig,
+  purpose: EmbeddingPurpose = "document",
 ): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  return resolveProvider(config).embedBatch(texts);
+  return resolveProvider(config).embedBatch(texts, purpose);
 }
 
 // --- Storage ---
@@ -198,7 +201,7 @@ export async function syncMemoryEmbedding(
     return "skipped";
   }
 
-  const embedding = await generateEmbedding(memory.text, config);
+  const embedding = await generateEmbedding(memory.text, config, "document");
   storeEmbedding(db, memory.id, memory.text, embedding, config);
   const refreshed = db
     .select()
@@ -270,6 +273,7 @@ export async function bootstrapEmbeddings(
     const embeddings = await generateEmbeddings(
       batch.map((row) => row.text),
       config,
+      "document",
     );
 
     for (let j = 0; j < batch.length; j++) {
@@ -361,7 +365,7 @@ export async function hybridSearch(
   const semanticMatches = config?.enabled
     ? searchMemoryVecIndex(
         db,
-        await generateEmbedding(query, config),
+        await generateEmbedding(query, config, "query"),
         { repo: options.repo, limit: Math.max(limit * 2, 20) },
       )
     : [];
@@ -439,7 +443,7 @@ export async function semanticSearch(
   config: EmbeddingConfig,
   options: { repo?: string; limit?: number } = {},
 ): Promise<Array<{ memory: MemoryItem; similarity: number }>> {
-  const queryEmbedding = await generateEmbedding(query, config);
+  const queryEmbedding = await generateEmbedding(query, config, "query");
   const matches = searchMemoryVecIndex(db, queryEmbedding, options);
   if (matches.length === 0) return [];
 
@@ -471,7 +475,7 @@ export async function findSemanticDuplicates(
   threshold?: number,
   options: { repo?: string; type?: MemoryItem["type"]; limit?: number } = {},
 ): Promise<Array<{ id: string; text: string; similarity: number }>> {
-  const queryEmbedding = await generateEmbedding(text, config);
+  const queryEmbedding = await generateEmbedding(text, config, "query");
   const dupThreshold = threshold ?? config.similarity_threshold;
 
   const rows = db.select().from(memories).all();

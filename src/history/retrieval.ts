@@ -149,7 +149,7 @@ export async function syncHistorySnippetEmbedding(
     return "skipped";
   }
 
-  const embedding = await generateEmbedding(snippet.text, config);
+  const embedding = await generateEmbedding(snippet.text, config, "document");
   storeHistoryEmbedding(db, snippet.id, snippet.text, embedding, config);
   const refreshed = db.select().from(historySnippetEmbeddings)
     .where(eq(historySnippetEmbeddings.snippet_id, snippet.id))
@@ -180,7 +180,7 @@ export async function bootstrapHistoryEmbeddings(
   let total = 0;
   for (let i = 0; i < pending.length; i += BATCH_SIZE) {
     const batch = pending.slice(i, i + BATCH_SIZE);
-    const embeddings = await generateEmbeddings(batch.map((row) => row.text), config);
+    const embeddings = await generateEmbeddings(batch.map((row) => row.text), config, "document");
     for (let j = 0; j < batch.length; j++) {
       storeHistoryEmbedding(db, batch[j].id, batch[j].text, embeddings[j], config);
       total++;
@@ -245,7 +245,7 @@ export async function searchHistorySnippets(
 
   const config = loadEmbeddingConfigFromEnv();
   const vectorMatches = config?.enabled
-    ? searchHistoryVecIndex(db, await generateEmbedding(query, config), {
+    ? searchHistoryVecIndex(db, await generateEmbedding(query, config, "query"), {
         repo: options.repo,
         limit: Math.max(limit * 2, 20),
       })
