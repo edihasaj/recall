@@ -40,6 +40,7 @@ import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from 
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { runLocalSetup } from "./setup/local.js";
+import { runRecallSetup } from "./setup/local.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
 import { listHistorySnippets } from "./history/snippets.js";
@@ -130,6 +131,55 @@ const setupCmd = program
   .description("Setup Recall for local use");
 
 setupCmd
+  .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
+  .option("--hooks-only", "Install hooks only")
+  .option("--mcp-only", "Install MCP wiring only")
+  .option("--agent <agent>", "Restrict setup to a single agent (repeatable)", collectAgents, [])
+  .option("--uninstall-hooks", "Remove Recall-managed hooks while leaving MCP configured")
+  .option("--dry-run", "Show planned setup changes without writing")
+  .option("--scope <scope>", "Hook config scope: global or project", "global")
+  .option("--yes", "Skip confirmation prompt")
+  .action(async (opts) => {
+    if (!opts.yes && !opts.dryRun) {
+      const confirmed = await confirmSetupWrite(opts.scope);
+      if (!confirmed) {
+        console.error("Aborted setup.");
+        process.exit(1);
+      }
+    }
+
+    const result = runRecallSetup({
+      appPath: opts.appPath,
+      agent: opts.agent.length > 0 ? opts.agent : undefined,
+      dryRun: opts.dryRun,
+      hooksOnly: opts.hooksOnly,
+      mcpOnly: opts.mcpOnly,
+      scope: opts.scope,
+      uninstallHooks: opts.uninstallHooks,
+    });
+
+    console.log(`Recall app: ${result.appPath}`);
+    console.log(`Bundled node: ${result.runtimeNodePath}`);
+    console.log(`Bundled CLI:  ${result.runtimeCliPath}`);
+    console.log(`Bundled MCP:  ${result.runtimeMcpPath}`);
+    console.log(`Scope:        ${result.scope}${result.dry_run ? " (dry-run)" : ""}`);
+    console.log("");
+    if (result.agents.length === 0) {
+      console.log("No installed agents detected.");
+      return;
+    }
+    for (const agent of result.agents) {
+      console.log(`${formatAgentName(agent.agent)}:`);
+      console.log(`  detected: ${agent.detected ? "yes" : "no"}`);
+      console.log(`  mcp:      ${formatSetupStep(agent.mcp)}`);
+      console.log(`  hooks:    ${formatSetupStep(agent.hooks)}`);
+      if (agent.hook_config_path) {
+        console.log(`  config:   ${agent.hook_config_path}`);
+      }
+    }
+  });
+
+setupCmd
   .command("local")
   .description("Configure local Codex/Claude MCP to use the installed Recall.app")
   .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
@@ -144,6 +194,7 @@ setupCmd
 
     console.log(`Recall app: ${result.appPath}`);
     console.log(`Bundled node: ${result.runtimeNodePath}`);
+    console.log(`Bundled CLI:  ${result.runtimeCliPath}`);
     console.log(`Bundled MCP:  ${result.runtimeMcpPath}`);
     console.log("");
     console.log(`Codex:  ${formatSetupStep(result.codex)}`);
@@ -1496,6 +1547,28 @@ function loadSyncConfig(): SyncConfig | null {
 function formatSetupStep(step: { enabled: boolean; ok: boolean; message: string }) {
   if (!step.enabled) return `skipped (${step.message})`;
   return step.ok ? `ok (${step.message})` : `error (${step.message})`;
+}
+
+function formatAgentName(agent: string) {
+  return agent === "claude-code" ? "Claude Code" : "Codex";
+}
+
+function collectAgents(value: string, previous: string[]) {
+  return [...previous, value];
+}
+
+async function confirmSetupWrite(scope: string): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await rl.question(`Update ${scope} agent config files for Recall? [y/N] `);
+    return /^(y|yes)$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
 }
 
 function findByPrefix(db: ReturnType<typeof initDb>, prefix: string) {
