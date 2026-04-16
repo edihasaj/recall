@@ -8,7 +8,6 @@ import { ensureEmbeddingProviderReady, getEmbeddingModelInfo } from "../src/embe
 import type { EmbeddingConfig } from "../src/types.js";
 
 const config: EmbeddingConfig = {
-  enabled: true,
   provider: "nomic",
   model: "nomic-ai/nomic-embed-text-v1.5",
   dimensions: 512,

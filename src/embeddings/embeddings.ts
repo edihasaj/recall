@@ -50,7 +50,6 @@ export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
     : "nomic";
   const defaults = EMBEDDING_DEFAULTS[provider];
   return {
-    enabled: true,
     provider,
     model: process.env.RECALL_EMBEDDING_MODEL ?? defaults.model,
     dimensions: parseInt(process.env.RECALL_EMBEDDING_DIMS ?? `${defaults.dimensions}`, 10),
@@ -289,7 +288,7 @@ export function queueMemoryEmbeddingSync(
 ): Promise<void> | null {
   syncMemoryFtsIndex(db, memoryId);
 
-  if (!config?.enabled) return null;
+  if (!config) return null;
 
   const job = syncMemoryEmbedding(db, memoryId, config)
     .then(() => undefined)
@@ -398,7 +397,7 @@ export function rebuildEmbeddingIndex(
   options: { repo?: string } = {},
 ) {
   const lexicalRows = rebuildMemoryFtsIndex(db, options);
-  const vectorRows = config?.enabled
+  const vectorRows = config
     ? rebuildMemoryVecIndex(db, config, options)
     : 0;
   return {
@@ -429,7 +428,7 @@ export async function hybridSearch(
     repo: options.repo,
     limit: Math.max(limit * 2, 20),
   });
-  const semanticMatches = config?.enabled
+  const semanticMatches = config
     ? searchMemoryVecIndex(
         db,
         await generateEmbedding(query, config, "query"),

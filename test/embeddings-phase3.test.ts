@@ -67,7 +67,6 @@ function expectEmbeddingClose(actual: Float32Array, expected: number[]) {
 }
 
 const multilingualConfig: EmbeddingConfig = {
-  enabled: true,
   provider: "multilingual-e5",
   model: "Xenova/multilingual-e5-small",
   dimensions: 3,
@@ -179,7 +178,6 @@ describe("phase 3 multilingual-e5 provider", () => {
     process.env.RECALL_EMBEDDING_PROVIDER = "multilingual-e5";
 
     expect(loadEmbeddingConfigFromEnv()).toEqual({
-      enabled: true,
       provider: "multilingual-e5",
       model: "Xenova/multilingual-e5-small",
       dimensions: 384,
@@ -192,7 +190,6 @@ describe("phase 3 multilingual-e5 provider", () => {
     const { loadEmbeddingConfigFromEnv } = await import("../src/embeddings/embeddings.js");
 
     expect(loadEmbeddingConfigFromEnv()).toEqual({
-      enabled: true,
       provider: "nomic",
       model: "nomic-ai/nomic-embed-text-v1.5",
       dimensions: 512,

@@ -115,7 +115,7 @@ export async function runMaintenanceCycle(
   let history_lexical_drift = 0;
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
-  if (embeddingConfig?.enabled) {
+  if (embeddingConfig) {
     const verify = verifyEmbeddings(db, embeddingConfig);
     embedding_stale = verify.stale;
     vector_drift = verify.index_drift;

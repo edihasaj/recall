@@ -76,7 +76,6 @@ function expectEmbeddingClose(actual: Float32Array, expected: number[]) {
 }
 
 const nomicConfig: EmbeddingConfig = {
-  enabled: true,
   provider: "nomic",
   model: "nomic-ai/nomic-embed-text-v1.5",
   dimensions: 3,
