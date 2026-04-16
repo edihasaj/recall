@@ -31,6 +31,9 @@ Configure local MCP clients against the installed app:
 
 ```bash
 recall setup local
+recall setup --yes
+recall setup --scope project --yes
+recall setup --uninstall-hooks --yes
 ```
 
 ## First Run
@@ -177,6 +180,14 @@ recall daemon stop
 recall daemon uninstall
 ```
 
+Inspect hook telemetry:
+
+```bash
+recall hook stats
+recall hook stats --agent codex
+recall hook stats --json
+```
+
 Default URL:
 
 ```text
@@ -234,7 +245,10 @@ Useful MCP tools:
 
 - `recall_query`
 - `recall_report_correction`
+- `recall_capture_correction`
 - `recall_report_review`
+- `recall_signal_outcome`
+- `recall_session_end`
 - `recall_quality`
 - `recall_list`
 - `recall_confirm`

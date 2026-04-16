@@ -43,9 +43,11 @@ import { runLocalSetup } from "./setup/local.js";
 import { runRecallSetup } from "./setup/local.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { listHistorySnippets } from "./history/snippets.js";
 import { searchHistorySnippets } from "./history/retrieval.js";
 import { formatDoctorReport, getDoctorReport } from "./doctor/report.js";
+import { getHookCallStats } from "./hooks/calls.js";
 import {
   getLaunchAgentInfo,
   getLaunchAgentStatus,
@@ -315,6 +317,38 @@ hookCmd
   .argument("[payload]", "Codex notify payload JSON")
   .action(async (payload?: string) => {
     await dispatchCodexNotify(payload);
+  });
+
+hookCmd
+  .command("stats")
+  .description("Inspect local hook call telemetry")
+  .option("--agent <agent>", "Filter by agent")
+  .option("--event <event>", "Filter by event")
+  .option("--limit <n>", "Limit rows")
+  .option("--json", "Emit raw JSON")
+  .action((opts) => {
+    const db = initDb();
+    const stats = getHookCallStats(db, {
+      agent: opts.agent,
+      event: opts.event,
+      limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+    });
+
+    if (opts.json) {
+      console.log(JSON.stringify(stats, null, 2));
+      return;
+    }
+
+    if (stats.length === 0) {
+      console.log("No hook calls recorded.");
+      return;
+    }
+
+    for (const row of stats) {
+      console.log(
+        `${row.agent.padEnd(12)} ${row.event.padEnd(16)} total=${row.total_calls} ok=${row.ok_calls} err=${row.error_calls} avg=${row.avg_duration_ms.toFixed(1)}ms max=${row.max_duration_ms}ms last=${row.last_called_at}`,
+      );
+    }
   });
 
 // --- scan ---
@@ -1588,4 +1622,8 @@ function findByPrefix(db: ReturnType<typeof initDb>, prefix: string) {
   return undefined;
 }
 
-await program.parseAsync(process.argv);
+export { program };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await program.parseAsync(process.argv);
+}

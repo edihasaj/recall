@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, blob, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const memories = sqliteTable("memories", {
   id: text("id").primaryKey(),
@@ -24,6 +24,7 @@ export const memories = sqliteTable("memories", {
     ],
   }).notNull(),
   evidence: text("evidence", { mode: "json" }).notNull().default("[]"),
+  capture_context: text("capture_context", { mode: "json" }),
   supersedes: text("supersedes"),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
@@ -107,6 +108,24 @@ export const feedbackEvents = sqliteTable("feedback_events", {
   index("idx_feedback_session").on(table.session_id),
 ]));
 
+export const memoryInjections = sqliteTable("memory_injections", {
+  id: text("id").primaryKey(),
+  memory_id: text("memory_id")
+    .notNull()
+    .references(() => memories.id, { onDelete: "cascade" }),
+  session_id: text("session_id").notNull(),
+  repo: text("repo"),
+  injected_at: text("injected_at").notNull(),
+  outcome: text("outcome", {
+    enum: ["followed", "overridden", "ignored", "contradicted"],
+  }),
+  outcome_at: text("outcome_at"),
+}, (table) => ([
+  index("idx_memory_injections_memory").on(table.memory_id),
+  index("idx_memory_injections_session").on(table.session_id),
+  uniqueIndex("uq_memory_injections_memory_session").on(table.memory_id, table.session_id),
+]));
+
 // Session/query activity log
 export const activityEvents = sqliteTable("activity_events", {
   id: text("id").primaryKey(),
@@ -139,6 +158,21 @@ export const activityEvents = sqliteTable("activity_events", {
   index("idx_activity_repo").on(table.repo),
   index("idx_activity_event_type").on(table.event_type),
   index("idx_activity_created").on(table.created_at),
+]));
+
+export const hookCalls = sqliteTable("hook_calls", {
+  id: text("id").primaryKey(),
+  event: text("event", {
+    enum: ["session_started", "prompt_submitted", "tool_invoked", "session_ended"],
+  }).notNull(),
+  agent: text("agent").notNull(),
+  duration_ms: integer("duration_ms").notNull(),
+  ok: integer("ok", { mode: "boolean" }).notNull(),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_hook_calls_event").on(table.event),
+  index("idx_hook_calls_agent").on(table.agent),
+  index("idx_hook_calls_created").on(table.created_at),
 ]));
 
 // Phase 2: sync state tracking
