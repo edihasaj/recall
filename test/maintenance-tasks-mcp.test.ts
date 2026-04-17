@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
 import { memoryMaintenanceTasks } from "../src/db/schema.js";
+import { createMemory } from "../src/models/memory.js";
 import {
   TaskClaimConflictError,
   claimTask,
@@ -91,11 +92,20 @@ describe("tier-2 maintenance tasks — phase 2 (peek / claim / submit / release)
 
   it("submit applies a valid result and transitions to completed", () => {
     const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "always run pytest",
+      scope: "repo",
+      path_scope: null,
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.5,
+    });
     const id = insertTaskIdempotent(db, {
       kind: "refine_candidate",
-      target: "mem-1",
+      target: memId,
       repo: "r",
-      payload: { memory_id: "mem-1" },
+      payload: { memory_id: memId },
     })!;
     claimTask(db, id, "claude-code");
 
@@ -135,11 +145,20 @@ describe("tier-2 maintenance tasks — phase 2 (peek / claim / submit / release)
 
   it("submit with invalid shape bumps attempts and returns to pending", () => {
     const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "x",
+      scope: "repo",
+      path_scope: null,
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.5,
+    });
     const id = insertTaskIdempotent(db, {
       kind: "refine_candidate",
-      target: "mem-1",
+      target: memId,
       repo: "r",
-      payload: { memory_id: "mem-1" },
+      payload: { memory_id: memId },
     })!;
     claimTask(db, id, "claude-code");
 
@@ -156,11 +175,20 @@ describe("tier-2 maintenance tasks — phase 2 (peek / claim / submit / release)
 
   it("submit abandons after max_attempts", () => {
     const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "x",
+      scope: "repo",
+      path_scope: null,
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.5,
+    });
     const id = insertTaskIdempotent(db, {
       kind: "refine_candidate",
-      target: "mem-1",
+      target: memId,
       repo: "r",
-      payload: { memory_id: "mem-1" },
+      payload: { memory_id: memId },
       max_attempts: 1,
     })!;
     claimTask(db, id, "claude-code");
