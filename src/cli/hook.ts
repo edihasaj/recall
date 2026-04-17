@@ -7,7 +7,12 @@ import type { RecentToolCall } from "../agents/types.js";
 import { recordHookCall } from "../hooks/calls.js";
 import { performance } from "node:perf_hooks";
 import { detectCorrections } from "../capture/correction.js";
-import { captureCorrectionFallback } from "../mcp/fallback.js";
+import { captureCorrectionFallback, signalOutcomeFallback } from "../mcp/fallback.js";
+import {
+  listPendingMemoryInjections,
+  toolCallTouchesMemory,
+  pathMatchesMemory,
+} from "../models/memory-injections.js";
 import {
   endSessionLifecycle,
   startSessionLifecycle,
@@ -211,6 +216,14 @@ export async function handlePromptHook(
       },
     });
 
+    await resolvePendingInjectionOutcomesOnPrompt(
+      db,
+      sessionId,
+      text,
+      input.path,
+      recentToolCalls,
+    );
+
     if (detectCorrections(text).length > 0) {
       await captureCorrectionFallback(db, {
         text,
@@ -269,6 +282,12 @@ export async function handleToolHook(
       },
     });
 
+    await resolvePendingInjectionOutcomesOnTool(
+      db,
+      sessionId,
+      toolCall,
+    );
+
     return {
       event: "tool_invoked",
       session_id: sessionId,
@@ -326,6 +345,8 @@ export async function handleSessionEndHook(
         turn_count: input.turn_count ?? null,
       },
     });
+
+    await resolvePendingInjectionOutcomesOnSessionEnd(db, sessionId);
 
     return {
       event: "session_ended",
@@ -550,6 +571,110 @@ async function withHookTelemetry<T>(
     });
     throw error;
   }
+}
+
+async function resolvePendingInjectionOutcomesOnPrompt(
+  db: RecallDb,
+  sessionId: string,
+  promptText: string,
+  promptPath: string | undefined,
+  recentToolCalls: readonly RecentToolCall[],
+) {
+  const pending = listPendingMemoryInjections(db, sessionId);
+  if (pending.length === 0) return;
+
+  const correctionMatches = detectCorrections(promptText);
+  const correctionTexts = correctionMatches.map((match) => match.text.toLowerCase());
+
+  for (const injection of pending) {
+    const memory = injection.memory;
+    if (!memory) continue;
+
+    let outcome: "followed" | "overridden" | "ignored" | "contradicted";
+    if (correctionTexts.length > 0) {
+      const contradicted = correctionTexts.some((text) =>
+        similarity(text, memory.text.toLowerCase()) >= 0.7
+      );
+      const relevant = isPromptRelevant(memory, promptPath, recentToolCalls);
+      outcome = contradicted
+        ? "contradicted"
+        : relevant
+          ? "overridden"
+          : "ignored";
+    } else {
+      const relevantTool = recentToolCalls.some((toolCall) => toolCallTouchesMemory(memory, toolCall));
+      outcome = relevantTool ? "followed" : "ignored";
+    }
+
+    signalOutcomeFallback(db, {
+      memory_id: memory.id,
+      session_id: sessionId,
+      injected: true,
+      outcome,
+      context: "auto:prompt",
+    }, "cli");
+  }
+}
+
+async function resolvePendingInjectionOutcomesOnTool(
+  db: RecallDb,
+  sessionId: string,
+  toolCall: RecentToolCall,
+) {
+  const pending = listPendingMemoryInjections(db, sessionId);
+  if (pending.length === 0) return;
+
+  for (const injection of pending) {
+    if (!injection.memory) continue;
+    if (!toolCallTouchesMemory(injection.memory, toolCall)) continue;
+    signalOutcomeFallback(db, {
+      memory_id: injection.memory.id,
+      session_id: sessionId,
+      injected: true,
+      outcome: "followed",
+      context: "auto:tool",
+    }, "cli");
+  }
+}
+
+async function resolvePendingInjectionOutcomesOnSessionEnd(
+  db: RecallDb,
+  sessionId: string,
+) {
+  const pending = listPendingMemoryInjections(db, sessionId);
+  if (pending.length === 0) return;
+
+  const toolCalls = loadRecentToolCalls(db, sessionId);
+  for (const injection of pending) {
+    if (!injection.memory) continue;
+    const outcome = toolCalls.some((toolCall) => toolCallTouchesMemory(injection.memory!, toolCall))
+      ? "followed"
+      : "ignored";
+    signalOutcomeFallback(db, {
+      memory_id: injection.memory.id,
+      session_id: sessionId,
+      injected: true,
+      outcome,
+      context: "auto:session_end",
+    }, "cli");
+  }
+}
+
+function isPromptRelevant(
+  memory: NonNullable<ReturnType<typeof listPendingMemoryInjections>[number]["memory"]>,
+  promptPath: string | undefined,
+  recentToolCalls: readonly RecentToolCall[],
+) {
+  if (promptPath && pathMatchesMemory(memory, promptPath)) return true;
+  return recentToolCalls.some((toolCall) => toolCallTouchesMemory(memory, toolCall));
+}
+
+function similarity(a: string, b: string): number {
+  const wordsA = new Set(a.split(/\s+/));
+  const wordsB = new Set(b.split(/\s+/));
+  const intersection = [...wordsA].filter((word) => wordsB.has(word));
+  const union = new Set([...wordsA, ...wordsB]);
+  return union.size === 0 ? 0 : intersection.length / union.size;
 }
 
 async function readClaudeCodeHookPayloadFromStdin(): Promise<ClaudeCodeHookPayload> {
