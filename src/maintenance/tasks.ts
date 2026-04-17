@@ -143,6 +143,72 @@ export function insertTaskIdempotent(
   return id;
 }
 
+export function deleteTask(db: RecallDb, id: string): boolean {
+  const result = db.delete(memoryMaintenanceTasks)
+    .where(eq(memoryMaintenanceTasks.id, id))
+    .run();
+  return result.changes > 0;
+}
+
+export interface TaskStats {
+  total: number;
+  by_status: Record<MaintenanceTaskStatus, number>;
+  by_kind: Record<MaintenanceTaskKind, number>;
+  by_kind_status: Record<string, number>;
+  pending_oldest_created_at: string | null;
+  completed_last_24h: number;
+  abandoned_last_24h: number;
+  mean_completion_ms: number | null;
+}
+
+export function getTaskStats(db: RecallDb): TaskStats {
+  const rows = db.select().from(memoryMaintenanceTasks).all();
+
+  const by_status = { pending: 0, claimed: 0, submitted: 0, completed: 0, abandoned: 0 } as Record<MaintenanceTaskStatus, number>;
+  const by_kind = { refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0 } as Record<MaintenanceTaskKind, number>;
+  const by_kind_status: Record<string, number> = {};
+
+  const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+  let completed_last_24h = 0;
+  let abandoned_last_24h = 0;
+  let pending_oldest: string | null = null;
+  let completionDurations: number[] = [];
+
+  for (const row of rows) {
+    by_status[row.status as MaintenanceTaskStatus] += 1;
+    by_kind[row.kind as MaintenanceTaskKind] += 1;
+    const key = `${row.kind}:${row.status}`;
+    by_kind_status[key] = (by_kind_status[key] ?? 0) + 1;
+
+    if (row.status === "pending") {
+      if (!pending_oldest || row.created_at < pending_oldest) pending_oldest = row.created_at;
+    }
+    if (row.completed_at && row.completed_at >= dayAgo) {
+      if (row.status === "completed") completed_last_24h += 1;
+      if (row.status === "abandoned") abandoned_last_24h += 1;
+    }
+    if (row.status === "completed" && row.completed_at) {
+      const delta = new Date(row.completed_at).getTime() - new Date(row.created_at).getTime();
+      if (Number.isFinite(delta) && delta >= 0) completionDurations.push(delta);
+    }
+  }
+
+  const mean_completion_ms = completionDurations.length
+    ? completionDurations.reduce((a, b) => a + b, 0) / completionDurations.length
+    : null;
+
+  return {
+    total: rows.length,
+    by_status,
+    by_kind,
+    by_kind_status,
+    pending_oldest_created_at: pending_oldest,
+    completed_last_24h,
+    abandoned_last_24h,
+    mean_completion_ms,
+  };
+}
+
 export function getTask(db: RecallDb, id: string): MaintenanceTask | undefined {
   const row = db.select().from(memoryMaintenanceTasks)
     .where(eq(memoryMaintenanceTasks.id, id))
