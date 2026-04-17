@@ -61,7 +61,7 @@ const server = new McpServer({
 // --- Tools ---
 
 server.tool(
-  "recall_query",
+  "query",
   "Retrieve relevant memories for the current task context. Returns compiled, confidence-gated memories scoped to the repo and path.",
   {
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
@@ -151,7 +151,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_list",
+  "list",
   "List all memories for a repository, optionally filtered by status.",
   {
     repo: z.string().describe("Repository name"),
@@ -182,7 +182,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_report_correction",
+  "report_correction",
   "Report a correction or rule to be learned. Accepts optional assistant/tool context and creates candidate memories from the correction text.",
   {
     text: z.string().describe("The correction or rule (e.g., 'don't use pip, use uv')"),
@@ -234,7 +234,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_capture_correction",
+  "capture_correction",
   "Call this right after the user corrects the assistant or states a repo rule. Captures the correction with richer context so scope inference stays accurate.",
   {
     text: z.string().describe("The user correction or rule text to capture."),
@@ -286,7 +286,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_report_review",
+  "report_review",
   "Report review feedback from a code review. Creates candidate memories from review comments.",
   {
     feedback: z.string().describe("The review feedback"),
@@ -325,7 +325,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_confirm",
+  "confirm",
   "Confirm a candidate memory, promoting it to active status.",
   {
     memory_id: z.string().describe("Memory ID to confirm"),
@@ -348,7 +348,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_reject",
+  "reject",
   "Reject a memory. It will never be injected again.",
   {
     memory_id: z.string().describe("Memory ID to reject"),
@@ -371,7 +371,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_feedback",
+  "feedback",
   "Record feedback about an injected memory — whether it was followed, overridden, ignored, or contradicted.",
   {
     memory_id: z.string().describe("Memory ID"),
@@ -397,7 +397,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_signal_outcome",
+  "signal_outcome",
   "Call this after acting on an injected memory to report whether it was followed, overridden, ignored, or contradicted in the current session.",
   {
     memory_id: z.string().describe("The injected memory being evaluated."),
@@ -425,7 +425,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_scan",
+  "scan",
   "Scan a repository and bootstrap memories from config files, scripts, and instruction files.",
   {
     repo_path: z.string().describe("Absolute path to the repository root"),
@@ -457,7 +457,7 @@ server.tool(
 // --- Phase 2 tools ---
 
 server.tool(
-  "recall_eval",
+  "eval",
   "Get evaluation metrics for memory effectiveness.",
   {
     repo: z.string().optional().describe("Filter by repo"),
@@ -472,7 +472,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_eval_retrieval",
+  "eval_retrieval",
   "Run retrieval eval fixtures against baseline vs hybrid retrieval.",
   {
     cases_json: z.string().describe("JSON string matching { cases: [...] } retrieval fixture format"),
@@ -487,7 +487,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_signal",
+  "signal",
   "Record an implicit feedback signal (test pass/fail, file unchanged/rewritten, task accepted/rejected).",
   {
     memory_id: z.string().describe("Memory ID"),
@@ -523,7 +523,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_session_end",
+  "session_end",
   "Call this when the session is ending or being cleared so Recall can record the end-of-session boundary and run follow-up session logic.",
   {
     session_id: z.string().describe("Current session ID."),
@@ -554,7 +554,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_scope",
+  "scope",
   "Analyze the scope of a correction text. Returns inferred scope, path, and reasoning.",
   {
     text: z.string().describe("Correction text to analyze"),
@@ -576,7 +576,7 @@ server.tool(
 // --- Phase 3 tools ---
 
 server.tool(
-  "recall_health",
+  "health",
   "Get memory health scores. Returns composite health report for all memories or a single memory.",
   {
     repo: z.string().optional().describe("Filter by repo"),
@@ -601,7 +601,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_contradictions",
+  "contradictions",
   "Detect contradictions between memories. Finds conflicting rules, negations, and scope overlaps.",
   {
     repo: z.string().optional().describe("Filter by repo"),
@@ -629,7 +629,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_prune",
+  "prune",
   "Auto-prune stale, rejected, transient, and unhealthy memories.",
   {
     repo: z.string().optional().describe("Limit pruning to one repo"),
@@ -646,7 +646,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_audit",
+  "audit",
   "View audit trail for a memory or recent activity.",
   {
     memory_id: z.string().optional().describe("Memory ID (omit for recent global audit)"),
@@ -663,7 +663,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_rollback",
+  "rollback",
   "Rollback a memory to a previous state using an audit entry.",
   {
     memory_id: z.string().describe("Memory ID"),
@@ -684,7 +684,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_policy_check",
+  "policy_check",
   "Check a memory against org policies. Returns policy violations.",
   {
     org_id: z.string().describe("Organization ID"),
@@ -707,7 +707,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_approval_list",
+  "approval_list",
   "List pending approval requests for an organization.",
   {
     org_id: z.string().describe("Organization ID"),
@@ -725,7 +725,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_approval_resolve",
+  "approval_resolve",
   "Approve or deny a pending approval request.",
   {
     approval_id: z.string().describe("Approval request ID"),
@@ -747,7 +747,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_activity",
+  "activity",
   "List recent activity events such as queries, compiles, scans, corrections, feedback, and signals.",
   {
     repo: z.string().optional().describe("Filter by repo"),
@@ -771,7 +771,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_sessions",
+  "sessions",
   "List grouped activity sessions so you can review what happened in prior runs.",
   {
     repo: z.string().optional().describe("Filter by repo"),
@@ -794,7 +794,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_quality",
+  "quality",
   "Get the repo quality profile — maturity stage, dynamic thresholds, and quality score. Use this to understand how strict memory gating is for a repo.",
   {
     repo: z.string().optional().describe("Repository name"),
@@ -824,7 +824,7 @@ const maintenanceTaskKinds = [
 ] as const;
 
 server.tool(
-  "recall_maintenance_peek",
+  "maintenance_peek",
   "Call at session start or between turns to see pending memory maintenance work that you could pick up. Returns small tasks the agent can complete in one turn. Do not call during an active user turn.",
   {
     repo: z.string().optional().describe("Optional repo to filter by (owner/repo)."),
@@ -842,10 +842,10 @@ server.tool(
 );
 
 server.tool(
-  "recall_maintenance_claim",
+  "maintenance_claim",
   "Claim a pending maintenance task so you can work on it. Only call when the user is idle — never during an active user turn. Returns the full payload and a lease; submit or release before the lease expires.",
   {
-    task_id: z.string().describe("ID of a task returned by recall_maintenance_peek."),
+    task_id: z.string().describe("ID of a task returned by maintenance_peek."),
     agent: z.string().describe("Caller agent name (e.g., claude-code, codex)."),
     lease_seconds: z.number().int().positive().max(3600).optional().describe(`Lease duration; default ${DEFAULT_LEASE_SECONDS}s.`),
   },
@@ -884,7 +884,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_maintenance_submit",
+  "maintenance_submit",
   "Submit the result of a claimed maintenance task. Recall validates the shape per task kind and applies the effect. Rejection bumps the task's attempt counter; after max_attempts the task is abandoned.",
   {
     task_id: z.string().describe("Claimed task ID."),
@@ -903,7 +903,7 @@ server.tool(
 );
 
 server.tool(
-  "recall_maintenance_release",
+  "maintenance_release",
   "Release a previously-claimed maintenance task without submitting a result (e.g., user interrupted you, context compacted, agent can't handle this kind). Returns the task to pending so another run can pick it up.",
   {
     task_id: z.string().describe("Claimed task ID."),

@@ -370,7 +370,7 @@ export function formatMaintenanceBacklogContext(surface: MaintenanceBacklogSurfa
     : "";
   return [
     `Recall maintenance backlog: ${surface.pending_total} pending (${parts}).`,
-    `When you have idle capacity, call the recall_maintenance_peek / _claim / _submit MCP tools to work through them.${sampleLine}`,
+    `When you have idle capacity, call the recall.maintenance_peek / maintenance_claim / maintenance_submit MCP tools to work through them.${sampleLine}`,
   ].join(" ");
 }
 

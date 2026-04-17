@@ -65,6 +65,6 @@ describe("phase 6 — maintenance backlog surface on session_started", () => {
     });
     expect(line).toMatch(/3 pending/);
     expect(line).toMatch(/summarize_history|refine_candidate/);
-    expect(line).toMatch(/recall_maintenance_peek/);
+    expect(line).toMatch(/maintenance_peek/);
   });
 });
