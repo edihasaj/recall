@@ -1,8 +1,14 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let recallOpenDashboard = Notification.Name("RecallOpenDashboard")
+    static let recallRefreshStatus = Notification.Name("RecallRefreshStatus")
+}
+
 @main
 struct RecallApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var controller = DaemonController()
     @StateObject private var preferences = AppPreferences()
 
@@ -11,17 +17,15 @@ struct RecallApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Recall", image: "MenuBarIcon") {
-            MenuContent(controller: controller, preferences: preferences)
-        }
-
         Window("Recall", id: "dashboard") {
             DashboardView(controller: controller, preferences: preferences)
                 .frame(minWidth: 560, minHeight: 420)
                 .task {
                     controller.start()
                     preferences.applyActivationPolicy()
+                    delegate.attach(controller: controller)
                 }
+                .background(WindowOpener())
         }
         .defaultSize(width: 640, height: 460)
 
@@ -32,43 +36,112 @@ struct RecallApp: App {
     }
 }
 
-private struct MenuContent: View {
-    @ObservedObject var controller: DaemonController
-    @ObservedObject var preferences: AppPreferences
+private struct WindowOpener: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Recall")
-                .font(.headline)
-            Text(controller.healthOK ? "Daemon running" : "Daemon needs attention")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            Button("Open Recall") {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onReceive(NotificationCenter.default.publisher(for: .recallOpenDashboard)) { _ in
                 openWindow(id: "dashboard")
                 NSApp.activate(ignoringOtherApps: true)
             }
+    }
+}
 
-            Button("Refresh Status") {
-                controller.refresh()
-            }
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private var statusItem: NSStatusItem?
+    private var templateImage: NSImage?
+    private var colorImage: NSImage?
+    private weak var controller: DaemonController?
 
-            Divider()
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = item
 
-            SettingsLink {
-                Text("Settings")
-            }
-
-            Divider()
-
-            Button("Quit Recall") {
-                NSApp.terminate(nil)
-            }
+        if let image = NSImage(named: "MenuBarIcon") {
+            image.isTemplate = true
+            templateImage = image
+            item.button?.image = image
         }
-        .padding(.vertical, 4)
+        colorImage = buildColorMenuBarImage()
+
+        let menu = NSMenu()
+        menu.delegate = self
+        menu.addItem(makeItem(title: "Open Recall", action: #selector(openDashboard)))
+        menu.addItem(makeItem(title: "Refresh Status", action: #selector(refreshStatus)))
+        menu.addItem(NSMenuItem.separator())
+        let settings = makeItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(settings)
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(makeItem(title: "Quit Recall", action: #selector(quit), keyEquivalent: "q"))
+        item.menu = menu
+    }
+
+    func attach(controller: DaemonController) {
+        self.controller = controller
+    }
+
+    private func makeItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = self
+        return item
+    }
+
+    private func buildColorMenuBarImage() -> NSImage? {
+        guard let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+              let src = NSImage(contentsOfFile: path) else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        src.draw(
+            in: NSRect(origin: .zero, size: size),
+            from: NSRect(origin: .zero, size: src.size),
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        if let color = colorImage {
+            statusItem?.button?.image = color
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if let template = templateImage {
+            statusItem?.button?.image = template
+        }
+    }
+
+    // MARK: Actions
+
+    @objc private func openDashboard() {
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .recallOpenDashboard, object: nil)
+    }
+
+    @objc private func refreshStatus() {
+        controller?.refresh()
+    }
+
+    @objc private func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        if #available(macOS 14, *) {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        } else {
+            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        }
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
     }
 }
 
