@@ -17,6 +17,9 @@ import {
 import { bootstrapHistoryEmbeddings, verifyHistoryEmbeddings } from "../history/retrieval.js";
 import { pruneMemories } from "../pruning/pruner.js";
 import { listActivityEvents } from "../models/activity.js";
+import { getMemory, promoteMemory, queryMemories } from "../models/memory.js";
+import { recordAuditWithSnapshot } from "../audit/trail.js";
+import { getRepoQualityProfile } from "../repo/quality.js";
 import { removeHistoryFtsRow, syncHistoryFtsIndex } from "../vector/sqlite-fts-history.js";
 import { removeHistoryVecRow } from "../vector/sqlite-vec-history.js";
 
@@ -58,6 +61,7 @@ export interface MaintenanceResult {
   history_embeddings_refreshed: number;
   history_vector_drift: number;
   history_lexical_drift: number;
+  candidates_promoted: number;
   sqlite_analyze_ran: boolean;
   sqlite_optimize_ran: boolean;
   sqlite_checkpoint_ran: boolean;
@@ -95,6 +99,7 @@ export async function runMaintenanceCycle(
     stale_days: config.stale_days,
     min_health_score: config.min_health_score,
   });
+  const candidates_promoted = promoteRepetitionCandidates(db);
 
   const activity_pruned = pruneOldActivityEvents(db, config.activity_retention_days);
   const feedback_pruned = pruneOldFeedbackEvents(db, config.feedback_retention_days);
@@ -165,6 +170,7 @@ export async function runMaintenanceCycle(
     history_embeddings_refreshed,
     history_vector_drift,
     history_lexical_drift,
+    candidates_promoted,
     sqlite_analyze_ran: sqliteMaintenance.analyze_ran,
     sqlite_optimize_ran: sqliteMaintenance.optimize_ran,
     sqlite_checkpoint_ran: sqliteMaintenance.checkpoint_ran,
@@ -172,6 +178,35 @@ export async function runMaintenanceCycle(
     sqlite_page_count: sqliteMaintenance.page_count,
     sqlite_freelist_count: sqliteMaintenance.freelist_count,
   };
+}
+
+export function promoteRepetitionCandidates(db: RecallDb): number {
+  const candidates = queryMemories(db, { status: "candidate" });
+  let promoted = 0;
+
+  for (const candidate of candidates) {
+    if (!candidate.repo) continue;
+    const profile = getRepoQualityProfile(db, candidate.repo);
+    if (candidate.repetition_count < profile.repeat_sessions_required) continue;
+
+    const before = getMemory(db, candidate.id);
+    if (!before || before.status !== "candidate") continue;
+    const ok = promoteMemory(db, candidate.id, "repeat_correction");
+    if (!ok) continue;
+    const after = getMemory(db, candidate.id);
+    recordAuditWithSnapshot(
+      db,
+      candidate.id,
+      "promoted",
+      "system",
+      `repetition:${candidate.repetition_count}`,
+      before,
+      after ?? null,
+    );
+    promoted += 1;
+  }
+
+  return promoted;
 }
 
 export function runSqliteMaintenance(

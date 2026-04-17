@@ -105,6 +105,7 @@ export const MemoryItem = z.object({
   last_injected_at: z.string().nullable(),
   injection_count: z.number().int().nonnegative(),
   override_count: z.number().int().nonnegative(),
+  repetition_count: z.number().int().nonnegative(),
 });
 export type MemoryItem = z.infer<typeof MemoryItem>;
 

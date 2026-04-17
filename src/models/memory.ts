@@ -66,6 +66,7 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       last_injected_at: null,
       injection_count: 0,
       override_count: 0,
+      repetition_count: 0,
     })
     .run();
 
@@ -295,6 +296,24 @@ export function updateMemoryCaptureContext(
   return true;
 }
 
+export function incrementMemoryRepetition(
+  db: RecallDb,
+  id: string,
+): boolean {
+  const mem = getMemory(db, id);
+  if (!mem) return false;
+
+  db.update(memories)
+    .set({
+      repetition_count: sql`repetition_count + 1`,
+      updated_at: new Date().toISOString(),
+    })
+    .where(eq(memories.id, id))
+    .run();
+
+  return true;
+}
+
 export function countDistinctCorrectionSessions(mem: MemoryItem): number {
   const sessions = new Set<string>();
 
@@ -419,6 +438,7 @@ function rowToMemory(row: MemoryRow): MemoryItem {
     last_injected_at: row.last_injected_at,
     injection_count: row.injection_count,
     override_count: row.override_count,
+    repetition_count: row.repetition_count,
   };
 }
 
