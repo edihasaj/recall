@@ -290,6 +290,42 @@ export const auditTrail = sqliteTable("audit_trail", {
   index("idx_audit_timestamp").on(table.timestamp),
 ]));
 
+// Tier-2 delegated maintenance tasks
+export const memoryMaintenanceTasks = sqliteTable("memory_maintenance_tasks", {
+  id: text("id").primaryKey(),
+  kind: text("kind", {
+    enum: [
+      "summarize_history",
+      "merge_duplicates",
+      "refine_candidate",
+      "summarize_session",
+      "synthesize_repo",
+    ],
+  }).notNull(),
+  status: text("status", {
+    enum: ["pending", "claimed", "submitted", "completed", "abandoned"],
+  }).notNull(),
+  priority: integer("priority").notNull().default(0),
+  repo: text("repo"),
+  target_key: text("target_key").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  result: text("result", { mode: "json" }),
+  failure_reason: text("failure_reason"),
+  claimed_by: text("claimed_by"),
+  claimed_at: text("claimed_at"),
+  claim_expires_at: text("claim_expires_at"),
+  submitted_at: text("submitted_at"),
+  completed_at: text("completed_at"),
+  created_at: text("created_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  max_attempts: integer("max_attempts").notNull().default(3),
+}, (table) => ([
+  index("idx_mmt_status_priority").on(table.status, table.priority, table.created_at),
+  index("idx_mmt_repo_status").on(table.repo, table.status),
+  index("idx_mmt_claim_expires").on(table.claim_expires_at),
+  index("idx_mmt_kind_target").on(table.kind, table.target_key),
+]));
+
 // Phase 2: implicit feedback signals
 export const implicitSignals = sqliteTable("implicit_signals", {
   id: text("id").primaryKey(),
