@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { RecallDb } from "../db/client.js";
 import { memoryMaintenanceTasks, memories, historySnippets } from "../db/schema.js";
+import { ApplyError, applyTaskResult } from "./appliers.js";
 import type {
   MaintenanceTask,
   MaintenanceTaskKind,
@@ -485,6 +486,9 @@ export interface SubmitOk {
   status: "applied";
   task_id: string;
   kind: MaintenanceTaskKind;
+  target_id: string;
+  changed_fields: string[];
+  audit_entry_id: string | null;
 }
 
 export interface SubmitRejected {
@@ -539,8 +543,38 @@ export function submitTask(
     };
   }
 
-  // Phase 2: accept and mark completed without applying effects. Phase 3 will
-  // insert effect application before this status flip.
+  let applyOutcome;
+  try {
+    applyOutcome = applyTaskResult(db, existing, parsed.data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const attempts = existing.attempts + 1;
+    const code = err instanceof ApplyError ? err.code : "apply-error";
+    // target-missing and unsupported-kind are not the agent's fault — abandon
+    // immediately rather than waste retries.
+    const abandoned = code === "target-missing" || code === "unsupported-kind" || attempts >= existing.max_attempts;
+    const now = new Date().toISOString();
+    db.update(memoryMaintenanceTasks)
+      .set({
+        status: abandoned ? "abandoned" : "pending",
+        claimed_by: null,
+        claimed_at: null,
+        claim_expires_at: null,
+        attempts,
+        failure_reason: `apply-failed: ${message}`.slice(0, 500),
+        completed_at: abandoned ? now : null,
+      })
+      .where(eq(memoryMaintenanceTasks.id, taskId))
+      .run();
+    return {
+      status: "rejected",
+      task_id: taskId,
+      reason: `apply-failed: ${message}`,
+      attempts,
+      abandoned,
+    };
+  }
+
   const now = new Date().toISOString();
   db.update(memoryMaintenanceTasks)
     .set({
@@ -553,7 +587,14 @@ export function submitTask(
     .where(eq(memoryMaintenanceTasks.id, taskId))
     .run();
 
-  return { status: "applied", task_id: taskId, kind: existing.kind };
+  return {
+    status: "applied",
+    task_id: taskId,
+    kind: existing.kind,
+    target_id: applyOutcome.target_id,
+    changed_fields: applyOutcome.changed_fields,
+    audit_entry_id: applyOutcome.audit_entry_id,
+  };
 }
 
 export interface ReleaseResult {
