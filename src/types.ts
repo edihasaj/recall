@@ -353,6 +353,7 @@ export const HistorySnippetKind = z.enum([
   "correction_summary",
   "review_summary",
   "compile_summary",
+  "repo_synthesis",
 ]);
 export type HistorySnippetKind = z.infer<typeof HistorySnippetKind>;
 

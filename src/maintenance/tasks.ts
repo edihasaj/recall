@@ -1,8 +1,17 @@
-import { and, eq, inArray, lt, or, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, or, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { RecallDb } from "../db/client.js";
-import { memoryMaintenanceTasks, memories, historySnippets } from "../db/schema.js";
+import {
+  activityEvents,
+  historySnippets,
+  memories,
+  memoryMaintenanceTasks,
+} from "../db/schema.js";
+import {
+  findSemanticDuplicates,
+  loadEmbeddingConfigFromEnv,
+} from "../embeddings/embeddings.js";
 import { ApplyError, applyTaskResult } from "./appliers.js";
 import type {
   MaintenanceTask,
@@ -28,6 +37,10 @@ export interface EnqueueConfig {
   max_per_kind: number;
   refine_min_repetition: number;
   summary_max_age_days: number;
+  merge_similarity_threshold: number;
+  session_min_activity_events: number;
+  repo_synthesis_min_memories: number;
+  repo_synthesis_refresh_days: number;
 }
 
 export const DEFAULT_ENQUEUE_CONFIG: EnqueueConfig = {
@@ -35,6 +48,10 @@ export const DEFAULT_ENQUEUE_CONFIG: EnqueueConfig = {
   max_per_kind: 10,
   refine_min_repetition: 1,
   summary_max_age_days: 7,
+  merge_similarity_threshold: 0.9,
+  session_min_activity_events: 5,
+  repo_synthesis_min_memories: 20,
+  repo_synthesis_refresh_days: 30,
 };
 
 export interface EnqueueCounts {
@@ -319,18 +336,200 @@ export function produceSummarizeHistoryTasks(
   return enqueued;
 }
 
+export async function produceMergeDuplicateTasks(
+  db: RecallDb,
+  config: Pick<EnqueueConfig, "merge_similarity_threshold">,
+): Promise<number> {
+  const embeddingConfig = loadEmbeddingConfigFromEnv();
+  if (!embeddingConfig) return 0;
+
+  const activeMemories = db.select().from(memories)
+    .where(eq(memories.status, "active"))
+    .all();
+
+  const visited = new Set<string>();
+  let enqueued = 0;
+
+  for (const mem of activeMemories) {
+    if (visited.has(mem.id)) continue;
+    if (!mem.repo) continue;
+
+    const duplicates = await findSemanticDuplicates(
+      db,
+      mem.text,
+      embeddingConfig,
+      config.merge_similarity_threshold,
+      { repo: mem.repo, type: mem.type, limit: 10 },
+    );
+
+    // Strip the memory itself from the duplicate list.
+    const peers = duplicates.filter((d) => d.id !== mem.id);
+    if (peers.length === 0) continue;
+
+    const cluster = [mem.id, ...peers.map((p) => p.id)].sort();
+    // Dedupe symmetric clusters: only act from the anchor.
+    if (cluster[0] !== mem.id) {
+      for (const id of cluster) visited.add(id);
+      continue;
+    }
+
+    const clusterRows = db.select().from(memories)
+      .where(inArray(memories.id, cluster))
+      .all();
+
+    const candidates = clusterRows.map((row) => ({
+      id: row.id,
+      text: row.text,
+      scope: row.scope,
+      path_scope: row.path_scope,
+      confidence: row.confidence,
+    }));
+
+    const id = insertTaskIdempotent(db, {
+      kind: "merge_duplicates",
+      target: cluster[0],
+      repo: mem.repo,
+      payload: {
+        repo: mem.repo,
+        type: mem.type,
+        candidates,
+      },
+    });
+    if (id) enqueued += 1;
+    for (const memberId of cluster) visited.add(memberId);
+  }
+
+  return enqueued;
+}
+
+export function produceSummarizeSessionTasks(
+  db: RecallDb,
+  config: Pick<EnqueueConfig, "session_min_activity_events" | "summary_max_age_days">,
+): number {
+  const cutoff = new Date(Date.now() - config.summary_max_age_days * 86_400_000).toISOString();
+
+  const sessionEnds = db.select().from(activityEvents)
+    .where(and(
+      eq(activityEvents.event_type, "session_end"),
+      gt(activityEvents.created_at, cutoff),
+    ))
+    .orderBy(desc(activityEvents.created_at))
+    .all();
+
+  let enqueued = 0;
+  for (const end of sessionEnds) {
+    if (!end.session_id) continue;
+
+    const events = db.select().from(activityEvents)
+      .where(eq(activityEvents.session_id, end.session_id))
+      .all();
+    if (events.length < config.session_min_activity_events) continue;
+
+    const existing = db.select().from(historySnippets)
+      .where(and(
+        eq(historySnippets.session_id, end.session_id),
+        eq(historySnippets.kind, "session_summary"),
+      ))
+      .get();
+    if (existing) continue;
+
+    const repo = end.repo ?? events.find((e) => e.repo)?.repo ?? null;
+    const eventTypes = [...new Set(events.map((e) => e.event_type))];
+
+    const id = insertTaskIdempotent(db, {
+      kind: "summarize_session",
+      target: end.session_id,
+      repo,
+      payload: {
+        session_id: end.session_id,
+        repo,
+        event_count: events.length,
+        event_types: eventTypes,
+        source_activity_ids: events.map((e) => e.id),
+      },
+    });
+    if (id) enqueued += 1;
+  }
+
+  return enqueued;
+}
+
+export function produceSynthesizeRepoTasks(
+  db: RecallDb,
+  config: Pick<EnqueueConfig, "repo_synthesis_min_memories" | "repo_synthesis_refresh_days">,
+): number {
+  const rows = db.select({
+    repo: memories.repo,
+    count: sql<number>`count(*)`.as("count"),
+  })
+    .from(memories)
+    .where(eq(memories.status, "active"))
+    .groupBy(memories.repo)
+    .all();
+
+  const cutoff = new Date(Date.now() - config.repo_synthesis_refresh_days * 86_400_000).toISOString();
+  let enqueued = 0;
+
+  for (const { repo, count } of rows) {
+    if (!repo) continue;
+    if (count < config.repo_synthesis_min_memories) continue;
+
+    const recent = db.select().from(historySnippets)
+      .where(and(
+        eq(historySnippets.repo, repo),
+        eq(historySnippets.kind, "repo_synthesis"),
+        gt(historySnippets.updated_at, cutoff),
+      ))
+      .get();
+    if (recent) continue;
+
+    const topMemories = db.select().from(memories)
+      .where(and(
+        eq(memories.repo, repo),
+        eq(memories.status, "active"),
+      ))
+      .orderBy(desc(memories.confidence))
+      .limit(20)
+      .all()
+      .map((row) => ({
+        id: row.id,
+        text: row.text,
+        type: row.type,
+        scope: row.scope,
+        confidence: row.confidence,
+      }));
+
+    const id = insertTaskIdempotent(db, {
+      kind: "synthesize_repo",
+      target: repo,
+      repo,
+      payload: {
+        repo,
+        memory_count: count,
+        top_memories: topMemories,
+      },
+    });
+    if (id) enqueued += 1;
+  }
+
+  return enqueued;
+}
+
 // --- Orchestrator ---
 
-export function enqueueMaintenanceTasks(
+export async function enqueueMaintenanceTasks(
   db: RecallDb,
   config: EnqueueConfig = DEFAULT_ENQUEUE_CONFIG,
-): EnqueueCounts {
+): Promise<EnqueueCounts> {
   const expired = sweepExpiredLeases(db);
   abandonOverAttemptTasks(db);
 
   const counts: Partial<Record<MaintenanceTaskKind, number>> = {};
   counts.refine_candidate = produceRefineCandidateTasks(db, config);
   counts.summarize_history = produceSummarizeHistoryTasks(db, config);
+  counts.summarize_session = produceSummarizeSessionTasks(db, config);
+  counts.synthesize_repo = produceSynthesizeRepoTasks(db, config);
+  counts.merge_duplicates = await produceMergeDuplicateTasks(db, config);
 
   const dropped = applyBacklogCaps(db, config);
 
@@ -363,10 +562,10 @@ const SummarizeHistoryResult = z.object({
 });
 
 const MergeDuplicatesResult = z.object({
-  winner_text: z.string().min(1).max(4000),
-  winner_scope: MemoryScope,
+  winner_id: z.string().uuid(),
+  winner_text: z.string().min(1).max(4000).optional(),
+  winner_scope: MemoryScope.optional(),
   winner_path_scope: z.string().max(512).nullable().optional(),
-  merged_ids: z.array(z.string().uuid()).min(1),
   rationale: z.string().max(2000).optional(),
 });
 
@@ -550,9 +749,12 @@ export function submitTask(
     const message = err instanceof Error ? err.message : String(err);
     const attempts = existing.attempts + 1;
     const code = err instanceof ApplyError ? err.code : "apply-error";
-    // target-missing and unsupported-kind are not the agent's fault — abandon
-    // immediately rather than waste retries.
-    const abandoned = code === "target-missing" || code === "unsupported-kind" || attempts >= existing.max_attempts;
+    // target-missing, invalid-state, and unsupported-kind are unfixable from
+    // the same payload — abandon immediately rather than waste retries.
+    const abandoned = code === "target-missing"
+      || code === "invalid-state"
+      || code === "unsupported-kind"
+      || attempts >= existing.max_attempts;
     const now = new Date().toISOString();
     db.update(memoryMaintenanceTasks)
       .set({
