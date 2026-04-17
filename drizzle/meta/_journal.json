@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1776207282646,
-      "tag": "0000_initial_migration",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1776381000000,
-      "tag": "0001_hook_calls",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1776382000000,
-      "tag": "0002_memory_quality_phase1",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1776383000000,
-      "tag": "0003_memory_quality_phase4",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1776384000000,
-      "tag": "0004_memory_maintenance_tasks",
+      "when": 1776435812464,
+      "tag": "0000_initial_create",
       "breakpoints": true
     }
   ]
