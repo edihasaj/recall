@@ -64,7 +64,7 @@ export const historySnippets = sqliteTable("history_snippets", {
   repo: text("repo"),
   session_id: text("session_id"),
   kind: text("kind", {
-    enum: ["session_summary", "correction_summary", "review_summary", "compile_summary"],
+    enum: ["session_summary", "correction_summary", "review_summary", "compile_summary", "repo_synthesis"],
   }).notNull(),
   text: text("text").notNull(),
   source_activity_ids: text("source_activity_ids", { mode: "json" }).notNull().default("[]"),

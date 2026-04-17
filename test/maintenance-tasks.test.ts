@@ -242,14 +242,14 @@ describe("tier-2 maintenance tasks — phase 1", () => {
       .where(eq((await import("../src/db/schema.js")).memories.id, mem)).run();
     insertSnippet(db, "test/repo");
 
-    const result = enqueueMaintenanceTasks(db);
+    const result = await enqueueMaintenanceTasks(db);
     expect(result.tasks_enqueued).toBe(2);
     expect(result.per_kind.refine_candidate).toBe(1);
     expect(result.per_kind.summarize_history).toBe(1);
     expect(result.expired_leases_swept).toBe(0);
     expect(result.dropped_over_cap).toBe(0);
 
-    const again = enqueueMaintenanceTasks(db);
+    const again = await enqueueMaintenanceTasks(db);
     expect(again.tasks_enqueued).toBe(0);
   });
 });

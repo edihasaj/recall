@@ -104,6 +104,10 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
       max_per_kind: parseInt(process.env.RECALL_MAINTENANCE_MAX_PER_KIND ?? String(DEFAULT_ENQUEUE_CONFIG.max_per_kind), 10),
       refine_min_repetition: parseInt(process.env.RECALL_MAINTENANCE_REFINE_MIN_REPETITION ?? String(DEFAULT_ENQUEUE_CONFIG.refine_min_repetition), 10),
       summary_max_age_days: parseInt(process.env.RECALL_MAINTENANCE_SUMMARY_MAX_AGE_DAYS ?? String(DEFAULT_ENQUEUE_CONFIG.summary_max_age_days), 10),
+      merge_similarity_threshold: parseFloat(process.env.RECALL_MAINTENANCE_MERGE_SIMILARITY_THRESHOLD ?? String(DEFAULT_ENQUEUE_CONFIG.merge_similarity_threshold)),
+      session_min_activity_events: parseInt(process.env.RECALL_MAINTENANCE_SESSION_MIN_EVENTS ?? String(DEFAULT_ENQUEUE_CONFIG.session_min_activity_events), 10),
+      repo_synthesis_min_memories: parseInt(process.env.RECALL_MAINTENANCE_REPO_SYNTHESIS_MIN_MEMORIES ?? String(DEFAULT_ENQUEUE_CONFIG.repo_synthesis_min_memories), 10),
+      repo_synthesis_refresh_days: parseInt(process.env.RECALL_MAINTENANCE_REPO_SYNTHESIS_REFRESH_DAYS ?? String(DEFAULT_ENQUEUE_CONFIG.repo_synthesis_refresh_days), 10),
     },
   };
 }
@@ -167,7 +171,7 @@ export async function runMaintenanceCycle(
   }
 
   const tasks = config.llm_tasks_enabled
-    ? enqueueMaintenanceTasks(db, config.llm_task_config)
+    ? await enqueueMaintenanceTasks(db, config.llm_task_config)
     : { tasks_enqueued: 0, per_kind: {}, expired_leases_swept: 0, dropped_over_cap: 0 };
 
   return {
