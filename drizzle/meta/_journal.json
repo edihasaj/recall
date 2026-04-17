@@ -29,6 +29,13 @@
       "when": 1776383000000,
       "tag": "0003_memory_quality_phase4",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776384000000,
+      "tag": "0004_memory_maintenance_tasks",
+      "breakpoints": true
     }
   ]
 }

@@ -132,6 +132,47 @@ export const MemoryInjection = z.object({
 });
 export type MemoryInjection = z.infer<typeof MemoryInjection>;
 
+// --- Delegated maintenance tasks ---
+
+export const MaintenanceTaskKind = z.enum([
+  "summarize_history",
+  "merge_duplicates",
+  "refine_candidate",
+  "summarize_session",
+  "synthesize_repo",
+]);
+export type MaintenanceTaskKind = z.infer<typeof MaintenanceTaskKind>;
+
+export const MaintenanceTaskStatus = z.enum([
+  "pending",
+  "claimed",
+  "submitted",
+  "completed",
+  "abandoned",
+]);
+export type MaintenanceTaskStatus = z.infer<typeof MaintenanceTaskStatus>;
+
+export const MaintenanceTask = z.object({
+  id: z.string().uuid(),
+  kind: MaintenanceTaskKind,
+  status: MaintenanceTaskStatus,
+  priority: z.number().int(),
+  repo: z.string().nullable(),
+  target_key: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+  result: z.record(z.string(), z.unknown()).nullable(),
+  failure_reason: z.string().nullable(),
+  claimed_by: z.string().nullable(),
+  claimed_at: z.string().nullable(),
+  claim_expires_at: z.string().nullable(),
+  submitted_at: z.string().nullable(),
+  completed_at: z.string().nullable(),
+  created_at: z.string(),
+  attempts: z.number().int().nonnegative(),
+  max_attempts: z.number().int().positive(),
+});
+export type MaintenanceTask = z.infer<typeof MaintenanceTask>;
+
 // --- Activity events ---
 
 export const ActivitySource = z.enum(["cli", "daemon", "mcp", "system"]);
