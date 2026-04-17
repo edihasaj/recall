@@ -62,6 +62,7 @@ import {
   executeSessionEndHook,
   executeSessionStartHook,
   executeToolHook,
+  formatMaintenanceBacklogContext,
   parseInteger,
   parseRecentToolCallsOption,
   readClaudeCodePromptInputFromStdin,
@@ -284,7 +285,16 @@ hookCmd
           repo_path: opts.repoPath,
           path: opts.path,
         };
-    await executeSessionStartHook(input);
+    const result = await executeSessionStartHook(input);
+    if (opts.claudeCodeStdin && result.maintenance_backlog) {
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "SessionStart",
+          additionalContext: formatMaintenanceBacklogContext(result.maintenance_backlog),
+        },
+      };
+      process.stdout.write(`${JSON.stringify(output)}\n`);
+    }
   });
 
 hookCmd
