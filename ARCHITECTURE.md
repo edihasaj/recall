@@ -263,12 +263,12 @@ This is the most direct path for coding agents.
 
 Agent asks Recall:
 
-- `recall_query`
-- `recall_report_correction`
-- `recall_report_review`
-- `recall_feedback`
-- `recall_activity`
-- `recall_sessions`
+- `query`
+- `report_correction`
+- `report_review`
+- `feedback`
+- `activity`
+- `sessions`
 
 ```mermaid
 sequenceDiagram
@@ -277,7 +277,7 @@ sequenceDiagram
     participant Compiler as Compiler
     participant DB as SQLite
 
-    Agent->>MCP: recall_query(repo, path, session_id)
+    Agent->>MCP: query(repo, path, session_id)
     MCP->>Compiler: compileContext(...)
     Compiler->>DB: load active memories
     DB-->>Compiler: memories
