@@ -385,6 +385,17 @@ export const EvalSession = z.object({
 });
 export type EvalSession = z.infer<typeof EvalSession>;
 
+export const MaintenanceEvalMetrics = z.object({
+  total_completed: z.number(),
+  total_abandoned: z.number(),
+  abandon_rate: z.number(),
+  mean_completion_ms: z.number().nullable(),
+  completed_by_kind: z.record(z.number()),
+  merge_precision: z.number().nullable(),
+  merge_rollbacks: z.number(),
+});
+export type MaintenanceEvalMetrics = z.infer<typeof MaintenanceEvalMetrics>;
+
 export const EvalMetrics = z.object({
   total_sessions: z.number(),
   injection_rate: z.number(),
@@ -393,6 +404,7 @@ export const EvalMetrics = z.object({
   correction_frequency: z.number(),
   avg_confidence_at_injection: z.number(),
   memory_effectiveness: z.number(),
+  maintenance: MaintenanceEvalMetrics.optional(),
 });
 export type EvalMetrics = z.infer<typeof EvalMetrics>;
 
