@@ -30,6 +30,14 @@ import {
   sessionEndFallback,
   signalOutcomeFallback,
 } from "./fallback.js";
+import {
+  DEFAULT_LEASE_SECONDS,
+  TaskClaimConflictError,
+  claimTask,
+  peekTasks,
+  releaseTask,
+  submitTask,
+} from "../maintenance/tasks.js";
 
 const db = initDb();
 const activityEventTypes = [
@@ -802,6 +810,114 @@ server.tool(
       `Dedup similarity: ${profile.dedup_similarity_threshold.toFixed(2)}`,
     ];
     return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  },
+);
+
+// --- Delegated maintenance (Tier-2) ---
+
+const maintenanceTaskKinds = [
+  "summarize_history",
+  "merge_duplicates",
+  "refine_candidate",
+  "summarize_session",
+  "synthesize_repo",
+] as const;
+
+server.tool(
+  "recall_maintenance_peek",
+  "Call at session start or between turns to see pending memory maintenance work that you could pick up. Returns small tasks the agent can complete in one turn. Do not call during an active user turn.",
+  {
+    repo: z.string().optional().describe("Optional repo to filter by (owner/repo)."),
+    kinds: z.array(z.enum(maintenanceTaskKinds)).optional().describe("Restrict to specific task kinds."),
+    limit: z.number().int().positive().max(10).optional().describe("Max tasks to return; defaults to 3."),
+  },
+  async ({ repo, kinds, limit }) => {
+    const tasks = peekTasks(db, { repo, kinds, limit });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify({ tasks }, null, 2) },
+      ],
+    };
+  },
+);
+
+server.tool(
+  "recall_maintenance_claim",
+  "Claim a pending maintenance task so you can work on it. Only call when the user is idle — never during an active user turn. Returns the full payload and a lease; submit or release before the lease expires.",
+  {
+    task_id: z.string().describe("ID of a task returned by recall_maintenance_peek."),
+    agent: z.string().describe("Caller agent name (e.g., claude-code, codex)."),
+    lease_seconds: z.number().int().positive().max(3600).optional().describe(`Lease duration; default ${DEFAULT_LEASE_SECONDS}s.`),
+  },
+  async ({ task_id, agent, lease_seconds }) => {
+    try {
+      const result = claimTask(db, task_id, agent, lease_seconds);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              task: {
+                id: result.task.id,
+                kind: result.task.kind,
+                repo: result.task.repo,
+                payload: result.task.payload,
+                priority: result.task.priority,
+              },
+              lease_expires_at: result.lease_expires_at,
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (err) {
+      if (err instanceof TaskClaimConflictError) {
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify({ error: err.reason, task_id }) },
+          ],
+          isError: true,
+        };
+      }
+      throw err;
+    }
+  },
+);
+
+server.tool(
+  "recall_maintenance_submit",
+  "Submit the result of a claimed maintenance task. Recall validates the shape per task kind and applies the effect. Rejection bumps the task's attempt counter; after max_attempts the task is abandoned.",
+  {
+    task_id: z.string().describe("Claimed task ID."),
+    agent: z.string().describe("Caller agent name; must match the claim holder."),
+    result: z.record(z.string(), z.unknown()).describe("Result payload. Shape depends on task kind; see payload for expectations."),
+  },
+  async ({ task_id, agent, result }) => {
+    const outcome = submitTask(db, task_id, agent, result);
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(outcome, null, 2) },
+      ],
+      isError: outcome.status === "rejected",
+    };
+  },
+);
+
+server.tool(
+  "recall_maintenance_release",
+  "Release a previously-claimed maintenance task without submitting a result (e.g., user interrupted you, context compacted, agent can't handle this kind). Returns the task to pending so another run can pick it up.",
+  {
+    task_id: z.string().describe("Claimed task ID."),
+    agent: z.string().describe("Caller agent name; must match the claim holder."),
+    reason: z.string().max(500).optional().describe("Short note about why you released."),
+  },
+  async ({ task_id, agent, reason }) => {
+    const outcome = releaseTask(db, task_id, agent, reason);
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(outcome) },
+      ],
+      isError: outcome.status !== "released",
+    };
   },
 );
 
