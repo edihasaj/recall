@@ -17,6 +17,7 @@ import {
   endSessionLifecycle,
   startSessionLifecycle,
 } from "../session/lifecycle.js";
+import { peekTasks } from "../maintenance/tasks.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 25;
@@ -84,6 +85,13 @@ export interface HookResult {
   repo: string | null;
   transport: "daemon" | "fallback" | "direct";
   recent_tool_calls?: RecentToolCall[];
+  maintenance_backlog?: MaintenanceBacklogSurface;
+}
+
+export interface MaintenanceBacklogSurface {
+  pending_total: number;
+  by_kind: Record<string, number>;
+  sample: Array<{ id: string; kind: string; repo: string | null }>;
 }
 
 interface ClaudeCodeHookPayload {
@@ -316,13 +324,54 @@ export async function handleSessionStartHook(
       },
     });
 
+    const maintenance_backlog = collectMaintenanceBacklog(db, result.repo);
+
     return {
       event: "session_started",
       session_id: result.session_id,
       repo: result.repo,
       transport: "direct",
+      ...(maintenance_backlog ? { maintenance_backlog } : {}),
     };
   });
+}
+
+function collectMaintenanceBacklog(
+  db: RecallDb,
+  repo: string | null,
+): MaintenanceBacklogSurface | undefined {
+  if (process.env.RECALL_MAINTENANCE_SURFACE_ON_START !== "true") return undefined;
+
+  const tasks = peekTasks(db, { repo: repo ?? undefined, limit: 10 });
+  if (tasks.length === 0) return undefined;
+
+  const by_kind: Record<string, number> = {};
+  for (const t of tasks) {
+    by_kind[t.kind] = (by_kind[t.kind] ?? 0) + 1;
+  }
+
+  return {
+    pending_total: tasks.length,
+    by_kind,
+    sample: tasks.slice(0, 3).map((t) => ({
+      id: t.id,
+      kind: t.kind,
+      repo: t.repo,
+    })),
+  };
+}
+
+export function formatMaintenanceBacklogContext(surface: MaintenanceBacklogSurface): string {
+  const parts = Object.entries(surface.by_kind)
+    .map(([kind, n]) => `${n} ${kind}`)
+    .join(", ");
+  const sampleLine = surface.sample.length > 0
+    ? `\nSample ids: ${surface.sample.map((s) => s.id.slice(0, 8)).join(", ")}`
+    : "";
+  return [
+    `Recall maintenance backlog: ${surface.pending_total} pending (${parts}).`,
+    `When you have idle capacity, call the recall_maintenance_peek / _claim / _submit MCP tools to work through them.${sampleLine}`,
+  ].join(" ");
 }
 
 export async function handleSessionEndHook(
