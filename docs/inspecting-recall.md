@@ -170,15 +170,15 @@ recall search -r owner/repo "pnpm"
 
 Read path:
 
-- `recall_query`
+- `query`
 
 Write path:
 
-- `recall_report_correction`
-- `recall_capture_correction`
-- `recall_report_review`
-- `recall_signal_outcome`
-- `recall_session_end`
+- `report_correction`
+- `capture_correction`
+- `report_review`
+- `signal_outcome`
+- `session_end`
 
 So Recall memory improves only when the agent actually calls those MCP tools.
 

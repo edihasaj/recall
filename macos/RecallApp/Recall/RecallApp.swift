@@ -56,6 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var colorImage: NSImage?
     private weak var controller: DaemonController?
 
+    private var launchdStatusItem: NSMenuItem?
+    private var healthStatusItem: NSMenuItem?
+    private var setupStatusItem: NSMenuItem?
+    private var dataStatusItem: NSMenuItem?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
@@ -69,14 +74,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
+        menu.autoenablesItems = false
+
+        let header = NSMenuItem()
+        header.title = "Recall"
+        header.isEnabled = false
+        menu.addItem(header)
+
+        launchdStatusItem = makeStatusItem()
+        healthStatusItem = makeStatusItem()
+        setupStatusItem = makeStatusItem()
+        dataStatusItem = makeStatusItem()
+        menu.addItem(launchdStatusItem!)
+        menu.addItem(healthStatusItem!)
+        menu.addItem(setupStatusItem!)
+        menu.addItem(dataStatusItem!)
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(makeItem(title: "Open Recall", action: #selector(openDashboard)))
         menu.addItem(makeItem(title: "Refresh Status", action: #selector(refreshStatus)))
         menu.addItem(NSMenuItem.separator())
-        let settings = makeItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(settings)
+        menu.addItem(makeItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(makeItem(title: "Quit Recall", action: #selector(quit), keyEquivalent: "q"))
         item.menu = menu
+    }
+
+    private func makeStatusItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    private func updateStatusItems() {
+        guard let controller else {
+            launchdStatusItem?.title = "Launchd:  —"
+            healthStatusItem?.title = "Health:   —"
+            setupStatusItem?.title = "Setup:    —"
+            dataStatusItem?.title = "Data:     —"
+            return
+        }
+        launchdStatusItem?.title = "Launchd:  \(controller.launchdState)"
+        let healthDot = controller.healthOK ? "●" : "○"
+        healthStatusItem?.title = "Health:   \(healthDot) \(controller.healthText)"
+        setupStatusItem?.title = "Setup:    \(controller.setupStatus)"
+        dataStatusItem?.title = "Data:     \(controller.dataDir)"
     }
 
     func attach(controller: DaemonController) {
@@ -112,6 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let color = colorImage {
             statusItem?.button?.image = color
         }
+        controller?.refresh()
+        updateStatusItems()
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -227,7 +271,9 @@ struct DashboardView: View {
 
             Spacer()
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.top, 32)
+        .padding(.bottom, 20)
     }
 }
 

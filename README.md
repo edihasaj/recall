@@ -243,15 +243,15 @@ Add to Claude Code MCP config:
 
 Useful MCP tools:
 
-- `recall_query`
-- `recall_report_correction`
-- `recall_capture_correction`
-- `recall_report_review`
-- `recall_signal_outcome`
-- `recall_session_end`
-- `recall_quality`
-- `recall_list`
-- `recall_confirm`
+- `query`
+- `report_correction`
+- `capture_correction`
+- `report_review`
+- `signal_outcome`
+- `session_end`
+- `quality`
+- `list`
+- `confirm`
 
 ## Session Wrappers
 
