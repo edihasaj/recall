@@ -3,11 +3,22 @@
  * Answers: are memories actually helping? Are they trusted?
  */
 
-import { eq, sql, and, gte } from "drizzle-orm";
+import { eq, sql, and, gte, like } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
-import { evalSessions, feedbackEvents, memories } from "../db/schema.js";
-import type { EvalMetrics, EvalSession } from "../types.js";
+import {
+  auditTrail,
+  evalSessions,
+  feedbackEvents,
+  memories,
+  memoryMaintenanceTasks,
+} from "../db/schema.js";
+import type {
+  EvalMetrics,
+  EvalSession,
+  MaintenanceEvalMetrics,
+  MaintenanceTaskKind,
+} from "../types.js";
 
 // --- Session lifecycle ---
 
@@ -88,6 +99,7 @@ export function computeMetrics(
       : db.select().from(evalSessions).all();
 
   if (sessions.length === 0) {
+    const maintenance = computeMaintenanceMetrics(db);
     return {
       total_sessions: 0,
       injection_rate: 0,
@@ -96,6 +108,7 @@ export function computeMetrics(
       correction_frequency: 0,
       avg_confidence_at_injection: 0,
       memory_effectiveness: 0,
+      ...(maintenance ? { maintenance } : {}),
     };
   }
 
@@ -148,6 +161,8 @@ export function computeMetrics(
       ? (totals.followed - totals.overridden) / totals.injected
       : 0;
 
+  const maintenance = computeMaintenanceMetrics(db);
+
   return {
     total_sessions: sessions.length,
     injection_rate:
@@ -160,6 +175,71 @@ export function computeMetrics(
       totals.corrections / Math.max(sessions.length, 1),
     avg_confidence_at_injection: avgConfidence,
     memory_effectiveness: effectiveness,
+    ...(maintenance ? { maintenance } : {}),
+  };
+}
+
+export function computeMaintenanceMetrics(db: RecallDb): MaintenanceEvalMetrics | undefined {
+  const rows = db.select().from(memoryMaintenanceTasks).all();
+  if (rows.length === 0) return undefined;
+
+  let completed = 0;
+  let abandoned = 0;
+  const completed_by_kind: Record<string, number> = {};
+  let completionDurations: number[] = [];
+  let mergeCompleted = 0;
+
+  for (const row of rows) {
+    if (row.status === "completed") {
+      completed += 1;
+      completed_by_kind[row.kind] = (completed_by_kind[row.kind] ?? 0) + 1;
+      if (row.kind === "merge_duplicates") mergeCompleted += 1;
+      if (row.completed_at) {
+        const delta = new Date(row.completed_at).getTime() - new Date(row.created_at).getTime();
+        if (Number.isFinite(delta) && delta >= 0) completionDurations.push(delta);
+      }
+    } else if (row.status === "abandoned") {
+      abandoned += 1;
+    }
+  }
+
+  // Merge precision: fraction of merge-touched memories NOT subsequently rolled back.
+  // Audit rows tagged with reason LIKE 'merged_%' (actor = 'maintenance:<agent>')
+  // are the universe; rolled_back entries on the same memory_id are the regressions.
+  const mergeTouched = db.select().from(auditTrail)
+    .where(and(
+      like(auditTrail.reason, "merged_%"),
+      like(auditTrail.actor, "maintenance:%"),
+    ))
+    .all();
+  const touchedMemoryIds = new Set(mergeTouched.map((r) => r.memory_id));
+
+  let mergeRollbacks = 0;
+  if (touchedMemoryIds.size > 0) {
+    const rollbacks = db.select().from(auditTrail)
+      .where(eq(auditTrail.action, "rolled_back"))
+      .all();
+    for (const r of rollbacks) {
+      if (touchedMemoryIds.has(r.memory_id)) mergeRollbacks += 1;
+    }
+  }
+
+  const merge_precision = mergeCompleted >= 5 && touchedMemoryIds.size > 0
+    ? Math.max(0, 1 - mergeRollbacks / touchedMemoryIds.size)
+    : null;
+
+  const mean_completion_ms = completionDurations.length
+    ? completionDurations.reduce((a, b) => a + b, 0) / completionDurations.length
+    : null;
+
+  return {
+    total_completed: completed,
+    total_abandoned: abandoned,
+    abandon_rate: completed + abandoned > 0 ? abandoned / (completed + abandoned) : 0,
+    mean_completion_ms,
+    completed_by_kind: completed_by_kind as Record<MaintenanceTaskKind, number>,
+    merge_precision,
+    merge_rollbacks: mergeRollbacks,
   };
 }
 
@@ -182,5 +262,23 @@ export function formatMetricsReport(metrics: EvalMetrics): string {
     `Corrections/session: ${metrics.correction_frequency.toFixed(1)}`,
     `Avg confidence at injection: ${metrics.avg_confidence_at_injection.toFixed(2)}`,
   ];
+  if (metrics.maintenance) {
+    const m = metrics.maintenance;
+    lines.push(``, `## Maintenance (tier-2)`);
+    lines.push(`Completed tasks:     ${m.total_completed}`);
+    lines.push(`Abandoned tasks:     ${m.total_abandoned}`);
+    lines.push(`Abandon rate:        ${pct(m.abandon_rate)}`);
+    if (m.mean_completion_ms != null) {
+      lines.push(`Mean completion:     ${(m.mean_completion_ms / 1000).toFixed(1)}s`);
+    }
+    if (m.merge_precision != null) {
+      lines.push(`Merge precision:     ${pct(m.merge_precision)} (rollbacks: ${m.merge_rollbacks})`);
+    }
+    const kinds = Object.entries(m.completed_by_kind)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k}=${n}`)
+      .join(", ");
+    if (kinds) lines.push(`By kind: ${kinds}`);
+  }
   return lines.join("\n");
 }
