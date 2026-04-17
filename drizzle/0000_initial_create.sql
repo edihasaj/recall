@@ -85,6 +85,47 @@ CREATE TABLE `feedback_events` (
 --> statement-breakpoint
 CREATE INDEX `idx_feedback_memory` ON `feedback_events` (`memory_id`);--> statement-breakpoint
 CREATE INDEX `idx_feedback_session` ON `feedback_events` (`session_id`);--> statement-breakpoint
+CREATE TABLE `history_snippet_embeddings` (
+	`snippet_id` text PRIMARY KEY NOT NULL,
+	`model` text NOT NULL,
+	`embedding_dimensions` integer NOT NULL,
+	`index_dimensions` integer NOT NULL,
+	`version` text NOT NULL,
+	`content_hash` text NOT NULL,
+	`updated_at` text NOT NULL,
+	`embedding` blob NOT NULL,
+	FOREIGN KEY (`snippet_id`) REFERENCES `history_snippets`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `idx_history_embeddings_model` ON `history_snippet_embeddings` (`model`);--> statement-breakpoint
+CREATE INDEX `idx_history_embeddings_updated` ON `history_snippet_embeddings` (`updated_at`);--> statement-breakpoint
+CREATE TABLE `history_snippets` (
+	`id` text PRIMARY KEY NOT NULL,
+	`repo` text,
+	`session_id` text,
+	`kind` text NOT NULL,
+	`text` text NOT NULL,
+	`source_activity_ids` text DEFAULT '[]' NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `idx_history_repo` ON `history_snippets` (`repo`);--> statement-breakpoint
+CREATE INDEX `idx_history_session` ON `history_snippets` (`session_id`);--> statement-breakpoint
+CREATE INDEX `idx_history_kind` ON `history_snippets` (`kind`);--> statement-breakpoint
+CREATE INDEX `idx_history_created` ON `history_snippets` (`created_at`);--> statement-breakpoint
+CREATE TABLE `hook_calls` (
+	`id` text PRIMARY KEY NOT NULL,
+	`event` text NOT NULL,
+	`agent` text NOT NULL,
+	`duration_ms` integer NOT NULL,
+	`ok` integer NOT NULL,
+	`created_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `idx_hook_calls_event` ON `hook_calls` (`event`);--> statement-breakpoint
+CREATE INDEX `idx_hook_calls_agent` ON `hook_calls` (`agent`);--> statement-breakpoint
+CREATE INDEX `idx_hook_calls_created` ON `hook_calls` (`created_at`);--> statement-breakpoint
 CREATE TABLE `implicit_signals` (
 	`id` text PRIMARY KEY NOT NULL,
 	`memory_id` text NOT NULL,
@@ -108,6 +149,7 @@ CREATE TABLE `memories` (
 	`confidence` real DEFAULT 0 NOT NULL,
 	`source` text NOT NULL,
 	`evidence` text DEFAULT '[]' NOT NULL,
+	`capture_context` text,
 	`supersedes` text,
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL,
@@ -115,6 +157,7 @@ CREATE TABLE `memories` (
 	`last_injected_at` text,
 	`injection_count` integer DEFAULT 0 NOT NULL,
 	`override_count` integer DEFAULT 0 NOT NULL,
+	`repetition_count` integer DEFAULT 0 NOT NULL,
 	`team_id` text,
 	`sync_version` integer DEFAULT 0 NOT NULL
 );
@@ -137,35 +180,44 @@ CREATE TABLE `memory_embeddings` (
 --> statement-breakpoint
 CREATE INDEX `idx_memory_embeddings_model` ON `memory_embeddings` (`model`);--> statement-breakpoint
 CREATE INDEX `idx_memory_embeddings_updated` ON `memory_embeddings` (`updated_at`);--> statement-breakpoint
-CREATE TABLE `history_snippets` (
+CREATE TABLE `memory_injections` (
 	`id` text PRIMARY KEY NOT NULL,
+	`memory_id` text NOT NULL,
+	`session_id` text NOT NULL,
 	`repo` text,
-	`session_id` text,
+	`injected_at` text NOT NULL,
+	`outcome` text,
+	`outcome_at` text,
+	FOREIGN KEY (`memory_id`) REFERENCES `memories`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `idx_memory_injections_memory` ON `memory_injections` (`memory_id`);--> statement-breakpoint
+CREATE INDEX `idx_memory_injections_session` ON `memory_injections` (`session_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `uq_memory_injections_memory_session` ON `memory_injections` (`memory_id`,`session_id`);--> statement-breakpoint
+CREATE TABLE `memory_maintenance_tasks` (
+	`id` text PRIMARY KEY NOT NULL,
 	`kind` text NOT NULL,
-	`text` text NOT NULL,
-	`source_activity_ids` text DEFAULT '[]' NOT NULL,
+	`status` text NOT NULL,
+	`priority` integer DEFAULT 0 NOT NULL,
+	`repo` text,
+	`target_key` text NOT NULL,
+	`payload` text NOT NULL,
+	`result` text,
+	`failure_reason` text,
+	`claimed_by` text,
+	`claimed_at` text,
+	`claim_expires_at` text,
+	`submitted_at` text,
+	`completed_at` text,
 	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL
+	`attempts` integer DEFAULT 0 NOT NULL,
+	`max_attempts` integer DEFAULT 3 NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `idx_history_repo` ON `history_snippets` (`repo`);--> statement-breakpoint
-CREATE INDEX `idx_history_session` ON `history_snippets` (`session_id`);--> statement-breakpoint
-CREATE INDEX `idx_history_kind` ON `history_snippets` (`kind`);--> statement-breakpoint
-CREATE INDEX `idx_history_created` ON `history_snippets` (`created_at`);--> statement-breakpoint
-CREATE TABLE `history_snippet_embeddings` (
-	`snippet_id` text PRIMARY KEY NOT NULL,
-	`model` text NOT NULL,
-	`embedding_dimensions` integer NOT NULL,
-	`index_dimensions` integer NOT NULL,
-	`version` text NOT NULL,
-	`content_hash` text NOT NULL,
-	`updated_at` text NOT NULL,
-	`embedding` blob NOT NULL,
-	FOREIGN KEY (`snippet_id`) REFERENCES `history_snippets`(`id`) ON UPDATE no action ON DELETE cascade
-);
---> statement-breakpoint
-CREATE INDEX `idx_history_embeddings_model` ON `history_snippet_embeddings` (`model`);--> statement-breakpoint
-CREATE INDEX `idx_history_embeddings_updated` ON `history_snippet_embeddings` (`updated_at`);--> statement-breakpoint
+CREATE INDEX `idx_mmt_status_priority` ON `memory_maintenance_tasks` (`status`,`priority`,`created_at`);--> statement-breakpoint
+CREATE INDEX `idx_mmt_repo_status` ON `memory_maintenance_tasks` (`repo`,`status`);--> statement-breakpoint
+CREATE INDEX `idx_mmt_claim_expires` ON `memory_maintenance_tasks` (`claim_expires_at`);--> statement-breakpoint
+CREATE INDEX `idx_mmt_kind_target` ON `memory_maintenance_tasks` (`kind`,`target_key`);--> statement-breakpoint
 CREATE TABLE `policy_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -185,21 +237,4 @@ CREATE TABLE `sync_state` (
 	`last_pull_at` text,
 	`last_push_version` integer DEFAULT 0 NOT NULL,
 	`last_pull_version` integer DEFAULT 0 NOT NULL
-);
---> statement-breakpoint
-CREATE VIRTUAL TABLE `fts_memory_index` USING fts5(
-	`memory_id` UNINDEXED,
-	`text`,
-	`repo` UNINDEXED,
-	`status` UNINDEXED,
-	`type` UNINDEXED,
-	`scope` UNINDEXED,
-	`path_scope` UNINDEXED
-);
---> statement-breakpoint
-CREATE VIRTUAL TABLE `fts_history_index` USING fts5(
-	`snippet_id` UNINDEXED,
-	`text`,
-	`repo` UNINDEXED,
-	`kind` UNINDEXED
 );

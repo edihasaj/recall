@@ -47,6 +47,7 @@ import { pathToFileURL } from "node:url";
 import { listHistorySnippets } from "./history/snippets.js";
 import { searchHistorySnippets } from "./history/retrieval.js";
 import { formatDoctorReport, getDoctorReport } from "./doctor/report.js";
+import { ensureDailyBackup, listBackups, restoreBackup } from "./backups/snapshot.js";
 import { getHookCallStats } from "./hooks/calls.js";
 import {
   getLaunchAgentInfo,
@@ -127,6 +128,57 @@ dbCmd
     if (opts.purgeModels) {
       console.log("Purged local embedding model cache.");
     }
+  });
+
+dbCmd
+  .command("backup")
+  .description("Create a dated snapshot of the local database (idempotent per day)")
+  .option("--retention <n>", "Number of snapshots to retain", (v) => Number.parseInt(v, 10))
+  .action((opts) => {
+    initDb();
+    const result = ensureDailyBackup({
+      retention: Number.isFinite(opts.retention) ? opts.retention : undefined,
+    });
+    if (result.created) console.log(`Created ${result.created}`);
+    else console.log("Today's backup already exists.");
+    console.log(`Retained: ${result.retained.length}`);
+    for (const p of result.retained) console.log(`  ${p}`);
+    if (result.removed.length) {
+      console.log(`Removed: ${result.removed.length}`);
+      for (const p of result.removed) console.log(`  ${p}`);
+    }
+  });
+
+dbCmd
+  .command("backups")
+  .description("List available database snapshots")
+  .action(() => {
+    const backups = listBackups();
+    if (backups.length === 0) {
+      console.log("No backups yet.");
+      return;
+    }
+    for (const b of backups) {
+      const mb = (b.size_bytes / 1024 / 1024).toFixed(2);
+      console.log(`${b.date}  ${mb} MB  ${b.path}`);
+    }
+  });
+
+dbCmd
+  .command("restore <date>")
+  .description("Restore the local database from a dated snapshot (YYYY-MM-DD)")
+  .option("--yes", "Confirm overwrite")
+  .action((date: string, opts) => {
+    if (!opts.yes) {
+      console.error("Refusing to restore without --yes.");
+      process.exit(1);
+    }
+    const result = restoreBackup(date);
+    if (!result.restored) {
+      console.error(`No backup found at ${result.from}`);
+      process.exit(1);
+    }
+    console.log(`Restored ${result.from} -> ${result.to}`);
   });
 
 const setupCmd = program

@@ -28,7 +28,8 @@ import {
 } from "./session/lifecycle.js";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
-import { runDestructiveResetRollout } from "./reset/rollout.js";
+import { initDb } from "./db/client.js";
+import { ensureDailyBackup } from "./backups/snapshot.js";
 import {
   handlePromptHook,
   handleSessionEndHook,
@@ -682,16 +683,12 @@ function send(
 }
 
 async function startDaemon() {
-  const rollout = await runDestructiveResetRollout({
-    logger: (message) => console.log(message),
-  });
-  db = rollout.db;
-
-  if (rollout.result.performed) {
-    console.log(
-      `[recall] destructive reset ${rollout.result.reason} prev=${rollout.result.previous_user_version} target=${rollout.result.target_user_version} repos=${rollout.result.repos_scanned} memories=${rollout.result.memories_created} embeddings=${rollout.result.embeddings_bootstrapped}`,
-    );
+  const backup = ensureDailyBackup();
+  if (backup.created) {
+    console.log(`[recall] backup created ${backup.created} (retained ${backup.retained.length})`);
   }
+
+  db = initDb();
 
   scheduleMaintenanceLoop();
 
