@@ -1563,6 +1563,95 @@ daemonCmd
     console.log(getLaunchAgentInfo(status.label));
   });
 
+// --- Tier-2 maintenance tasks ---
+
+const maintenanceCmd = program
+  .command("maintenance")
+  .description("Inspect and manage the delegated maintenance task queue");
+
+maintenanceCmd
+  .command("stats")
+  .description("Show backlog counts, completion stats, and mean latency")
+  .action(async () => {
+    const { getTaskStats } = await import("./maintenance/tasks.js");
+    const db = initDb();
+    const stats = getTaskStats(db);
+    console.log(`Total tasks:            ${stats.total}`);
+    console.log(`---`);
+    console.log(`Pending:                ${stats.by_status.pending}`);
+    console.log(`Claimed:                ${stats.by_status.claimed}`);
+    console.log(`Completed:              ${stats.by_status.completed}`);
+    console.log(`Abandoned:              ${stats.by_status.abandoned}`);
+    console.log(`---`);
+    console.log(`Last 24h completed:     ${stats.completed_last_24h}`);
+    console.log(`Last 24h abandoned:     ${stats.abandoned_last_24h}`);
+    if (stats.mean_completion_ms != null) {
+      console.log(`Mean completion:        ${(stats.mean_completion_ms / 1000).toFixed(1)}s`);
+    }
+    if (stats.pending_oldest_created_at) {
+      console.log(`Oldest pending:         ${stats.pending_oldest_created_at}`);
+    }
+    console.log(`---`);
+    console.log(`By kind:`);
+    for (const [kind, count] of Object.entries(stats.by_kind)) {
+      if (count === 0) continue;
+      console.log(`  ${kind.padEnd(22)} ${count}`);
+    }
+  });
+
+maintenanceCmd
+  .command("list")
+  .description("List tasks (default: pending)")
+  .option("-s, --status <status>", "pending|claimed|completed|abandoned", "pending")
+  .option("-k, --kind <kind>", "Filter by kind")
+  .option("-r, --repo <repo>", "Filter by repo")
+  .option("-n, --limit <n>", "Max entries", "20")
+  .action(async (opts) => {
+    const { listTasks } = await import("./maintenance/tasks.js");
+    const db = initDb();
+    const tasks = listTasks(db, {
+      status: opts.status,
+      kinds: opts.kind ? [opts.kind] : undefined,
+      repo: opts.repo,
+      limit: parseInt(opts.limit, 10),
+    });
+    if (tasks.length === 0) {
+      console.log(`No ${opts.status} tasks.`);
+      return;
+    }
+    for (const t of tasks) {
+      const age = t.created_at.slice(0, 19);
+      const prefix = t.id.slice(0, 8);
+      const repo = t.repo ?? "-";
+      const attempts = t.attempts > 0 ? ` attempts=${t.attempts}` : "";
+      const reason = t.failure_reason ? ` (${t.failure_reason.slice(0, 60)})` : "";
+      console.log(`${prefix}  p${t.priority}  ${t.kind.padEnd(20)} ${t.status.padEnd(10)} ${repo.padEnd(30)} ${age}${attempts}${reason}`);
+    }
+  });
+
+maintenanceCmd
+  .command("drop")
+  .description("Delete a task by id (or id prefix)")
+  .argument("<task-id>", "Task id or prefix")
+  .action(async (taskIdArg: string) => {
+    const { deleteTask, listTasks } = await import("./maintenance/tasks.js");
+    const db = initDb();
+    const all = listTasks(db, { limit: 10_000 });
+    const matches = all.filter((t) => t.id === taskIdArg || t.id.startsWith(taskIdArg));
+    if (matches.length === 0) {
+      console.error(`No task matching "${taskIdArg}".`);
+      process.exit(1);
+    }
+    if (matches.length > 1) {
+      console.error(`Ambiguous prefix "${taskIdArg}". Matches:`);
+      for (const t of matches) console.error(`  ${t.id}  ${t.kind}  ${t.status}`);
+      process.exit(1);
+    }
+    const ok = deleteTask(db, matches[0].id);
+    if (ok) console.log(`Dropped task ${matches[0].id}.`);
+    else console.error("Drop failed.");
+  });
+
 // --- Helpers ---
 
 function loadSyncConfig(): SyncConfig | null {
