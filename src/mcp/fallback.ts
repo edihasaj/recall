@@ -5,6 +5,7 @@ import { createActivityEvent } from "../models/activity.js";
 import { endSessionLifecycle } from "../session/lifecycle.js";
 import type { ActivitySource, FeedbackOutcome } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
+import { resolveMemoryInjectionOutcome } from "../models/memory-injections.js";
 
 export interface CaptureCorrectionInput {
   text: string;
@@ -99,6 +100,7 @@ export function signalOutcomeFallback(
     input.injected ?? true,
     input.outcome,
   );
+  resolveMemoryInjectionOutcome(db, input.memory_id, input.session_id, input.outcome);
   const memory = getMemory(db, input.memory_id);
 
   createActivityEvent(db, {

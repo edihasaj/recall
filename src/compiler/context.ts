@@ -1,5 +1,6 @@
 import { queryMemories } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
+import { recordMemoryInjections } from "../models/memory-injections.js";
 import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
@@ -17,6 +18,7 @@ export interface CompileRequest {
   repo: string;
   path?: string;
   query_text?: string;
+  session_id?: string;
   config?: Partial<CompilerConfig>;
   embedding_config?: EmbeddingConfig | null;
 }
@@ -110,6 +112,11 @@ export function compileContext(
   }
 
   const finalText = renderPack(selected, req.repo);
+  recordMemoryInjections(db, {
+    memory_ids: selected.map((memory) => memory.id),
+    session_id: req.session_id,
+    repo: req.repo,
+  });
 
   return {
     text: finalText,
@@ -239,6 +246,11 @@ export async function compileContextHybrid(
   }
 
   const finalText = renderPack(selected, req.repo);
+  recordMemoryInjections(db, {
+    memory_ids: selected.map((memory) => memory.id),
+    session_id: req.session_id,
+    repo: req.repo,
+  });
   return {
     text: finalText,
     memories_included: selected.map((m) => m.id),

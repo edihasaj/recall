@@ -165,12 +165,14 @@ const server = createServer(async (req, res) => {
         ? await compileContextHybrid(db, {
             repo,
             path: body.path,
+            session_id: body.session_id,
             query_text: body.query_text,
             config: body.config,
           })
         : compileContext(db, {
             repo,
             path: body.path,
+            session_id: body.session_id,
             config: body.config,
           });
       createActivityEvent(db, {

@@ -91,6 +91,7 @@ server.tool(
       ? await compileContextHybrid(db, {
           repo,
           path,
+          session_id,
           query_text,
           config: {
             ...(min_confidence ? { confidence_threshold: min_confidence } : {}),
@@ -100,6 +101,7 @@ server.tool(
       : compileContext(db, {
           repo,
           path,
+          session_id,
           config: min_confidence ? { confidence_threshold: min_confidence } : {},
         });
     createActivityEvent(db, {

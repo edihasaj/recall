@@ -334,22 +334,40 @@ export function recordFeedback(
     })
     .run();
 
-  // Auto-adjust confidence based on outcome
-  if (outcome === "followed") {
-    promoteMemory(db, memoryId, "passive_gain");
-  } else if (outcome === "overridden" || outcome === "contradicted") {
-    demoteMemory(db, memoryId, outcome);
-  }
+  const mem = getMemory(db, memoryId);
+  if (!mem) return id;
+
+  const delta = outcome === "followed"
+    ? 0.05
+    : outcome === "overridden"
+      ? -0.15
+      : outcome === "ignored"
+        ? -0.02
+        : -0.25;
+  const nextConfidence = Math.max(0, Math.min(1, mem.confidence + delta));
+  const nextStatus = statusFromConfidence(nextConfidence);
 
   // Update injection tracking
   if (injected) {
     db.update(memories)
       .set({
+        confidence: nextConfidence,
+        status: nextStatus === "transient" ? "candidate" : nextStatus,
+        updated_at: now,
         last_injected_at: now,
         injection_count: sql`injection_count + 1`,
-        ...(outcome === "overridden"
+        ...(outcome === "overridden" || outcome === "contradicted"
           ? { override_count: sql`override_count + 1` }
           : {}),
+      })
+      .where(eq(memories.id, memoryId))
+      .run();
+  } else {
+    db.update(memories)
+      .set({
+        confidence: nextConfidence,
+        status: nextStatus === "transient" ? "candidate" : nextStatus,
+        updated_at: now,
       })
       .where(eq(memories.id, memoryId))
       .run();
