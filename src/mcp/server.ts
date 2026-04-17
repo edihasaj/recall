@@ -51,6 +51,7 @@ const activityEventTypes = [
   "session_start",
   "session_event",
   "session_end",
+  "tool_call",
 ] as const;
 
 const server = new McpServer({
@@ -58,9 +59,60 @@ const server = new McpServer({
   version: "0.5.0",
 });
 
+function summarizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "string") {
+      out[k] = v.length > 200 ? `${v.slice(0, 200)}…(len=${v.length})` : v;
+    } else if (typeof v === "number" || typeof v === "boolean") {
+      out[k] = v;
+    } else if (Array.isArray(v)) {
+      out[k] = { array_length: v.length };
+    } else if (typeof v === "object") {
+      out[k] = { object_keys: Object.keys(v as object).length };
+    }
+  }
+  return out;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tool(name: string, description: string, schema: any, handler: (args: any, extra: any) => any) {
+  server.tool(name, description, schema, async (args: Record<string, unknown>, extra: unknown) => {
+    const start = Date.now();
+    let ok = true;
+    let errorMessage: string | undefined;
+    try {
+      return await handler(args, extra);
+    } catch (err) {
+      ok = false;
+      errorMessage = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      try {
+        createActivityEvent(db, {
+          session_id: typeof args.session_id === "string" ? args.session_id : null,
+          repo: typeof args.repo === "string" ? args.repo : null,
+          path: typeof args.path === "string" ? args.path : null,
+          source: "mcp",
+          event_type: "tool_call",
+          request: { tool: name, args: summarizeArgs(args) },
+          result: {
+            ok,
+            duration_ms: Date.now() - start,
+            ...(errorMessage ? { error: errorMessage } : {}),
+          },
+        });
+      } catch {
+        // telemetry must never break a tool call
+      }
+    }
+  });
+}
+
 // --- Tools ---
 
-server.tool(
+tool(
   "query",
   "Retrieve relevant memories for the current task context. Returns compiled, confidence-gated memories scoped to the repo and path.",
   {
@@ -150,7 +202,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "list",
   "List all memories for a repository, optionally filtered by status.",
   {
@@ -181,7 +233,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "report_correction",
   "Report a correction or rule to be learned. Accepts optional assistant/tool context and creates candidate memories from the correction text.",
   {
@@ -233,7 +285,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "capture_correction",
   "Call this right after the user corrects the assistant or states a repo rule. Captures the correction with richer context so scope inference stays accurate.",
   {
@@ -285,7 +337,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "report_review",
   "Report review feedback from a code review. Creates candidate memories from review comments.",
   {
@@ -324,7 +376,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "confirm",
   "Confirm a candidate memory, promoting it to active status.",
   {
@@ -347,7 +399,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "reject",
   "Reject a memory. It will never be injected again.",
   {
@@ -370,7 +422,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "feedback",
   "Record feedback about an injected memory — whether it was followed, overridden, ignored, or contradicted.",
   {
@@ -396,7 +448,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "signal_outcome",
   "Call this after acting on an injected memory to report whether it was followed, overridden, ignored, or contradicted in the current session.",
   {
@@ -424,7 +476,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "scan",
   "Scan a repository and bootstrap memories from config files, scripts, and instruction files.",
   {
@@ -456,7 +508,7 @@ server.tool(
 
 // --- Phase 2 tools ---
 
-server.tool(
+tool(
   "eval",
   "Get evaluation metrics for memory effectiveness.",
   {
@@ -471,7 +523,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "eval_retrieval",
   "Run retrieval eval fixtures against baseline vs hybrid retrieval.",
   {
@@ -486,7 +538,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "signal",
   "Record an implicit feedback signal (test pass/fail, file unchanged/rewritten, task accepted/rejected).",
   {
@@ -522,7 +574,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "session_end",
   "Call this when the session is ending or being cleared so Recall can record the end-of-session boundary and run follow-up session logic.",
   {
@@ -553,7 +605,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "scope",
   "Analyze the scope of a correction text. Returns inferred scope, path, and reasoning.",
   {
@@ -575,7 +627,7 @@ server.tool(
 
 // --- Phase 3 tools ---
 
-server.tool(
+tool(
   "health",
   "Get memory health scores. Returns composite health report for all memories or a single memory.",
   {
@@ -600,7 +652,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "contradictions",
   "Detect contradictions between memories. Finds conflicting rules, negations, and scope overlaps.",
   {
@@ -628,7 +680,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "prune",
   "Auto-prune stale, rejected, transient, and unhealthy memories.",
   {
@@ -645,7 +697,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "audit",
   "View audit trail for a memory or recent activity.",
   {
@@ -662,7 +714,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "rollback",
   "Rollback a memory to a previous state using an audit entry.",
   {
@@ -683,7 +735,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "policy_check",
   "Check a memory against org policies. Returns policy violations.",
   {
@@ -706,7 +758,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "approval_list",
   "List pending approval requests for an organization.",
   {
@@ -724,7 +776,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "approval_resolve",
   "Approve or deny a pending approval request.",
   {
@@ -746,7 +798,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "activity",
   "List recent activity events such as queries, compiles, scans, corrections, feedback, and signals.",
   {
@@ -770,7 +822,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "sessions",
   "List grouped activity sessions so you can review what happened in prior runs.",
   {
@@ -793,7 +845,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "quality",
   "Get the repo quality profile — maturity stage, dynamic thresholds, and quality score. Use this to understand how strict memory gating is for a repo.",
   {
@@ -823,7 +875,7 @@ const maintenanceTaskKinds = [
   "synthesize_repo",
 ] as const;
 
-server.tool(
+tool(
   "maintenance_peek",
   "Call at session start or between turns to see pending memory maintenance work that you could pick up. Returns small tasks the agent can complete in one turn. Do not call during an active user turn.",
   {
@@ -841,7 +893,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "maintenance_claim",
   "Claim a pending maintenance task so you can work on it. Only call when the user is idle — never during an active user turn. Returns the full payload and a lease; submit or release before the lease expires.",
   {
@@ -883,7 +935,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "maintenance_submit",
   "Submit the result of a claimed maintenance task. Recall validates the shape per task kind and applies the effect. Rejection bumps the task's attempt counter; after max_attempts the task is abandoned.",
   {
@@ -902,7 +954,7 @@ server.tool(
   },
 );
 
-server.tool(
+tool(
   "maintenance_release",
   "Release a previously-claimed maintenance task without submitting a result (e.g., user interrupted you, context compacted, agent can't handle this kind). Returns the task to pending so another run can pick it up.",
   {

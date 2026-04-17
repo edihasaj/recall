@@ -148,6 +148,7 @@ export const activityEvents = sqliteTable("activity_events", {
       "session_start",
       "session_event",
       "session_end",
+      "tool_call",
     ],
   }).notNull(),
   memory_ids: text("memory_ids", { mode: "json" }).notNull().default("[]"),

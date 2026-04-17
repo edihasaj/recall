@@ -189,6 +189,7 @@ export const ActivityEventType = z.enum([
   "session_start",
   "session_event",
   "session_end",
+  "tool_call",
 ]);
 export type ActivityEventType = z.infer<typeof ActivityEventType>;
 
