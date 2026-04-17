@@ -32,6 +32,7 @@ export const memories = sqliteTable("memories", {
   last_injected_at: text("last_injected_at"),
   injection_count: integer("injection_count").notNull().default(0),
   override_count: integer("override_count").notNull().default(0),
+  repetition_count: integer("repetition_count").notNull().default(0),
   // Phase 2: sync + embeddings
   team_id: text("team_id"),
   sync_version: integer("sync_version").notNull().default(0),

@@ -5,6 +5,8 @@ import {
   countDistinctCorrectionSessions,
   createMemory,
   getMemory,
+  getMemoryFeedback,
+  incrementMemoryRepetition,
   promoteMemory,
   queryMemories,
   updateMemoryCaptureContext,
@@ -14,6 +16,7 @@ import type { CaptureContext, MemoryItem, MemoryType, EvidenceEntry } from "../t
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import { inferScope } from "./scope.js";
 import type { RecentToolCall } from "../agents/types.js";
+import { recordAuditWithSnapshot } from "../audit/trail.js";
 
 // --- Detection patterns ---
 
@@ -175,9 +178,13 @@ export async function processCorrection(
     );
 
     if (duplicate) {
+      const before = getMemory(db, duplicate.id);
       appendEvidence(db, duplicate.id, evidence);
       if (captureContext) {
         updateMemoryCaptureContext(db, duplicate.id, captureContext);
+      }
+      if (before && !before.evidence.some((entry) => entry.type === "session_correction" && entry.session === ctx.sessionId)) {
+        incrementMemoryRepetition(db, duplicate.id);
       }
       const updated = getMemory(db, duplicate.id);
 
@@ -187,6 +194,16 @@ export async function processCorrection(
         countDistinctCorrectionSessions(updated) >= profile.repeat_sessions_required
       ) {
         promoteMemory(db, duplicate.id, "repeat_correction");
+        const after = getMemory(db, duplicate.id);
+        recordAuditWithSnapshot(
+          db,
+          duplicate.id,
+          "promoted",
+          "system",
+          `repetition:${after?.repetition_count ?? updated.repetition_count}`,
+          before ?? null,
+          after ?? null,
+        );
       }
 
       ids.push(duplicate.id);
@@ -222,10 +239,44 @@ export async function processCorrection(
     };
 
     const id = createMemory(db, input);
+    maybePromoteGroupCandidate(db, id);
     ids.push(id);
   }
 
   return ids;
+}
+
+function maybePromoteGroupCandidate(
+  db: RecallDb,
+  candidateId: string,
+) {
+  const candidate = getMemory(db, candidateId);
+  if (!candidate || candidate.status !== "candidate") return;
+
+  const followedCount = queryMemories(db, {
+    repo: candidate.repo ?? undefined,
+    type: candidate.type,
+    scope: candidate.scope,
+  })
+    .filter((memory) => memory.id !== candidate.id)
+    .reduce((total, memory) => (
+      total + getMemoryFeedback(db, memory.id).filter((entry) => entry.outcome === "followed").length
+    ), 0);
+
+  if (followedCount < 3) return;
+
+  const before = candidate;
+  promoteMemory(db, candidate.id, "repeat_correction");
+  const after = getMemory(db, candidate.id);
+  recordAuditWithSnapshot(
+    db,
+    candidate.id,
+    "promoted",
+    "system",
+    `repetition:group_followed:${followedCount}`,
+    before,
+    after ?? null,
+  );
 }
 
 function buildCaptureContext(ctx: CorrectionContext): CaptureContext | null {
