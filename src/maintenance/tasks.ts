@@ -1,5 +1,6 @@
 import { and, eq, inArray, lt, or, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { RecallDb } from "../db/client.js";
 import { memoryMaintenanceTasks, memories, historySnippets } from "../db/schema.js";
 import type {
@@ -343,3 +344,242 @@ export function enqueueMaintenanceTasks(
 }
 
 export { DEFAULT_LEASE_SECONDS };
+
+// --- Peek / Claim / Submit / Release ---
+
+const MemoryScope = z.enum(["session", "path", "repo", "team"]);
+
+const RefineCandidateResult = z.object({
+  refined_text: z.string().min(1).max(4000),
+  scope: MemoryScope,
+  path_scope: z.string().max(512).nullable().optional(),
+  rationale: z.string().max(2000).optional(),
+});
+
+const SummarizeHistoryResult = z.object({
+  summary_text: z.string().min(1).max(4000),
+  tags: z.array(z.string().max(64)).max(20).optional(),
+});
+
+const MergeDuplicatesResult = z.object({
+  winner_text: z.string().min(1).max(4000),
+  winner_scope: MemoryScope,
+  winner_path_scope: z.string().max(512).nullable().optional(),
+  merged_ids: z.array(z.string().uuid()).min(1),
+  rationale: z.string().max(2000).optional(),
+});
+
+const SummarizeSessionResult = z.object({
+  summary_text: z.string().min(1).max(4000),
+});
+
+const SynthesizeRepoResult = z.object({
+  summary_text: z.string().min(1).max(8000),
+});
+
+const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
+  refine_candidate: RefineCandidateResult,
+  summarize_history: SummarizeHistoryResult,
+  merge_duplicates: MergeDuplicatesResult,
+  summarize_session: SummarizeSessionResult,
+  synthesize_repo: SynthesizeRepoResult,
+};
+
+export type RefineCandidateResult = z.infer<typeof RefineCandidateResult>;
+export type SummarizeHistoryResult = z.infer<typeof SummarizeHistoryResult>;
+export type MergeDuplicatesResult = z.infer<typeof MergeDuplicatesResult>;
+export type SummarizeSessionResult = z.infer<typeof SummarizeSessionResult>;
+export type SynthesizeRepoResult = z.infer<typeof SynthesizeRepoResult>;
+
+export interface PeekOptions {
+  repo?: string;
+  kinds?: MaintenanceTaskKind[];
+  limit?: number;
+}
+
+export interface PeekedTask {
+  id: string;
+  kind: MaintenanceTaskKind;
+  priority: number;
+  repo: string | null;
+  created_at: string;
+  payload_summary: Record<string, unknown>;
+}
+
+function payloadSummary(payload: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (typeof v === "string") {
+      out[k] = v.length > 160 ? `${v.slice(0, 157)}...` : v;
+    } else if (Array.isArray(v)) {
+      out[k] = `array(${v.length})`;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+export function peekTasks(db: RecallDb, options: PeekOptions = {}): PeekedTask[] {
+  const tasks = listTasks(db, {
+    status: "pending",
+    repo: options.repo,
+    kinds: options.kinds,
+    limit: Math.min(options.limit ?? 3, 10),
+  });
+  return tasks.map((t) => ({
+    id: t.id,
+    kind: t.kind,
+    priority: t.priority,
+    repo: t.repo,
+    created_at: t.created_at,
+    payload_summary: payloadSummary(t.payload),
+  }));
+}
+
+export interface ClaimResult {
+  task: MaintenanceTask;
+  lease_expires_at: string;
+}
+
+export class TaskClaimConflictError extends Error {
+  constructor(public readonly taskId: string, public readonly reason: "not-pending" | "not-found") {
+    super(`Task ${taskId} cannot be claimed: ${reason}`);
+    this.name = "TaskClaimConflictError";
+  }
+}
+
+export function claimTask(
+  db: RecallDb,
+  taskId: string,
+  agent: string,
+  leaseSeconds: number = DEFAULT_LEASE_SECONDS,
+): ClaimResult {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + leaseSeconds * 1000).toISOString();
+  const nowIso = now.toISOString();
+
+  const result = db.update(memoryMaintenanceTasks)
+    .set({
+      status: "claimed",
+      claimed_by: agent,
+      claimed_at: nowIso,
+      claim_expires_at: expiresAt,
+    })
+    .where(and(
+      eq(memoryMaintenanceTasks.id, taskId),
+      eq(memoryMaintenanceTasks.status, "pending"),
+    ))
+    .run();
+
+  if (result.changes === 0) {
+    const existing = getTask(db, taskId);
+    throw new TaskClaimConflictError(taskId, existing ? "not-pending" : "not-found");
+  }
+
+  const task = getTask(db, taskId)!;
+  return { task, lease_expires_at: expiresAt };
+}
+
+export interface SubmitOk {
+  status: "applied";
+  task_id: string;
+  kind: MaintenanceTaskKind;
+}
+
+export interface SubmitRejected {
+  status: "rejected";
+  task_id: string;
+  reason: string;
+  attempts: number;
+  abandoned: boolean;
+}
+
+export type SubmitResult = SubmitOk | SubmitRejected;
+
+export function submitTask(
+  db: RecallDb,
+  taskId: string,
+  agent: string,
+  result: unknown,
+): SubmitResult {
+  const existing = getTask(db, taskId);
+  if (!existing) return { status: "rejected", task_id: taskId, reason: "not-found", attempts: 0, abandoned: false };
+  if (existing.status !== "claimed") {
+    return { status: "rejected", task_id: taskId, reason: `not-claimed (status=${existing.status})`, attempts: existing.attempts, abandoned: false };
+  }
+  if (existing.claimed_by !== agent) {
+    return { status: "rejected", task_id: taskId, reason: "not-claim-holder", attempts: existing.attempts, abandoned: false };
+  }
+
+  const schema = RESULT_SCHEMAS[existing.kind];
+  const parsed = schema.safeParse(result);
+  if (!parsed.success) {
+    const attempts = existing.attempts + 1;
+    const abandoned = attempts >= existing.max_attempts;
+    const now = new Date().toISOString();
+    db.update(memoryMaintenanceTasks)
+      .set({
+        status: abandoned ? "abandoned" : "pending",
+        claimed_by: null,
+        claimed_at: null,
+        claim_expires_at: null,
+        attempts,
+        failure_reason: parsed.error.issues.map((i) => `${i.path.join(".")}:${i.message}`).join("; ").slice(0, 500),
+        completed_at: abandoned ? now : null,
+      })
+      .where(eq(memoryMaintenanceTasks.id, taskId))
+      .run();
+    return {
+      status: "rejected",
+      task_id: taskId,
+      reason: `validation-failed: ${parsed.error.issues[0]?.message ?? "shape mismatch"}`,
+      attempts,
+      abandoned,
+    };
+  }
+
+  // Phase 2: accept and mark completed without applying effects. Phase 3 will
+  // insert effect application before this status flip.
+  const now = new Date().toISOString();
+  db.update(memoryMaintenanceTasks)
+    .set({
+      status: "completed",
+      result: parsed.data as any,
+      submitted_at: now,
+      completed_at: now,
+      failure_reason: null,
+    })
+    .where(eq(memoryMaintenanceTasks.id, taskId))
+    .run();
+
+  return { status: "applied", task_id: taskId, kind: existing.kind };
+}
+
+export interface ReleaseResult {
+  status: "released" | "not-claimed" | "not-found";
+}
+
+export function releaseTask(
+  db: RecallDb,
+  taskId: string,
+  agent: string,
+  reason?: string,
+): ReleaseResult {
+  const existing = getTask(db, taskId);
+  if (!existing) return { status: "not-found" };
+  if (existing.status !== "claimed" || existing.claimed_by !== agent) {
+    return { status: "not-claimed" };
+  }
+  db.update(memoryMaintenanceTasks)
+    .set({
+      status: "pending",
+      claimed_by: null,
+      claimed_at: null,
+      claim_expires_at: null,
+      failure_reason: reason ? reason.slice(0, 500) : null,
+    })
+    .where(eq(memoryMaintenanceTasks.id, taskId))
+    .run();
+  return { status: "released" };
+}

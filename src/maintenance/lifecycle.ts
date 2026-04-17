@@ -22,6 +22,11 @@ import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { removeHistoryFtsRow, syncHistoryFtsIndex } from "../vector/sqlite-fts-history.js";
 import { removeHistoryVecRow } from "../vector/sqlite-vec-history.js";
+import {
+  DEFAULT_ENQUEUE_CONFIG,
+  enqueueMaintenanceTasks,
+  type EnqueueConfig,
+} from "./tasks.js";
 
 export interface MaintenanceConfig {
   enabled: boolean;
@@ -38,6 +43,8 @@ export interface MaintenanceConfig {
   sqlite_vacuum_enabled: boolean;
   sqlite_vacuum_min_free_pages: number;
   sqlite_vacuum_min_free_ratio: number;
+  llm_tasks_enabled: boolean;
+  llm_task_config: EnqueueConfig;
 }
 
 export interface MaintenanceResult {
@@ -68,6 +75,9 @@ export interface MaintenanceResult {
   sqlite_vacuum_ran: boolean;
   sqlite_page_count: number;
   sqlite_freelist_count: number;
+  maintenance_tasks_enqueued: number;
+  maintenance_leases_swept: number;
+  maintenance_tasks_dropped: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -88,6 +98,13 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     sqlite_vacuum_enabled: process.env.RECALL_SQLITE_VACUUM_ENABLED === "true",
     sqlite_vacuum_min_free_pages: parseInt(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_PAGES ?? "100", 10),
     sqlite_vacuum_min_free_ratio: parseFloat(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_RATIO ?? "0.1"),
+    llm_tasks_enabled: process.env.RECALL_MAINTENANCE_LLM_DISABLED !== "true",
+    llm_task_config: {
+      max_pending: parseInt(process.env.RECALL_MAINTENANCE_MAX_PENDING ?? String(DEFAULT_ENQUEUE_CONFIG.max_pending), 10),
+      max_per_kind: parseInt(process.env.RECALL_MAINTENANCE_MAX_PER_KIND ?? String(DEFAULT_ENQUEUE_CONFIG.max_per_kind), 10),
+      refine_min_repetition: parseInt(process.env.RECALL_MAINTENANCE_REFINE_MIN_REPETITION ?? String(DEFAULT_ENQUEUE_CONFIG.refine_min_repetition), 10),
+      summary_max_age_days: parseInt(process.env.RECALL_MAINTENANCE_SUMMARY_MAX_AGE_DAYS ?? String(DEFAULT_ENQUEUE_CONFIG.summary_max_age_days), 10),
+    },
   };
 }
 
@@ -149,6 +166,10 @@ export async function runMaintenanceCycle(
     }
   }
 
+  const tasks = config.llm_tasks_enabled
+    ? enqueueMaintenanceTasks(db, config.llm_task_config)
+    : { tasks_enqueued: 0, per_kind: {}, expired_leases_swept: 0, dropped_over_cap: 0 };
+
   return {
     prune_total: prune.total,
     stale_rejected: prune.stale_rejected.length,
@@ -177,6 +198,9 @@ export async function runMaintenanceCycle(
     sqlite_vacuum_ran: sqliteMaintenance.vacuum_ran,
     sqlite_page_count: sqliteMaintenance.page_count,
     sqlite_freelist_count: sqliteMaintenance.freelist_count,
+    maintenance_tasks_enqueued: tasks.tasks_enqueued,
+    maintenance_leases_swept: tasks.expired_leases_swept,
+    maintenance_tasks_dropped: tasks.dropped_over_cap,
   };
 }
 
