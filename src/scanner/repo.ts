@@ -7,6 +7,7 @@ import { memories } from "../db/schema.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { createMemory, queryMemories, statusFromConfidence, type CreateMemoryInput } from "../models/memory.js";
 import { getRepoQualityProfile, seedScannedConfidence } from "../repo/quality.js";
+import { evaluateScannedMemory } from "./signal.js";
 
 interface ScanResult {
   candidates: CreateMemoryInput[];
@@ -49,14 +50,28 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
   const ids: string[] = [];
 
   for (const candidate of candidates) {
-    const seededConfidence = seedScannedConfidence(
-      candidate.confidence ?? 0.5,
-      profile,
-    );
+    const evaluated = evaluateScannedMemory({
+      text: candidate.text,
+      type: candidate.type,
+      source: candidate.source,
+      confidence: seedScannedConfidence(
+        candidate.confidence ?? 0.5,
+        profile,
+      ),
+    });
+    if (evaluated.action === "reject") {
+      continue;
+    }
+
+    const seededConfidence = evaluated.confidence;
+    const normalizedCandidate = {
+      ...candidate,
+      text: evaluated.text,
+    };
     const duplicate = existing.find((mem) =>
-      mem.type === candidate.type &&
-      mem.source === candidate.source &&
-      mem.text === candidate.text
+      mem.type === normalizedCandidate.type &&
+      mem.source === normalizedCandidate.source &&
+      mem.text === normalizedCandidate.text
     );
     if (duplicate) {
       if (duplicate.confidence < seededConfidence) {
@@ -64,6 +79,7 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
           .set({
             confidence: seededConfidence,
             status: statusFromConfidence(seededConfidence),
+            text: normalizedCandidate.text,
             updated_at: new Date().toISOString(),
           })
           .where(eq(memories.id, duplicate.id))
@@ -74,8 +90,8 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
       continue;
     }
 
-    candidate.confidence = seededConfidence;
-    const id = createMemory(db, candidate);
+    normalizedCandidate.confidence = seededConfidence;
+    const id = createMemory(db, normalizedCandidate);
     ids.push(id);
     existing.push({
       ...queryMemories(db, { repo }).find((mem) => mem.id === id)!,
@@ -103,15 +119,11 @@ function scanPackageJson(
     // Package manager detection
     if (pkg.packageManager) {
       const pm = pkg.packageManager.split("@")[0];
-      results.push({
-        type: "rule",
-        text: `Use ${pm} as the package manager (lockfile: ${pm === "pnpm" ? "pnpm-lock.yaml" : pm === "yarn" ? "yarn.lock" : "package-lock.json"})`,
-        scope: "repo",
+      results.push(makeCommand(
+        `Use ${pm} as the package manager (lockfile: ${pm === "pnpm" ? "pnpm-lock.yaml" : pm === "yarn" ? "yarn.lock" : "package-lock.json"})`,
         repo,
-        source: "config_parse",
-        confidence: 0.7,
-        evidence: [{ type: "repo_scan", file: "package.json", timestamp: now() }],
-      });
+        "package.json",
+      ));
     } else if (existsSync(join(repoPath, "pnpm-lock.yaml"))) {
       results.push(makeCommand("Use pnpm as the package manager", repo, "package.json"));
     } else if (existsSync(join(repoPath, "yarn.lock"))) {

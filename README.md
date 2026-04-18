@@ -54,6 +54,7 @@ recall publish ~/Projects/some-repo
 
 If an unseen repo is later queried through the daemon or MCP, Recall now tries a lazy one-time bootstrap by resolving the local clone and scanning just that repo.
 Recall can also publish repo-local context into `.recall/context.md`, but the primary agent integration should be Recall MCP.
+Bootstrap now keeps operational commands hot and leaves softer scan facts as candidates or drops them during maintenance cleanup.
 
 Inspect quality / health / injection pack:
 

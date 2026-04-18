@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
 import { memories } from "../src/db/schema.js";
@@ -16,6 +16,7 @@ import { getRepoQualityProfile, seedCandidateConfidence, seedScannedConfidence }
 import { processCorrection, processReviewFeedback } from "../src/capture/correction.js";
 import { CONFIDENCE } from "../src/types.js";
 import { scanAndStore } from "../src/scanner/repo.js";
+import { reconcileScannedMemories } from "../src/maintenance/lifecycle.js";
 
 let dbCounter = 0;
 
@@ -205,7 +206,7 @@ describe("seedCandidateConfidence", () => {
 });
 
 describe("seedScannedConfidence", () => {
-  it("keeps trusted scan memories active in cold repos", () => {
+  it("still allows trusted operational scan commands to start active in cold repos", () => {
     const profile = {
       stage: "cold" as const,
       score: 0.35,
@@ -284,7 +285,7 @@ describe("review feedback maturity gate", () => {
 });
 
 describe("scan bootstrap behavior", () => {
-  it("keeps config-based commands active on first cold scan", () => {
+  it("keeps operational commands active but leaves softer scan facts out of the active set", () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({
       name: "demo",
@@ -293,14 +294,27 @@ describe("scan bootstrap behavior", () => {
         build: "tsup",
       },
     }, null, 2));
+    const ghDir = join(dir, ".github", "workflows");
+    mkdirSync(ghDir, { recursive: true });
+    writeFileSync(join(ghDir, "ci.yml"), "name: ci");
+    writeFileSync(join(dir, "AGENTS.md"), [
+      "# Rules",
+      "",
+      "What We Do Not Build",
+      "1. We do not ship broken deploys.",
+    ].join("\n"));
     const db = initStandaloneDb(join(dir, "recall.db"));
 
     const ids = scanAndStore(db, dir);
-    const memories = ids.map((id) => getMemory(db, id)!);
-    const commands = memories.filter((m) => m.type === "command");
+    const scanned = ids.map((id) => getMemory(db, id)!);
+    const commands = scanned.filter((m) => m.type === "command");
+    const rules = scanned.filter((m) => m.type === "rule");
 
     expect(commands.length).toBeGreaterThan(0);
     expect(commands.every((m) => m.status === "active")).toBe(true);
+    expect(rules.every((m) => m.status === "candidate")).toBe(true);
+    expect(scanned.some((m) => m.text.startsWith("CI:"))).toBe(false);
+    expect(scanned.some((m) => m.text === "What We Do Not Build")).toBe(false);
   });
 
   it("does not duplicate identical memories on repeated scan", () => {
@@ -340,5 +354,72 @@ describe("scan bootstrap behavior", () => {
 
     expect(upgraded.status).toBe("active");
     expect(upgraded.confidence).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("maintenance self-heals older noisy scan memories", () => {
+    const db = freshDb();
+    const ciId = createMemory(db, {
+      type: "gotcha",
+      text: "CI: GitHub Actions (check .github/workflows/ for pipeline config)",
+      scope: "repo",
+      repo: "test/repo",
+      source: "repo_scan",
+      confidence: 0.7,
+    });
+    const reqId = createMemory(db, {
+      type: "rule",
+      text: "REQ-STT-001:** System must support creating STT sessions with unique identifiers",
+      scope: "repo",
+      repo: "test/repo",
+      source: "repo_scan",
+      confidence: 0.7,
+    });
+    const lintId = createMemory(db, {
+      type: "rule",
+      text: "Linting/formatting: ESLint (flat config)",
+      scope: "repo",
+      repo: "test/repo",
+      source: "config_parse",
+      confidence: 0.7,
+    });
+    const ruleId = createMemory(db, {
+      type: "rule",
+      text: "1. Strong typing**: Always prefer Pydantic models",
+      scope: "repo",
+      repo: "test/repo",
+      source: "repo_scan",
+      confidence: 0.7,
+    });
+
+    const result = reconcileScannedMemories(db);
+
+    expect(result.rejected).toBe(2);
+    expect(result.demoted).toBe(2);
+    expect(result.normalized).toBe(1);
+    expect(getMemory(db, ciId)!.status).toBe("rejected");
+    expect(getMemory(db, reqId)!.status).toBe("rejected");
+    expect(getMemory(db, lintId)!.status).toBe("candidate");
+    expect(getMemory(db, lintId)!.confidence).toBeLessThan(CONFIDENCE.ACTIVE_MIN);
+    expect(getMemory(db, ruleId)!.status).toBe("candidate");
+    expect(getMemory(db, ruleId)!.text).toBe("Strong typing: Always prefer Pydantic models");
+  });
+
+  it("maintenance preserves old package-manager scan memories as active even if they were stored as rules", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm as the package manager (lockfile: pnpm-lock.yaml)",
+      scope: "repo",
+      repo: "test/repo",
+      source: "config_parse",
+      confidence: 0.7,
+    });
+
+    const result = reconcileScannedMemories(db);
+
+    expect(result.demoted).toBe(0);
+    expect(result.rejected).toBe(0);
+    expect(getMemory(db, id)!.status).toBe("active");
+    expect(getMemory(db, id)!.confidence).toBeGreaterThanOrEqual(CONFIDENCE.ACTIVE_MIN);
   });
 });
