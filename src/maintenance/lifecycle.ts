@@ -1,6 +1,6 @@
 import { eq, lt } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { activityEvents, feedbackEvents, historySnippets, implicitSignals } from "../db/schema.js";
+import { activityEvents, feedbackEvents, historySnippets, implicitSignals, memories } from "../db/schema.js";
 import {
   bootstrapEmbeddings,
   loadEmbeddingConfigFromEnv,
@@ -17,11 +17,13 @@ import {
 import { bootstrapHistoryEmbeddings, verifyHistoryEmbeddings } from "../history/retrieval.js";
 import { pruneMemories } from "../pruning/pruner.js";
 import { listActivityEvents } from "../models/activity.js";
-import { getMemory, promoteMemory, queryMemories } from "../models/memory.js";
+import { getMemory, promoteMemory, queryMemories, rejectMemory, statusFromConfidence } from "../models/memory.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { removeHistoryFtsRow, syncHistoryFtsIndex } from "../vector/sqlite-fts-history.js";
 import { removeHistoryVecRow } from "../vector/sqlite-vec-history.js";
+import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
+import { evaluateScannedMemory } from "../scanner/signal.js";
 import {
   DEFAULT_ENQUEUE_CONFIG,
   enqueueMaintenanceTasks,
@@ -53,6 +55,9 @@ export interface MaintenanceResult {
   rejected_pruned: number;
   transient_pruned: number;
   unhealthy_demoted: number;
+  scanned_memories_normalized: number;
+  scanned_memories_demoted: number;
+  scanned_memories_rejected: number;
   activity_pruned: number;
   feedback_pruned: number;
   signals_pruned: number;
@@ -120,6 +125,7 @@ export async function runMaintenanceCycle(
     stale_days: config.stale_days,
     min_health_score: config.min_health_score,
   });
+  const scannedMemoryCleanup = reconcileScannedMemories(db);
   const candidates_promoted = promoteRepetitionCandidates(db);
 
   const activity_pruned = pruneOldActivityEvents(db, config.activity_retention_days);
@@ -180,6 +186,9 @@ export async function runMaintenanceCycle(
     rejected_pruned: prune.rejected_pruned.length,
     transient_pruned: prune.transient_pruned.length,
     unhealthy_demoted: prune.unhealthy_demoted.length,
+    scanned_memories_normalized: scannedMemoryCleanup.normalized,
+    scanned_memories_demoted: scannedMemoryCleanup.demoted,
+    scanned_memories_rejected: scannedMemoryCleanup.rejected,
     activity_pruned,
     feedback_pruned,
     signals_pruned,
@@ -235,6 +244,67 @@ export function promoteRepetitionCandidates(db: RecallDb): number {
   }
 
   return promoted;
+}
+
+export function reconcileScannedMemories(db: RecallDb): {
+  normalized: number;
+  demoted: number;
+  rejected: number;
+} {
+  const scanned = queryMemories(db, {})
+    .filter((memory) =>
+      memory.status !== "rejected" &&
+      (memory.source === "repo_scan" || memory.source === "config_parse")
+    );
+
+  let normalized = 0;
+  let demoted = 0;
+  let rejected = 0;
+
+  for (const memory of scanned) {
+    const evaluated = evaluateScannedMemory({
+      text: memory.text,
+      type: memory.type,
+      source: memory.source,
+      confidence: memory.confidence,
+    });
+
+    if (evaluated.action === "reject") {
+      if (memory.status !== "rejected") {
+        rejectMemory(db, memory.id);
+        rejected += 1;
+      }
+      continue;
+    }
+
+    const nextStatus = statusFromConfidence(evaluated.confidence);
+    const updates: Partial<typeof memories.$inferInsert> = {};
+
+    if (memory.text !== evaluated.text) {
+      updates.text = evaluated.text;
+      normalized += 1;
+    }
+    if (memory.confidence !== evaluated.confidence) {
+      updates.confidence = evaluated.confidence;
+    }
+    if (memory.status !== nextStatus) {
+      updates.status = nextStatus;
+      if (memory.status === "active" && nextStatus === "candidate") {
+        demoted += 1;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) continue;
+
+    updates.updated_at = new Date().toISOString();
+    db.update(memories)
+      .set(updates)
+      .where(eq(memories.id, memory.id))
+      .run();
+    queueMemoryEmbeddingSync(db, memory.id);
+  }
+
+  return { normalized, demoted, rejected };
 }
 
 export function runSqliteMaintenance(

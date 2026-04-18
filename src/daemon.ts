@@ -28,6 +28,7 @@ import {
 } from "./session/lifecycle.js";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
+import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
 import {
@@ -69,28 +70,8 @@ function scheduleMaintenanceLoop() {
     maintenanceRunning = true;
     try {
       const result = await runMaintenanceCycle(db, maintenanceConfig);
-      const changed =
-        result.prune_total +
-        result.activity_pruned +
-        result.feedback_pruned +
-        result.signals_pruned +
-        result.embeddings_refreshed +
-        result.vector_rows_rebuilt +
-        result.lexical_rows_rebuilt +
-        result.history_snippets_created +
-        result.history_embeddings_refreshed;
-
-      if (
-        changed > 0 ||
-        result.vector_drift !== 0 ||
-        result.lexical_drift !== 0 ||
-        result.embedding_stale > 0 ||
-        result.history_vector_drift !== 0 ||
-        result.history_lexical_drift !== 0
-      ) {
-        console.log(
-          `[recall] maintenance prune=${result.prune_total} activity=${result.activity_pruned} feedback=${result.feedback_pruned} signals=${result.signals_pruned} refreshed=${result.embeddings_refreshed} rebuilt(vec=${result.vector_rows_rebuilt},fts=${result.lexical_rows_rebuilt}) drift(vec=${result.vector_drift},fts=${result.lexical_drift}) stale=${result.embedding_stale} history(created=${result.history_snippets_created},refreshed=${result.history_embeddings_refreshed},drift_vec=${result.history_vector_drift},drift_fts=${result.history_lexical_drift})`,
-        );
+      if (shouldLogMaintenance(result)) {
+        console.log(formatMaintenanceSummary(result));
       }
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);

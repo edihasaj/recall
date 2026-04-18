@@ -180,8 +180,10 @@ Repo scan reads:
 
 Trusted scan facts now bootstrap better than before:
 
-- config-based commands can start active on cold repos
+- operational config-based commands can start active on cold repos
+- softer scan facts stay candidate or get dropped if they look generic
 - repeated scans dedupe and upgrade stale scan-created memories
+- maintenance re-checks older scan-created memories and self-heals noisy rows
 
 ```mermaid
 flowchart LR
