@@ -504,6 +504,64 @@ describe("compiler", () => {
     expect(result.text).toContain("Run pytest -q");
   });
 
+  it("hybrid compile returns only the top two relevant query matches", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+    installMockEmbeddingProvider((text) => {
+      const normalized = text.toLowerCase();
+      if (normalized.includes("pytest -q")) return [1, 0, 0];
+      if (normalized.includes("pytest locally")) return [0.92, 0, 0];
+      if (normalized.includes("pytest smoke")) return [0.85, 0, 0];
+      return [0, 0, 1];
+    });
+
+    createMemory(db, {
+      type: "command",
+      text: "Run pytest -q",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    createMemory(db, {
+      type: "decision",
+      text: "Use pytest locally before pushing changes",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    createMemory(db, {
+      type: "gotcha",
+      text: "Pytest smoke runs miss the slow suite",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "Use pnpm as package manager",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.99,
+    });
+
+    await flushEmbeddingJobs();
+
+    const result = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "pytest -q",
+    });
+
+    expect(result.memories_included).toHaveLength(2);
+    expect(result.text).toContain("Run pytest -q");
+    expect(result.text).not.toContain("Use pnpm as package manager");
+  });
+
   it("keeps candidate memories opt-in for hybrid compile", async () => {
     const db = freshDb();
     delete process.env.RECALL_EMBEDDINGS_DISABLED;

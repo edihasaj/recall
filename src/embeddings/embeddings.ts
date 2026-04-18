@@ -29,6 +29,7 @@ type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
 
 const EMBEDDING_BATCH_SIZE = 100;
+const MIN_HYBRID_VECTOR_SIMILARITY = 0.7;
 const pendingEmbeddingJobs = new Set<Promise<void>>();
 const EMBEDDING_DEFAULTS = {
   nomic: {
@@ -457,6 +458,9 @@ export async function hybridSearch(
   lexical_score: number;
 }>> {
   const limit = options.limit ?? 10;
+  const minSimilarity = config
+    ? Math.max(config.similarity_threshold, MIN_HYBRID_VECTOR_SIMILARITY)
+    : null;
 
   const lexicalMatches = searchMemoryFtsIndex(db, query, {
     repo: options.repo,
@@ -503,6 +507,7 @@ export async function hybridSearch(
     if (!row || !shouldEmbedMemory(row)) continue;
 
     const similarity = Math.max(0, 1 - match.distance);
+    if (minSimilarity !== null && similarity < minSimilarity) continue;
     const existing = merged.get(match.memory_id);
     if (existing) {
       existing.similarity = similarity;

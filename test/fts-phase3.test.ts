@@ -102,4 +102,41 @@ describe("phase 3 lexical index", () => {
     expect(results[0].lexical_score).toBeGreaterThan(results[1].lexical_score);
     expect(results[0].score).toBeGreaterThan(results[1].score);
   });
+
+  it("drops low-similarity vector matches from hybrid search", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    installEmbeddingMock();
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    createMemory(db, {
+      type: "command",
+      text: "Run pytest -q",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "Use pnpm as package manager",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.99,
+    });
+
+    await flushEmbeddingJobs();
+
+    const config = loadEmbeddingConfigFromEnv();
+    const results = await hybridSearch(db, "pytest -q", config, {
+      repo: "test/repo",
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].memory.text).toBe("Run pytest -q");
+    expect(results[0].similarity).toBeGreaterThanOrEqual(0.8);
+  });
 });
