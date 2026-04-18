@@ -13,6 +13,8 @@ const DEFAULT_CONFIG: CompilerConfig = {
   token_budget: 2000,
   include_candidates: false,
 };
+const QUERY_RESULT_LIMIT = 2;
+const QUERY_VECTOR_RELEVANCE_FLOOR = 0.7;
 
 export interface CompileRequest {
   repo: string;
@@ -135,6 +137,7 @@ export async function compileContextHybrid(
   db: RecallDb,
   req: CompileRequest,
 ): Promise<CompiledContext> {
+  const embeddingConfig = req.embedding_config ?? loadEmbeddingConfigFromEnv();
   const profile = getRepoQualityProfile(db, req.repo);
   const config = {
     ...DEFAULT_CONFIG,
@@ -177,9 +180,9 @@ export async function compileContextHybrid(
   }
 
   const retrieval = req.query_text
-    ? await hybridSearch(db, req.query_text, req.embedding_config ?? loadEmbeddingConfigFromEnv(), {
+    ? await hybridSearch(db, req.query_text, embeddingConfig, {
         repo: req.repo,
-        limit: Math.max(50, passing.length * 2),
+        limit: QUERY_RESULT_LIMIT,
       })
     : [];
 
@@ -189,8 +192,16 @@ export async function compileContextHybrid(
 
   const ranked = passing
     .filter((memory) => {
+      const retrievalItem = retrievalById.get(memory.id);
+      if (req.query_text) {
+        if (!retrievalItem) return false;
+        if (embeddingConfig && retrievalItem.similarity < QUERY_VECTOR_RELEVANCE_FLOOR) {
+          return false;
+        }
+        return true;
+      }
       if (memory.status !== "candidate") return true;
-      const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
+      const retrievalScore = retrievalItem?.score ?? 0;
       return retrievalScore >= 0.2;
     })
     .map((memory) => {
