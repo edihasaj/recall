@@ -1837,6 +1837,34 @@ credentialsCmd
   });
 
 maintenanceCmd
+  .command("dispatch")
+  .description("Run the daemon-owned dispatcher once against pending maintenance tasks (requires a configured LLM API key)")
+  .option("--provider <provider>", "openai|anthropic (defaults to whichever has a key)")
+  .option("--model <model>", "Model override")
+  .option("--kind <kind>", "Restrict to a single task kind (repeatable)", (value: string, acc: string[] = []) => [...acc, value], [] as string[])
+  .option("--repo <repo>", "Restrict to a single repo")
+  .option("--max <n>", "Max tasks to run this round", "5")
+  .option("--dry-run", "Show which tasks would be dispatched; do not call the LLM")
+  .option("--json", "Emit the raw JSON report")
+  .action(async (opts) => {
+    const { dispatchPendingTasks, formatDispatchReport } = await import("./maintenance/dispatcher.js");
+    const db = initDb();
+    const report = await dispatchPendingTasks(db, {
+      provider: opts.provider,
+      model: opts.model,
+      kinds: opts.kind.length > 0 ? opts.kind : undefined,
+      repo: opts.repo,
+      maxTasks: parseInt(opts.max, 10),
+      dryRun: Boolean(opts.dryRun),
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    console.log(formatDispatchReport(report));
+  });
+
+maintenanceCmd
   .command("usage")
   .description("Summarize LLM API usage (tokens, cost) across recent maintenance runs")
   .option("--since <iso>", "Window start (default: last 30 days)")
