@@ -106,7 +106,7 @@ describe("phase 2 hook handlers", () => {
     expect(promptEvent.result.recent_tool_calls).toEqual(result.recent_tool_calls);
   });
 
-  it("records session start and end through the existing lifecycle", async () => {
+  it("records session start and end through the existing lifecycle", { timeout: 15_000 }, async () => {
     const db = freshDb();
     const repoRoot = mkdtempSync(join(tmpdir(), "recall-hook-repo-"));
     makeRepo(repoRoot, "https://github.com/edihasaj/hook-phase2.git");

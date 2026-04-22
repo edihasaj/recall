@@ -384,6 +384,7 @@ export function produceSummarizeHistoryTasks(
 
   let enqueued = 0;
   for (const snippet of snippets) {
+    if (!snippetHasMeaningfulContent(snippet.text)) continue;
     const id = insertTaskIdempotent(db, {
       kind: "summarize_history",
       target: snippet.id,
@@ -400,6 +401,22 @@ export function produceSummarizeHistoryTasks(
     if (id) enqueued += 1;
   }
   return enqueued;
+}
+
+// A deterministic summary of "Repo: X\nEvent types: Y" with no corrections,
+// reviews, or compile markers has nothing an LLM can usefully tighten.
+// Skip enqueueing — otherwise the dispatcher burns tokens to rewrite the
+// same content into a near-identical paraphrase. See
+// src/maintenance/lifecycle.ts::summarizeSessionEvents for the markers.
+export function snippetHasMeaningfulContent(text: string): boolean {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return false;
+  return lines.some((line) =>
+    line.startsWith("Corrections:") ||
+    line.startsWith("Reviews:") ||
+    line.startsWith("Latest compile included") ||
+    line.startsWith("Prompts:"),
+  );
 }
 
 export async function produceMergeDuplicateTasks(
