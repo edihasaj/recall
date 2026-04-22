@@ -1775,6 +1775,97 @@ maintenanceCmd
     else console.error("Drop failed.");
   });
 
+const credentialsCmd = maintenanceCmd
+  .command("credentials")
+  .description("Manage LLM provider API keys in macOS Keychain (env fallback on other platforms)");
+
+credentialsCmd
+  .command("list", { isDefault: true })
+  .description("Show which providers have credentials available")
+  .action(async () => {
+    const { listCredentials } = await import("./credentials/keychain.js");
+    const creds = listCredentials();
+    if (creds.length === 0) {
+      console.log("No API keys configured. Set one with:");
+      console.log("  recall maintenance credentials set openai <key>");
+      console.log("  recall maintenance credentials set anthropic <key>");
+      return;
+    }
+    for (const cred of creds) {
+      console.log(`${cred.provider.padEnd(10)} ${cred.source.padEnd(8)} ${cred.preview}`);
+    }
+  });
+
+credentialsCmd
+  .command("set")
+  .description("Store an API key in the macOS Keychain for a provider")
+  .argument("<provider>", "openai|anthropic")
+  .argument("[key]", "API key (prompts via stdin if omitted)")
+  .action(async (providerArg: string, keyArg?: string) => {
+    const { setApiKey } = await import("./credentials/keychain.js");
+    if (providerArg !== "openai" && providerArg !== "anthropic") {
+      console.error(`Provider must be "openai" or "anthropic", got "${providerArg}".`);
+      process.exit(1);
+    }
+    const key = keyArg ?? await readStdinKey();
+    if (!key) {
+      console.error("No API key provided (pass as argument or pipe via stdin).");
+      process.exit(1);
+    }
+    try {
+      setApiKey(providerArg, key);
+      console.log(`Stored ${providerArg} API key in Keychain (service com.recall.llm).`);
+    } catch (err) {
+      console.error(`Failed to store key: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+credentialsCmd
+  .command("clear")
+  .description("Remove an API key from the macOS Keychain")
+  .argument("<provider>", "openai|anthropic")
+  .action(async (providerArg: string) => {
+    const { deleteApiKey } = await import("./credentials/keychain.js");
+    if (providerArg !== "openai" && providerArg !== "anthropic") {
+      console.error(`Provider must be "openai" or "anthropic", got "${providerArg}".`);
+      process.exit(1);
+    }
+    const removed = deleteApiKey(providerArg);
+    if (removed) console.log(`Removed ${providerArg} API key from Keychain.`);
+    else console.log(`No ${providerArg} key found in Keychain.`);
+  });
+
+maintenanceCmd
+  .command("usage")
+  .description("Summarize LLM API usage (tokens, cost) across recent maintenance runs")
+  .option("--since <iso>", "Window start (default: last 30 days)")
+  .option("--limit <n>", "Recent-call rows to show", "10")
+  .option("--json", "Emit raw JSON summary")
+  .action(async (opts) => {
+    const { summarizeUsage, formatUsageReport } = await import("./llm/usage.js");
+    const db = initDb();
+    const summary = summarizeUsage(db, {
+      sinceIso: opts.since,
+      recentLimit: parseInt(opts.limit, 10),
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return;
+    }
+    console.log(formatUsageReport(summary));
+  });
+
+async function readStdinKey(): Promise<string | null> {
+  if (process.stdin.isTTY) return null;
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.from(chunk));
+  }
+  const text = Buffer.concat(chunks).toString("utf-8").trim();
+  return text.length > 0 ? text : null;
+}
+
 // --- Helpers ---
 
 function loadSyncConfig(): SyncConfig | null {

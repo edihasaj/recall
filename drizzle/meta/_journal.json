@@ -8,6 +8,13 @@
       "when": 1776435812464,
       "tag": "0000_initial_create",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776866038225,
+      "tag": "0001_rich_liz_osborn",
+      "breakpoints": true
     }
   ]
 }

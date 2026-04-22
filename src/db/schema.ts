@@ -351,3 +351,26 @@ export const implicitSignals = sqliteTable("implicit_signals", {
   index("idx_implicit_memory").on(table.memory_id),
   index("idx_implicit_session").on(table.session_id),
 ]));
+
+// LLM usage tracking for daemon-owned maintenance dispatcher
+export const llmUsage = sqliteTable("llm_usage", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  task_kind: text("task_kind").notNull(),
+  task_id: text("task_id"),
+  repo: text("repo"),
+  prompt_tokens: integer("prompt_tokens").notNull().default(0),
+  completion_tokens: integer("completion_tokens").notNull().default(0),
+  total_tokens: integer("total_tokens").notNull().default(0),
+  cost_usd: real("cost_usd"),
+  duration_ms: integer("duration_ms").notNull().default(0),
+  ok: integer("ok", { mode: "boolean" }).notNull().default(true),
+  error: text("error"),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_llm_usage_created").on(table.created_at),
+  index("idx_llm_usage_provider_model").on(table.provider, table.model),
+  index("idx_llm_usage_task_kind").on(table.task_kind),
+  index("idx_llm_usage_repo").on(table.repo),
+]));
