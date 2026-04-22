@@ -2,6 +2,8 @@ import type { RecallDb } from "../db/client.js";
 import { createActivityEvent } from "../models/activity.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "../repo/discovery.js";
 import { writeRepoContextArtifact } from "../artifacts/context.js";
+import type { ActivitySource } from "../types.js";
+import { tagActivitySource } from "../types.js";
 
 export interface SessionLifecycleInput {
   session_id: string;
@@ -10,6 +12,12 @@ export interface SessionLifecycleInput {
   repo_path?: string | null;
   path?: string | null;
   meta?: Record<string, unknown>;
+  source?: ActivitySource;
+}
+
+function resolveLifecycleSource(input: SessionLifecycleInput): ActivitySource {
+  if (input.source) return input.source;
+  return input.client ? tagActivitySource("hook", input.client) : "daemon";
 }
 
 export interface SessionLifecycleResult {
@@ -40,7 +48,7 @@ export function startSessionLifecycle(
       session_id: input.session_id,
       repo: bootstrap.repo,
       path: input.path ?? null,
-      source: "daemon",
+      source: resolveLifecycleSource(input),
       event_type: "scan",
       memory_ids: bootstrap.created_ids,
       request: {
@@ -64,7 +72,7 @@ export function startSessionLifecycle(
     session_id: input.session_id,
     repo: bootstrap.repo,
     path: input.path ?? null,
-    source: "daemon",
+    source: resolveLifecycleSource(input),
     event_type: "session_start",
     request: {
       client: input.client ?? null,
@@ -101,7 +109,7 @@ export function recordSessionLifecycleEvent(
     session_id: input.session_id,
     repo,
     path: input.path ?? null,
-    source: "daemon",
+    source: resolveLifecycleSource(input),
     event_type: "session_event",
     request: {
       client: input.client ?? null,
@@ -133,7 +141,7 @@ export function endSessionLifecycle(
     session_id: input.session_id,
     repo,
     path: input.path ?? null,
-    source: "daemon",
+    source: resolveLifecycleSource(input),
     event_type: "session_end",
     request: {
       client: input.client ?? null,

@@ -2,7 +2,8 @@ import { listActivityEvents, createActivityEvent } from "../models/activity.js";
 import { initDb } from "../db/client.js";
 import { inferRepoSlugFromPath } from "../repo/discovery.js";
 import type { RecallDb } from "../db/client.js";
-import type { ActivitySource } from "../types.js";
+import type { ActivitySource, ActivityTransport } from "../types.js";
+import { tagActivitySource } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordHookCall } from "../hooks/calls.js";
 import { performance } from "node:perf_hooks";
@@ -206,6 +207,7 @@ export async function handlePromptHook(
     const text = truncateText(requireNonEmpty(input.text, "text"), MAX_PROMPT_TEXT_LENGTH);
     const sessionId = input.session_id?.trim() || "hook";
     const repo = resolveRepo(input.repo, input.repo_path);
+    const source = resolveHookSource(opts.source, input.agent);
     const recentToolCalls = normalizeRecentToolCalls(
       input.recent_tool_calls ?? loadRecentToolCalls(db, sessionId),
     );
@@ -214,7 +216,7 @@ export async function handlePromptHook(
       session_id: sessionId,
       repo,
       path: input.path ?? null,
-      source: opts.source ?? "cli",
+      source,
       event_type: "session_event",
       request: {
         client: input.agent ?? "hook",
@@ -252,7 +254,7 @@ export async function handlePromptHook(
           MAX_PREV_ASSISTANT_LENGTH,
         ),
         recent_tool_calls: recentToolCalls,
-      }, opts.source ?? "cli");
+      }, source);
     }
 
     const injection = repo
@@ -295,7 +297,7 @@ export async function handleToolHook(
       session_id: sessionId,
       repo,
       path: input.path ?? null,
-      source: opts.source ?? "cli",
+      source: resolveHookSource(opts.source, input.agent),
       event_type: "session_event",
       request: {
         client: input.agent ?? "hook",
@@ -457,7 +459,7 @@ export async function handleSessionEndHook(
 
     endSessionLifecycle(db, {
       session_id: sessionId,
-      client: input.agent ?? "hook",
+      client: input.agent ?? null,
       repo,
       repo_path: input.repo_path ?? null,
       path: input.path ?? null,
@@ -525,6 +527,14 @@ export function parseInteger(value: string, field: string): number {
     throw new Error(`${field} must be an integer`);
   }
   return parsed;
+}
+
+function resolveHookSource(
+  fallback: ActivitySource | undefined,
+  agent: string | undefined,
+): ActivitySource {
+  if (agent) return tagActivitySource("hook", agent);
+  return fallback ?? "cli";
 }
 
 async function readPromptInputFromStdin(agent: "claude-code" | "codex"): Promise<PromptHookInput> {

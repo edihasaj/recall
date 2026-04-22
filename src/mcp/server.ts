@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 import { initDb } from "../db/client.js";
+import { tagActivitySource } from "../types.js";
 import {
   queryMemories,
   getMemory,
@@ -59,6 +61,16 @@ const server = new McpServer({
   version: "0.5.0",
 });
 
+const mcpClientContext = new AsyncLocalStorage<{ name?: string }>();
+
+function mcpSource() {
+  return tagActivitySource("mcp", mcpClientContext.getStore()?.name);
+}
+
+function resolveCurrentClientName(): string | undefined {
+  return server.server.getClientVersion()?.name;
+}
+
 function summarizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args)) {
@@ -82,31 +94,33 @@ function tool(name: string, description: string, schema: any, handler: (args: an
     const start = Date.now();
     let ok = true;
     let errorMessage: string | undefined;
-    try {
-      return await handler(args, extra);
-    } catch (err) {
-      ok = false;
-      errorMessage = err instanceof Error ? err.message : String(err);
-      throw err;
-    } finally {
+    return mcpClientContext.run({ name: resolveCurrentClientName() }, async () => {
       try {
-        createActivityEvent(db, {
-          session_id: typeof args.session_id === "string" ? args.session_id : null,
-          repo: typeof args.repo === "string" ? args.repo : null,
-          path: typeof args.path === "string" ? args.path : null,
-          source: "mcp",
-          event_type: "tool_call",
-          request: { tool: name, args: summarizeArgs(args) },
-          result: {
-            ok,
-            duration_ms: Date.now() - start,
-            ...(errorMessage ? { error: errorMessage } : {}),
-          },
-        });
-      } catch {
-        // telemetry must never break a tool call
+        return await handler(args, extra);
+      } catch (err) {
+        ok = false;
+        errorMessage = err instanceof Error ? err.message : String(err);
+        throw err;
+      } finally {
+        try {
+          createActivityEvent(db, {
+            session_id: typeof args.session_id === "string" ? args.session_id : null,
+            repo: typeof args.repo === "string" ? args.repo : null,
+            path: typeof args.path === "string" ? args.path : null,
+            source: mcpSource(),
+            event_type: "tool_call",
+            request: { tool: name, args: summarizeArgs(args) },
+            result: {
+              ok,
+              duration_ms: Date.now() - start,
+              ...(errorMessage ? { error: errorMessage } : {}),
+            },
+          });
+        } catch {
+          // telemetry must never break a tool call
+        }
       }
-    }
+    });
   });
 }
 
@@ -133,7 +147,7 @@ tool(
       createActivityEvent(db, {
         session_id: session_id ?? null,
         repo,
-        source: "mcp",
+        source: mcpSource(),
         event_type: "scan",
         memory_ids: bootstrap.created_ids,
         request: {
@@ -168,7 +182,7 @@ tool(
       session_id: session_id ?? null,
       repo,
       path: path ?? null,
-      source: "mcp",
+      source: mcpSource(),
       event_type: "query",
       memory_ids: result.memories_included,
       request: {
@@ -261,7 +275,7 @@ tool(
       agent: agent ?? "mcp",
       prev_assistant_turn,
       recent_tool_calls,
-    }, "mcp");
+    }, mcpSource());
 
     if (result.ids.length === 0) {
       return {
@@ -313,7 +327,7 @@ tool(
       agent,
       prev_assistant_turn,
       recent_tool_calls,
-    }, "mcp");
+    }, mcpSource());
 
     if (result.ids.length === 0) {
       return {
@@ -358,7 +372,7 @@ tool(
       session_id: session_id ?? "mcp-review",
       repo: repo ?? null,
       path: path ?? null,
-      source: "mcp",
+      source: mcpSource(),
       event_type: "review",
       memory_ids: ids,
       request: { feedback, reviewer: reviewer ?? null },
@@ -439,7 +453,7 @@ tool(
       session_id,
       injected,
       outcome,
-    }, "mcp");
+    }, mcpSource());
     return {
       content: [
         { type: "text" as const, text: `Feedback recorded: ${result.feedback_id.slice(0, 8)}` },
@@ -467,7 +481,7 @@ tool(
       injected,
       outcome,
       context,
-    }, "mcp");
+    }, mcpSource());
     return {
       content: [
         { type: "text" as const, text: `Outcome recorded: ${result.feedback_id.slice(0, 8)}` },
@@ -489,7 +503,7 @@ tool(
     createActivityEvent(db, {
       session_id: session_id ?? null,
       repo: mem?.repo ?? null,
-      source: "mcp",
+      source: mcpSource(),
       event_type: "scan",
       memory_ids: ids,
       request: { repo_path },
@@ -557,7 +571,7 @@ tool(
       session_id,
       repo: mem?.repo ?? null,
       path: mem?.path_scope ?? null,
-      source: "mcp",
+      source: mcpSource(),
       event_type: "signal",
       memory_ids: [memory_id],
       request: { signal_type, context: context ?? null },
@@ -804,7 +818,7 @@ tool(
   {
     repo: z.string().optional().describe("Filter by repo"),
     session_id: z.string().optional().describe("Filter by session id"),
-    source: z.enum(["cli", "daemon", "mcp", "system"]).optional().describe("Filter by source"),
+    source: z.string().optional().describe("Filter by source (e.g., 'mcp', 'hook:claude-code', 'cli')"),
     event_type: z.enum(activityEventTypes).optional().describe("Filter by event type"),
     since: z.string().optional().describe("Created at >= ISO timestamp"),
     limit: z.number().optional().describe("Max events to return"),
@@ -827,7 +841,7 @@ tool(
   "List grouped activity sessions so you can review what happened in prior runs.",
   {
     repo: z.string().optional().describe("Filter by repo"),
-    source: z.enum(["cli", "daemon", "mcp", "system"]).optional().describe("Filter by source"),
+    source: z.string().optional().describe("Filter by source (e.g., 'mcp', 'hook:claude-code', 'cli')"),
     event_type: z.enum(activityEventTypes).optional().describe("Filter by event type"),
     since: z.string().optional().describe("Created at >= ISO timestamp"),
     limit: z.number().optional().describe("Max sessions to return"),

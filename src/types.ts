@@ -175,8 +175,22 @@ export type MaintenanceTask = z.infer<typeof MaintenanceTask>;
 
 // --- Activity events ---
 
-export const ActivitySource = z.enum(["cli", "daemon", "mcp", "system"]);
+export const ACTIVITY_TRANSPORTS = ["cli", "daemon", "mcp", "system", "hook"] as const;
+export type ActivityTransport = (typeof ACTIVITY_TRANSPORTS)[number];
+
+// Source is either a bare transport ("mcp", "cli", ...) or a transport tagged with a
+// client identity ("mcp:claude-code", "hook:codex"). The regex keeps the column disciplined
+// without forcing a closed enum — new clients just work.
+const ACTIVITY_SOURCE_PATTERN = /^(cli|daemon|mcp|system|hook)(:[a-z0-9][a-z0-9._-]*)?$/;
+export const ActivitySource = z.string().regex(ACTIVITY_SOURCE_PATTERN);
 export type ActivitySource = z.infer<typeof ActivitySource>;
+
+export function tagActivitySource(transport: ActivityTransport, agent?: string | null): ActivitySource {
+  if (!agent) return transport;
+  const normalized = agent.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+  if (!normalized) return transport;
+  return `${transport}:${normalized}`;
+}
 
 export const ActivityEventType = z.enum([
   "compile",
