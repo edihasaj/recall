@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { inspectAgentInstalls } from "../src/doctor/report.js";
 import { installClaudeCodeHooks } from "../src/agents/claude-code.js";
-import { installCodexHooks } from "../src/agents/codex.js";
+import { installCodexHooks, installCodexNotifyBridge } from "../src/agents/codex.js";
 
 function freshHome() {
   const home = mkdtempSync(join(tmpdir(), "recall-doctor-home-"));
@@ -56,6 +56,20 @@ describe("doctor detects agent install state", () => {
     expect(claude.mcp).toBe(true);
     expect(claude.hooks).toBe(false);
     expect(claude.notes.join(" ")).toMatch(/hooks/);
+  });
+
+  it("flags a Codex legacy notify bridge as upgrade-required", () => {
+    const home = freshHome();
+    writeFileSync(join(home, ".codex", "config.toml"), 'model = "gpt-5.4"\n');
+    installCodexNotifyBridge({
+      configPath: join(home, ".codex", "config.toml"),
+      nodePath: "/opt/recall/node",
+      cliPath: "/opt/recall/dist/cli.js",
+    });
+
+    const codex = inspectAgentInstalls(home).find((e) => e.agent === "codex")!;
+    expect(codex.legacy_notify_bridge).toBe(true);
+    expect(codex.hooks).toBe(false);
   });
 
   it("reports Codex hooks OK only when both feature flag and hooks.json are present", () => {
