@@ -61,6 +61,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var setupStatusItem: NSMenuItem?
     private var dataStatusItem: NSMenuItem?
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // Menu bar is the persistent surface. Closing the dashboard window should
+        // leave the status item + daemon bridge alive regardless of the dock
+        // icon preference; quit only happens via the menu's "Quit Recall" item.
+        return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Clicking the dock icon (when visible) or re-activating from Launchpad
+        // after the window was closed should reopen the dashboard.
+        if !flag {
+            NotificationCenter.default.post(name: .recallOpenDashboard, object: nil)
+        }
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
