@@ -99,15 +99,39 @@ program
 
 program
   .command("doctor")
-  .description("Show local Recall runtime, DB, and embedding health")
+  .description("Show local Recall runtime, DB, embedding, and agent-install health")
   .option("--json", "Emit raw JSON report")
+  .option("--fix", "Install missing hooks/MCP for detected agents")
   .action((opts) => {
     const report = getDoctorReport();
+    if (opts.fix) {
+      const detectedAgents = report.agents
+        .filter((a) => a.detected && (!a.mcp || !a.hooks))
+        .map((a) => a.agent);
+      if (detectedAgents.length === 0) {
+        if (!opts.json) console.log("Nothing to fix — all detected agents are wired.");
+      } else {
+        const fixResult = runLocalSetup({
+          codex: detectedAgents.includes("codex"),
+          claude: detectedAgents.includes("claude-code"),
+        });
+        if (!opts.json) {
+          console.log(`Applied fix for: ${detectedAgents.join(", ")}`);
+          console.log(`Codex MCP:    ${formatSetupStep(fixResult.codex)}`);
+          console.log(`Codex hooks:  ${formatSetupStep(fixResult.codex_hooks)}`);
+          console.log(`Claude MCP:   ${formatSetupStep(fixResult.claude)}`);
+          console.log(`Claude hooks: ${formatSetupStep(fixResult.claude_hooks)}`);
+          console.log("");
+        }
+      }
+    }
+
+    const finalReport = opts.fix ? getDoctorReport() : report;
     if (opts.json) {
-      console.log(JSON.stringify(report, null, 2));
+      console.log(JSON.stringify(finalReport, null, 2));
       return;
     }
-    console.log(formatDoctorReport(report));
+    console.log(formatDoctorReport(finalReport));
   });
 
 const dbCmd = program
