@@ -128,7 +128,7 @@ function tool(name: string, description: string, schema: any, handler: (args: an
 
 tool(
   "query",
-  "Retrieve relevant memories for the current task context. Returns compiled, confidence-gated memories scoped to the repo and path.",
+  "Fallback retrieval for repo memory. Recall's lifecycle hooks already inject memory at SessionStart and on every UserPromptSubmit, so only call this tool when (a) injected context clearly missed something specific you need, (b) the user asks you to look up memory explicitly, or (c) you want memory for a different repo than the current one. Prefer query_text so results are ranked against your actual task.",
   {
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
     repo_path: z.string().optional().describe("Optional local repo path hint for first-time bootstrap"),
