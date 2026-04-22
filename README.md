@@ -27,13 +27,12 @@ npm run install:app
 
 The app embeds its own Node runtime plus Recall `dist/`, `drizzle/`, and `node_modules/`, then manages the bundled daemon via launchd.
 
-Configure local MCP clients against the installed app:
+Configure local Codex/Claude Code against the installed app. `recall setup local` wires both MCP *and* lifecycle hooks globally (`~/.codex`, `~/.claude`) so memory injection fires on every turn, not only when the model chooses to call `query`:
 
 ```bash
-recall setup local
-recall setup --yes
-recall setup --scope project --yes
-recall setup --uninstall-hooks --yes
+recall setup local                      # global MCP + hooks
+recall setup --scope project --yes      # add project-scoped hooks to the current repo
+recall setup --uninstall-hooks --yes    # remove Recall-managed hooks
 ```
 
 ## First Run
