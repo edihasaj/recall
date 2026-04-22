@@ -124,7 +124,7 @@ async function callOpenAi(
         { role: "system", content: input.system },
         { role: "user", content: input.user },
       ],
-      max_tokens: input.max_output_tokens ?? 2048,
+      max_completion_tokens: input.max_output_tokens ?? 2048,
       temperature: input.temperature ?? 0,
     }),
   });
@@ -175,7 +175,7 @@ async function callAzureOpenAi(
         { role: "system", content: input.system },
         { role: "user", content: input.user },
       ],
-      max_tokens: input.max_output_tokens ?? 2048,
+      max_completion_tokens: input.max_output_tokens ?? 2048,
       temperature: input.temperature ?? 0,
     }),
   });
