@@ -25,6 +25,7 @@ describe("doctor report", () => {
         state: "running",
       },
       agents: [],
+      upgrade: { available: false, reasons: [] },
     });
 
     expect(text).toContain("# Recall Doctor");
@@ -59,9 +60,44 @@ describe("doctor report", () => {
           notes: [],
         },
       ],
+      upgrade: {
+        available: true,
+        reasons: [
+          "claude-code: MCP configured but lifecycle hooks missing — memory injection depends on the model calling query",
+        ],
+      },
     });
     expect(text).toMatch(/claude-code\s+mcp:ok hooks:MISSING/);
     expect(text).toMatch(/codex\s+mcp:ok hooks:ok/);
+    expect(text).toContain("Upgrade available");
     expect(text).toContain("recall doctor --fix");
+  });
+
+  it("calls out a legacy notify bridge in the upgrade section", () => {
+    const text = formatDoctorReport({
+      db_path: "/tmp/recall.db",
+      db_user_version: 2,
+      db_target_version: 2,
+      embeddings: null,
+      launchd: null,
+      agents: [
+        {
+          agent: "codex",
+          detected: true,
+          mcp: true,
+          hooks: false,
+          legacy_notify_bridge: true,
+          config_path: "/home/u/.codex/config.toml",
+          hook_path: "/home/u/.codex/hooks.json",
+          notes: ["Legacy notify bridge present — install the new hooks.json path"],
+        },
+      ],
+      upgrade: {
+        available: true,
+        reasons: ["codex: legacy notify bridge detected — upgrade to hooks.json"],
+      },
+    });
+    expect(text).toContain("(legacy notify bridge)");
+    expect(text).toContain("legacy notify bridge");
   });
 });

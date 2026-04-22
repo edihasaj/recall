@@ -10,9 +10,15 @@ export interface AgentDoctorEntry {
   detected: boolean;
   mcp: boolean;
   hooks: boolean;
+  legacy_notify_bridge?: boolean;
   config_path: string;
   hook_path?: string;
   notes: string[];
+}
+
+export interface UpgradeSignal {
+  available: boolean;
+  reasons: string[];
 }
 
 export interface DoctorReport {
@@ -26,6 +32,7 @@ export interface DoctorReport {
     state?: string;
   } | null;
   agents: AgentDoctorEntry[];
+  upgrade: UpgradeSignal;
 }
 
 export function getDoctorReport(): DoctorReport {
@@ -45,14 +52,35 @@ export function getDoctorReport(): DoctorReport {
       })()
     : null;
 
+  const agents = inspectAgentInstalls();
   return {
     db_path: dbPath,
     db_user_version: getDbUserVersion(dbPath),
     db_target_version: RECALL_DB_USER_VERSION,
     embeddings: getEmbeddingModelInfo(),
     launchd,
-    agents: inspectAgentInstalls(),
+    agents,
+    upgrade: computeUpgradeSignal(agents),
   };
+}
+
+function computeUpgradeSignal(agents: AgentDoctorEntry[]): UpgradeSignal {
+  const reasons: string[] = [];
+  for (const agent of agents) {
+    if (!agent.detected) continue;
+    if (agent.legacy_notify_bridge) {
+      reasons.push(
+        `${agent.agent}: legacy notify bridge detected — upgrade to hooks.json for per-turn memory injection`,
+      );
+      continue;
+    }
+    if (agent.mcp && !agent.hooks) {
+      reasons.push(
+        `${agent.agent}: MCP configured but lifecycle hooks missing — memory injection depends on the model calling query`,
+      );
+    }
+  }
+  return { available: reasons.length > 0, reasons };
 }
 
 export function inspectAgentInstalls(homeDir?: string): AgentDoctorEntry[] {
@@ -109,6 +137,7 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
 
   let mcp = false;
   let hooks = false;
+  let legacy_notify_bridge = false;
 
   if (existsSync(configPath)) {
     const raw = readFileSync(configPath, "utf-8");
@@ -117,8 +146,16 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
     const managedHooksJson =
       existsSync(hooksPath) && readFileSync(hooksPath, "utf-8").includes("recall:managed:codex");
     hooks = featureFlagSet && managedHooksJson;
+    legacy_notify_bridge =
+      raw.includes("# recall:managed:codex:start") &&
+      raw.includes("codex-notify");
 
     if (!mcp) notes.push("MCP block [mcp_servers.recall] not in config.toml");
+    if (legacy_notify_bridge) {
+      notes.push(
+        "Legacy notify bridge present — install the new hooks.json path to enable per-turn memory injection",
+      );
+    }
     if (!featureFlagSet) notes.push("codex_hooks = true missing from [features]");
     if (!managedHooksJson) notes.push("No Recall-managed entries in ~/.codex/hooks.json");
   } else if (detected) {
@@ -130,6 +167,7 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
     detected,
     mcp,
     hooks,
+    legacy_notify_bridge,
     config_path: configPath,
     hook_path: hooksPath,
     notes,
@@ -179,15 +217,19 @@ export function formatDoctorReport(report: DoctorReport): string {
     }
     const mcp = agent.mcp ? "ok" : "MISSING";
     const hooks = agent.hooks ? "ok" : "MISSING";
-    lines.push(`${label} mcp:${mcp} hooks:${hooks}`);
+    const legacy = agent.legacy_notify_bridge ? " (legacy notify bridge)" : "";
+    lines.push(`${label} mcp:${mcp} hooks:${hooks}${legacy}`);
     for (const note of agent.notes) {
       lines.push(`             - ${note}`);
     }
   }
 
-  const needsFix = report.agents.some((a) => a.detected && (!a.mcp || !a.hooks));
-  if (needsFix) {
-    lines.push("", "Run `recall doctor --fix` or `recall setup local` to install missing wiring.");
+  if (report.upgrade.available) {
+    lines.push("", "## Upgrade available");
+    for (const reason of report.upgrade.reasons) {
+      lines.push(`- ${reason}`);
+    }
+    lines.push("Run `recall doctor --fix` or `recall setup local` to apply.");
   }
 
   return lines.join("\n");
