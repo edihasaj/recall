@@ -18,6 +18,7 @@ import {
   startSessionLifecycle,
 } from "../session/lifecycle.js";
 import { peekTasks } from "../maintenance/tasks.js";
+import { compileContext, compileContextHybrid } from "../compiler/context.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 25;
@@ -86,6 +87,13 @@ export interface HookResult {
   transport: "daemon" | "fallback" | "direct";
   recent_tool_calls?: RecentToolCall[];
   maintenance_backlog?: MaintenanceBacklogSurface;
+  injection?: InjectionSurface;
+}
+
+export interface InjectionSurface {
+  text: string;
+  memories_included: string[];
+  token_estimate: number;
 }
 
 export interface MaintenanceBacklogSurface {
@@ -247,12 +255,22 @@ export async function handlePromptHook(
       }, opts.source ?? "cli");
     }
 
+    const injection = repo
+      ? await collectInjectionSurface(db, {
+          repo,
+          path: input.path,
+          session_id: sessionId,
+          query_text: text,
+        })
+      : undefined;
+
     return {
       event: "prompt_submitted",
       session_id: sessionId,
       repo,
       recent_tool_calls: recentToolCalls,
       transport: "direct",
+      ...(injection ? { injection } : {}),
     };
   });
 }
@@ -325,6 +343,13 @@ export async function handleSessionStartHook(
     });
 
     const maintenance_backlog = collectMaintenanceBacklog(db, result.repo);
+    const injection = result.repo
+      ? await collectInjectionSurface(db, {
+          repo: result.repo,
+          path: input.path,
+          session_id: result.session_id,
+        })
+      : undefined;
 
     return {
       event: "session_started",
@@ -332,6 +357,7 @@ export async function handleSessionStartHook(
       repo: result.repo,
       transport: "direct",
       ...(maintenance_backlog ? { maintenance_backlog } : {}),
+      ...(injection ? { injection } : {}),
     };
   });
 }
@@ -372,6 +398,52 @@ export function formatMaintenanceBacklogContext(surface: MaintenanceBacklogSurfa
     `Recall maintenance backlog: ${surface.pending_total} pending (${parts}).`,
     `When you have idle capacity, call the recall.maintenance_peek / maintenance_claim / maintenance_submit MCP tools to work through them.${sampleLine}`,
   ].join(" ");
+}
+
+export function formatInjectionContext(surface: InjectionSurface): string {
+  return `Recall memory for this repo:\n${surface.text}`;
+}
+
+async function collectInjectionSurface(
+  db: RecallDb,
+  req: {
+    repo: string;
+    path: string | undefined;
+    session_id: string;
+    query_text?: string;
+  },
+): Promise<InjectionSurface | undefined> {
+  if (process.env.RECALL_HOOK_INJECT_CONTEXT === "false") return undefined;
+
+  const base = {
+    repo: req.repo,
+    path: req.path,
+    session_id: req.session_id,
+  };
+
+  let compiled;
+  if (req.query_text && req.query_text.trim().length > 0) {
+    try {
+      compiled = await compileContextHybrid(db, {
+        ...base,
+        query_text: req.query_text,
+      });
+    } catch {
+      compiled = undefined;
+    }
+    if (!compiled || compiled.text.length === 0) {
+      compiled = compileContext(db, base);
+    }
+  } else {
+    compiled = compileContext(db, base);
+  }
+
+  if (!compiled.text) return undefined;
+  return {
+    text: compiled.text,
+    memories_included: compiled.memories_included,
+    token_estimate: compiled.token_estimate,
+  };
 }
 
 export async function handleSessionEndHook(
