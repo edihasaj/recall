@@ -527,10 +527,10 @@ export function parseInteger(value: string, field: string): number {
   return parsed;
 }
 
-export async function readClaudeCodePromptInputFromStdin(): Promise<PromptHookInput> {
+async function readPromptInputFromStdin(agent: "claude-code" | "codex"): Promise<PromptHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
   return {
-    agent: "claude-code",
+    agent,
     path: extractClaudeToolPath(payload.tool_input),
     repo_path: payload.cwd,
     session_id: payload.session_id,
@@ -538,10 +538,10 @@ export async function readClaudeCodePromptInputFromStdin(): Promise<PromptHookIn
   };
 }
 
-export async function readClaudeCodeToolInputFromStdin(): Promise<ToolHookInput> {
+async function readToolInputFromStdin(agent: "claude-code" | "codex"): Promise<ToolHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
   return {
-    agent: "claude-code",
+    agent,
     exit_code: 0,
     input_summary: summarizeClaudeToolInput(payload.tool_name, payload.tool_input),
     name: requireNonEmpty(payload.tool_name ?? "", "tool_name"),
@@ -551,25 +551,35 @@ export async function readClaudeCodeToolInputFromStdin(): Promise<ToolHookInput>
   };
 }
 
-export async function readClaudeCodeSessionStartInputFromStdin(): Promise<SessionStartHookInput> {
+async function readSessionStartInputFromStdin(agent: "claude-code" | "codex"): Promise<SessionStartHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
   return {
-    agent: "claude-code",
+    agent,
     path: extractClaudeToolPath(payload.tool_input),
     repo_path: payload.cwd,
     session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
   };
 }
 
-export async function readClaudeCodeSessionEndInputFromStdin(): Promise<SessionEndHookInput> {
+async function readSessionEndInputFromStdin(agent: "claude-code" | "codex"): Promise<SessionEndHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
   return {
-    agent: "claude-code",
+    agent,
     path: extractClaudeToolPath(payload.tool_input),
     repo_path: payload.cwd,
     session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
   };
 }
+
+export const readClaudeCodePromptInputFromStdin = () => readPromptInputFromStdin("claude-code");
+export const readClaudeCodeToolInputFromStdin = () => readToolInputFromStdin("claude-code");
+export const readClaudeCodeSessionStartInputFromStdin = () => readSessionStartInputFromStdin("claude-code");
+export const readClaudeCodeSessionEndInputFromStdin = () => readSessionEndInputFromStdin("claude-code");
+
+export const readCodexPromptInputFromStdin = () => readPromptInputFromStdin("codex");
+export const readCodexToolInputFromStdin = () => readToolInputFromStdin("codex");
+export const readCodexSessionStartInputFromStdin = () => readSessionStartInputFromStdin("codex");
+export const readCodexSessionEndInputFromStdin = () => readSessionEndInputFromStdin("codex");
 
 export async function dispatchCodexNotify(
   rawPayload?: string,

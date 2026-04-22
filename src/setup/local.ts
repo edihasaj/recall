@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { installClaudeCodeHooks, uninstallClaudeCodeHooks } from "../agents/claude-code.js";
 import { installCodexHooks, uninstallCodexHooks } from "../agents/codex.js";
 import type { AgentName } from "../agents/types.js";
@@ -233,6 +233,10 @@ function configureHooks(
     );
   }
 
+  const codexHooksPath = agent === "codex"
+    ? join(dirname(options.configPath), "hooks.json")
+    : undefined;
+
   const result = agent === "claude-code"
     ? (options.uninstallHooks
         ? uninstallClaudeCodeHooks({ configPath: options.configPath })
@@ -242,9 +246,10 @@ function configureHooks(
             nodePath: options.paths.runtimeNodePath,
           }))
     : (options.uninstallHooks
-        ? uninstallCodexHooks({ configPath: options.configPath })
+        ? uninstallCodexHooks({ configPath: options.configPath, hooksPath: codexHooksPath })
         : installCodexHooks({
             configPath: options.configPath,
+            hooksPath: codexHooksPath,
             cliPath: options.paths.runtimeCliPath,
             nodePath: options.paths.runtimeNodePath,
           }));

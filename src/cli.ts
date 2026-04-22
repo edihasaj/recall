@@ -71,6 +71,10 @@ import {
   readClaudeCodeSessionEndInputFromStdin,
   readClaudeCodeSessionStartInputFromStdin,
   readClaudeCodeToolInputFromStdin,
+  readCodexPromptInputFromStdin,
+  readCodexSessionEndInputFromStdin,
+  readCodexSessionStartInputFromStdin,
+  readCodexToolInputFromStdin,
 } from "./cli/hook.js";
 
 const require = createRequire(import.meta.url);
@@ -275,21 +279,25 @@ hookCmd
   .option("--prev-assistant <text>", "Previous assistant turn")
   .option("--recent-tools <json>", "Recent tool calls as a JSON array")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
+  .option("--codex-stdin", "Read Codex hook JSON from stdin")
   .action(async (opts) => {
-    const input = opts.claudeCodeStdin
+    const stdinAgent = opts.claudeCodeStdin ? "claude-code" : opts.codexStdin ? "codex" : null;
+    const input = stdinAgent === "claude-code"
       ? await readClaudeCodePromptInputFromStdin()
-      : {
-          text: opts.text,
-          repo: opts.repo,
-          repo_path: opts.repoPath,
-          session_id: opts.session,
-          path: opts.path,
-          agent: opts.agent,
-          prev_assistant_turn: opts.prevAssistant,
-          recent_tool_calls: parseRecentToolCallsOption(opts.recentTools),
-        };
+      : stdinAgent === "codex"
+        ? await readCodexPromptInputFromStdin()
+        : {
+            text: opts.text,
+            repo: opts.repo,
+            repo_path: opts.repoPath,
+            session_id: opts.session,
+            path: opts.path,
+            agent: opts.agent,
+            prev_assistant_turn: opts.prevAssistant,
+            recent_tool_calls: parseRecentToolCallsOption(opts.recentTools),
+          };
     const result = await executePromptHook(input);
-    if (opts.claudeCodeStdin && result.injection) {
+    if (stdinAgent && result.injection) {
       const output = {
         hookSpecificOutput: {
           hookEventName: "UserPromptSubmit",
@@ -312,19 +320,22 @@ hookCmd
   .option("--agent <agent>", "Agent name")
   .option("--input-summary <text>", "Tool input summary")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
+  .option("--codex-stdin", "Read Codex hook JSON from stdin")
   .action(async (opts) => {
     const input = opts.claudeCodeStdin
       ? await readClaudeCodeToolInputFromStdin()
-      : {
-          name: opts.name,
-          exit_code: parseInteger(opts.exit, "exit"),
-          repo: opts.repo,
-          repo_path: opts.repoPath,
-          session_id: opts.session,
-          path: opts.path,
-          agent: opts.agent,
-          input_summary: opts.inputSummary,
-        };
+      : opts.codexStdin
+        ? await readCodexToolInputFromStdin()
+        : {
+            name: opts.name,
+            exit_code: parseInteger(opts.exit, "exit"),
+            repo: opts.repo,
+            repo_path: opts.repoPath,
+            session_id: opts.session,
+            path: opts.path,
+            agent: opts.agent,
+            input_summary: opts.inputSummary,
+          };
     await executeToolHook(input);
   });
 
@@ -337,18 +348,22 @@ hookCmd
   .option("--repo-path <path>", "Repository path")
   .option("--path <path>", "File path context")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
+  .option("--codex-stdin", "Read Codex hook JSON from stdin")
   .action(async (opts) => {
-    const input = opts.claudeCodeStdin
+    const stdinAgent = opts.claudeCodeStdin ? "claude-code" : opts.codexStdin ? "codex" : null;
+    const input = stdinAgent === "claude-code"
       ? await readClaudeCodeSessionStartInputFromStdin()
-      : {
-          session_id: opts.session,
-          agent: opts.agent,
-          repo: opts.repo,
-          repo_path: opts.repoPath,
-          path: opts.path,
-        };
+      : stdinAgent === "codex"
+        ? await readCodexSessionStartInputFromStdin()
+        : {
+            session_id: opts.session,
+            agent: opts.agent,
+            repo: opts.repo,
+            repo_path: opts.repoPath,
+            path: opts.path,
+          };
     const result = await executeSessionStartHook(input);
-    if (opts.claudeCodeStdin) {
+    if (stdinAgent) {
       const parts: string[] = [];
       if (result.injection) parts.push(formatInjectionContext(result.injection));
       if (result.maintenance_backlog) {
@@ -376,17 +391,20 @@ hookCmd
   .option("--agent <agent>", "Agent name")
   .option("--turn-count <count>", "Turn count")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
+  .option("--codex-stdin", "Read Codex hook JSON from stdin")
   .action(async (opts) => {
     const input = opts.claudeCodeStdin
       ? await readClaudeCodeSessionEndInputFromStdin()
-      : {
-          session_id: opts.session,
-          repo: opts.repo,
-          repo_path: opts.repoPath,
-          path: opts.path,
-          agent: opts.agent,
-          turn_count: opts.turnCount ? parseInteger(opts.turnCount, "turn-count") : undefined,
-        };
+      : opts.codexStdin
+        ? await readCodexSessionEndInputFromStdin()
+        : {
+            session_id: opts.session,
+            repo: opts.repo,
+            repo_path: opts.repoPath,
+            path: opts.path,
+            agent: opts.agent,
+            turn_count: opts.turnCount ? parseInteger(opts.turnCount, "turn-count") : undefined,
+          };
     await executeSessionEndHook(input);
   });
 
