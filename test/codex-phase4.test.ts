@@ -11,7 +11,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
-import { installCodexHooks, uninstallCodexHooks } from "../src/agents/codex.js";
+import {
+  installCodexNotifyBridge,
+  uninstallCodexNotifyBridge,
+} from "../src/agents/codex.js";
 import { dispatchCodexNotify } from "../src/cli/hook.js";
 
 const fixturePath = join(process.cwd(), "test", "fixtures", "codex", "config.toml");
@@ -33,7 +36,7 @@ describe("phase 4 Codex adapter", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(configPath, readFileSync(fixturePath, "utf-8"));
 
-    const result = installCodexHooks({
+    const result = installCodexNotifyBridge({
       configPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
@@ -52,7 +55,7 @@ describe("phase 4 Codex adapter", () => {
     expect(backupName).toBeTruthy();
     expect(existsSync(join(configDir, backupName!))).toBe(true);
 
-    const second = installCodexHooks({
+    const second = installCodexNotifyBridge({
       configPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
@@ -67,13 +70,13 @@ describe("phase 4 Codex adapter", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(configPath, readFileSync(fixturePath, "utf-8"));
 
-    installCodexHooks({
+    installCodexNotifyBridge({
       configPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
     });
 
-    const result = uninstallCodexHooks({ configPath });
+    const result = uninstallCodexNotifyBridge({ configPath });
     expect(result.ok).toBe(true);
     expect(result.changed).toBe(true);
 
@@ -90,7 +93,7 @@ describe("phase 4 Codex adapter", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(configPath, 'notify = ["terminal-notifier"]\n');
 
-    const result = installCodexHooks({
+    const result = installCodexNotifyBridge({
       configPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",

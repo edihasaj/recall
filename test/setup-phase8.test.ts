@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { program } from "../src/cli.js";
@@ -47,7 +47,8 @@ describe("phase 8 setup uninstall CLI", () => {
     });
 
     expect(readFileSync(join(cwd, ".claude", "settings.json"), "utf-8")).toContain("recall:managed:claude-code");
-    expect(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8")).toContain("recall:managed:codex:start");
+    expect(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8")).toContain("codex_hooks = true");
+    expect(readFileSync(join(cwd, ".codex", "hooks.json"), "utf-8")).toContain("recall:managed:codex");
 
     const logs: string[] = [];
     const errors: string[] = [];
@@ -81,6 +82,10 @@ describe("phase 8 setup uninstall CLI", () => {
     expect(errors).toEqual([]);
     expect(logs.some((line) => line.includes("hooks:"))).toBe(true);
     expect(readFileSync(join(cwd, ".claude", "settings.json"), "utf-8")).not.toContain("recall:managed:claude-code");
-    expect(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8")).not.toContain("recall:managed:codex:start");
+    expect(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8")).not.toContain("codex_hooks = true");
+    const codexHooks = join(cwd, ".codex", "hooks.json");
+    if (existsSync(codexHooks)) {
+      expect(readFileSync(codexHooks, "utf-8")).not.toContain("recall:managed:codex");
+    }
   });
 });

@@ -91,7 +91,8 @@ describe("phase 6 setup orchestration", () => {
       ]);
 
       expect(readFileSync(join(cwd, ".claude", "settings.json"), "utf-8")).toContain("recall:managed:claude-code");
-      expect(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8")).toContain("recall:managed:codex:start");
+      expect(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8")).toContain("codex_hooks = true");
+      expect(readFileSync(join(cwd, ".codex", "hooks.json"), "utf-8")).toContain("recall:managed:codex");
     } finally {
       process.env.HOME = previousHome;
     }
