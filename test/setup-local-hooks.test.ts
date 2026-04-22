@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runLocalSetup } from "../src/setup/local.js";
@@ -11,6 +11,14 @@ function makeApp(root: string) {
   writeFileSync(join(runtimeRoot, "bin", "node"), "");
   writeFileSync(join(runtimeRoot, "dist", "cli.js"), "");
   writeFileSync(join(runtimeRoot, "dist", "mcp.js"), "");
+}
+
+function makeCodexStub(version: string): string {
+  const binDir = mkdtempSync(join(tmpdir(), "recall-codex-stub-"));
+  const script = join(binDir, "codex");
+  writeFileSync(script, `#!/usr/bin/env bash\necho "codex-cli ${version}"\n`);
+  chmodSync(script, 0o755);
+  return binDir;
 }
 
 describe("runLocalSetup installs both MCP and hooks globally", () => {
@@ -27,7 +35,10 @@ describe("runLocalSetup installs both MCP and hooks globally", () => {
     const previousHome = process.env.HOME;
     const previousPath = process.env.PATH;
     process.env.HOME = home;
-    process.env.PATH = ""; // prevents MCP `claude mcp add` / `codex mcp add` from trying real binaries
+    // Only a stub `codex` is on PATH so the version probe sees a supported
+    // build but real `claude mcp add` / `codex mcp add` still fail cleanly.
+    const stubDir = makeCodexStub("0.122.0");
+    process.env.PATH = `${stubDir}:/usr/bin:/bin`;
     try {
       const result = runLocalSetup({ appPath });
 

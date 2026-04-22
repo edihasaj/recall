@@ -10,6 +10,7 @@ import { performance } from "node:perf_hooks";
 import { detectCorrections } from "../capture/correction.js";
 import { captureCorrectionFallback, signalOutcomeFallback } from "../mcp/fallback.js";
 import {
+  listInjectedMemoryIdsForSession,
   listPendingMemoryInjections,
   toolCallTouchesMemory,
   pathMatchesMemory,
@@ -435,9 +436,21 @@ async function collectInjectionSurface(
     path: req.path,
     session_id: req.session_id,
   };
+  const isPromptPath = Boolean(req.query_text && req.query_text.trim().length > 0);
+
+  // Snapshot the injected set BEFORE we compile, since compile records its
+  // own inserts into memory_injections as a side effect. We only use this
+  // for the prompt path — SessionStart is always a first-touch dump.
+  const priorInjected = isPromptPath
+    ? listInjectedMemoryIdsForSession(db, req.session_id)
+    : null;
 
   let compiled;
-  if (req.query_text && req.query_text.trim().length > 0) {
+  if (isPromptPath) {
+    // Prompt path: hybrid-only. If the prompt doesn't semantically match any
+    // memory, we inject nothing — falling back to compileContext here would
+    // re-dump the full repo memory block on every turn, which is the noise
+    // UserPromptSubmit users opted out of.
     try {
       compiled = await compileContextHybrid(db, {
         ...base,
@@ -446,14 +459,22 @@ async function collectInjectionSurface(
     } catch {
       compiled = undefined;
     }
-    if (!compiled || compiled.text.length === 0) {
-      compiled = compileContext(db, base);
-    }
+    if (!compiled || compiled.text.length === 0) return undefined;
   } else {
+    // SessionStart path: always return something when there's active memory,
+    // since this is the first-touch dump.
     compiled = compileContext(db, base);
+    if (!compiled.text) return undefined;
   }
 
-  if (!compiled.text) return undefined;
+  // Per-session dedup (prompt path only): if every memory in this injection
+  // was already delivered earlier in the session, skip. Partial overlap is
+  // allowed — the fresh rows still add value.
+  if (priorInjected && compiled.memories_included.length > 0 &&
+      compiled.memories_included.every((id) => priorInjected.has(id))) {
+    return undefined;
+  }
+
   return {
     text: compiled.text,
     memories_included: compiled.memories_included,

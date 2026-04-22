@@ -52,7 +52,12 @@ describe("hook context injection", () => {
     expect(result.injection).toBeUndefined();
   });
 
-  it("handlePromptHook injects when RECALL_HOOK_INJECT_PROMPT=true", async () => {
+  it("handlePromptHook stays silent even with RECALL_HOOK_INJECT_PROMPT=true when hybrid can't score the prompt", async () => {
+    // With embeddings disabled (as in these tests) hybrid retrieval cannot
+    // rank memories against the prompt, so the prompt path returns nothing
+    // — by design, since the previous fallback-to-full-compile behavior was
+    // the per-turn noise UserPromptSubmit users opted out of. Real enablement
+    // requires embeddings to be on; that's covered by the integration tests.
     const db = freshDb();
     createMemory(db, {
       type: "rule",
@@ -74,10 +79,7 @@ describe("hook context injection", () => {
       { db },
     );
 
-    expect(result.injection).toBeDefined();
-    expect(result.injection!.text).toContain("uv");
-    expect(result.injection!.memories_included.length).toBeGreaterThan(0);
-    expect(result.injection!.token_estimate).toBeGreaterThan(0);
+    expect(result.injection).toBeUndefined();
   });
 
   it("handlePromptHook omits injection when opted in but repo has no active memories", async () => {
@@ -142,7 +144,11 @@ describe("hook context injection", () => {
     expect(result.injection).toBeUndefined();
   });
 
-  it("falls back to non-hybrid compile when hybrid returns empty", async () => {
+  it("UserPromptSubmit does NOT fall back to a full-repo compile when hybrid is empty", async () => {
+    // With embeddings disabled the hybrid path yields no ranked results for a
+    // prompt. The collector used to fall through to compileContext (the full
+    // repo dump) — that produced re-injection noise on every turn. Now the
+    // prompt path just returns undefined so the hook goes silent.
     const db = freshDb();
     createMemory(db, {
       type: "rule",
@@ -163,8 +169,66 @@ describe("hook context injection", () => {
       },
       { db },
     );
+    expect(result.injection).toBeUndefined();
+  });
+
+  it("handleSessionStartHook does fall back to compileContext (first-touch dump)", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "use conventional commits",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    const result = await handleSessionStartHook(
+      {
+        session_id: "sess-4b",
+        agent: "claude-code",
+        repo: "edihasaj/recall",
+      },
+      { db },
+    );
     expect(result.injection).toBeDefined();
     expect(result.injection!.text).toContain("conventional commits");
+  });
+
+  it("per-session dedup: SessionStart fires once, subsequent opt-in prompt hooks skip if all ids already injected", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "always use uv, never pip in this repo",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    const sessionId = "sess-dedup";
+
+    // First-touch SessionStart delivers the memory.
+    const started = await handleSessionStartHook(
+      { session_id: sessionId, agent: "claude-code", repo: "edihasaj/recall" },
+      { db },
+    );
+    expect(started.injection).toBeDefined();
+
+    // Now the user has opted into per-prompt injection. A prompt that
+    // semantically matches the same memory should NOT re-emit it because the
+    // session has already seen it.
+    process.env.RECALL_HOOK_INJECT_PROMPT = "true";
+    const prompted = await handlePromptHook(
+      {
+        session_id: sessionId,
+        repo: "edihasaj/recall",
+        text: "how do I add a python dependency with uv",
+        agent: "claude-code",
+      },
+      { db },
+    );
+    expect(prompted.injection).toBeUndefined();
   });
 });
 

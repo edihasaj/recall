@@ -5,6 +5,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasCommand, resolveUserHomeDir } from "./utils.js";
@@ -21,12 +22,33 @@ const MANAGED_END = "# recall:managed:codex:end";
 const MANAGED_FEATURE_FLAG = "# recall:managed:codex:feature";
 const MANAGED_HOOK_TAG = "recall:managed:codex";
 
+// Minimum Codex CLI version that supports the hooks.json + [features].codex_hooks
+// flow we target in installCodexHooks. Below this we fall back to the legacy
+// notify bridge so memory capture still works on older CLIs.
+//
+// Override at call time by passing options.minCodexHooksVersion, or at runtime
+// via RECALL_CODEX_HOOKS_MIN_VERSION for users who have forked/patched their CLI.
+const DEFAULT_MIN_CODEX_HOOKS_VERSION = "0.115.0";
+
+export interface CodexCapability {
+  hooks_json: boolean;
+  detected_version: string | null;
+  required_version: string;
+  reason?: string;
+}
+
 export interface CodexHookInstallOptions {
   configPath?: string;
   hooksPath?: string;
   cliPath?: string;
   nodePath?: string;
   profile?: HookProfile;
+  /** Override the minimum Codex CLI version that is eligible for hooks.json install. */
+  minCodexHooksVersion?: string;
+  /** Skip the version probe and install hooks.json regardless of detected version. */
+  forceHooks?: boolean;
+  /** Skip hooks.json entirely and use the legacy notify bridge. */
+  forceNotifyBridge?: boolean;
 }
 
 const configPath = () => join(resolveUserHomeDir(), ...CODEX_CONFIG_RELATIVE_PATH);
@@ -162,11 +184,58 @@ interface CodexCommandHook {
   [key: string]: unknown;
 }
 
+export function detectCodexCapability(
+  options: Pick<CodexHookInstallOptions, "minCodexHooksVersion"> = {},
+): CodexCapability {
+  const required = options.minCodexHooksVersion
+    ?? process.env.RECALL_CODEX_HOOKS_MIN_VERSION
+    ?? DEFAULT_MIN_CODEX_HOOKS_VERSION;
+  const detected = probeCodexVersion();
+  if (!detected) {
+    return {
+      hooks_json: false,
+      detected_version: null,
+      required_version: required,
+      reason: "codex CLI not found on PATH — cannot verify hook support",
+    };
+  }
+  if (compareSemver(detected, required) < 0) {
+    return {
+      hooks_json: false,
+      detected_version: detected,
+      required_version: required,
+      reason: `codex ${detected} < ${required} (hooks.json unsupported)`,
+    };
+  }
+  return {
+    hooks_json: true,
+    detected_version: detected,
+    required_version: required,
+  };
+}
+
 export function installCodexHooks(
   options: CodexHookInstallOptions = {},
 ): InstallResult {
   const targetConfig = options.configPath ?? configPath();
   const targetHooks = options.hooksPath ?? hooksJsonPath();
+
+  const capability = options.forceNotifyBridge
+    ? { hooks_json: false, detected_version: null, required_version: "n/a", reason: "forced notify bridge" }
+    : options.forceHooks
+      ? { hooks_json: true, detected_version: null, required_version: "n/a" }
+      : detectCodexCapability(options);
+
+  if (!capability.hooks_json) {
+    const bridge = installCodexNotifyBridge(options);
+    const reason = capability.reason ?? "codex hooks unsupported";
+    return {
+      ok: bridge.ok,
+      changed: bridge.changed,
+      config_path: bridge.config_path,
+      message: `${bridge.message} (fell back to notify bridge: ${reason})`,
+    };
+  }
 
   // Migration: legacy notify bridge would double-fire on every prompt. Remove first.
   uninstallCodexNotifyBridge({ configPath: targetConfig });
@@ -176,14 +245,47 @@ export function installCodexHooks(
 
   const changed = flagResult.changed || hooksResult.changed;
   const ok = flagResult.ok && hooksResult.ok;
+  const versionNote = capability.detected_version
+    ? ` (codex ${capability.detected_version})`
+    : "";
   const messages = [flagResult.message, hooksResult.message].filter(Boolean).join("; ");
 
   return {
     ok,
     changed,
     config_path: targetHooks,
-    message: messages || (changed ? "Installed Codex hooks.json" : "Codex hooks already installed"),
+    message: (messages || (changed ? "Installed Codex hooks.json" : "Codex hooks already installed")) + versionNote,
   };
+}
+
+function probeCodexVersion(): string | null {
+  if (!hasCommand("codex")) return null;
+  try {
+    const raw = execFileSync("codex", ["--version"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5_000,
+    });
+    return extractSemverFromVersionString(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function extractSemverFromVersionString(raw: string): string | null {
+  const match = raw.match(/(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?/);
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : null;
+}
+
+export function compareSemver(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10));
+  const pb = b.split(".").map((n) => parseInt(n, 10));
+  for (let i = 0; i < 3; i++) {
+    const av = pa[i] ?? 0;
+    const bv = pb[i] ?? 0;
+    if (av !== bv) return av < bv ? -1 : 1;
+  }
+  return 0;
 }
 
 export function uninstallCodexHooks(
