@@ -35,7 +35,9 @@ function insertSnippet(db: ReturnType<typeof initStandaloneDb>, repo: string) {
     repo,
     session_id: `sess-${id}`,
     kind: "session_summary",
-    text: "raw template text",
+    // Include a Corrections line so snippetHasMeaningfulContent accepts this
+    // fixture under the trivial-filter that guards produceSummarizeHistoryTasks.
+    text: "Repo: " + repo + "\nEvent types: session_end\nCorrections: sample rule",
     source_activity_ids: [] as any,
     created_at: now,
     updated_at: now,
