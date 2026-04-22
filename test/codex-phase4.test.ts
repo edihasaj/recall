@@ -130,13 +130,17 @@ describe("phase 4 Codex adapter", () => {
     }), { db });
 
     const events = listActivityEvents(db, { session_id: "sess-1" });
-    expect(events.map((event) => event.event_type).sort()).toEqual([
+    const baseTypes = events
+      .map((event) => event.event_type)
+      .filter((t) => t !== "feedback")
+      .sort();
+    expect(baseTypes).toEqual([
       "scan",
       "session_end",
       "session_event",
       "session_event",
       "session_start",
-    ].sort());
+    ]);
 
     const toolEvent = events.find((event) => event.request.name === "tool_invoked");
     expect(toolEvent?.result.tool_call).toEqual({

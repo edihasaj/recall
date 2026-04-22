@@ -63,6 +63,7 @@ import {
   executeSessionEndHook,
   executeSessionStartHook,
   executeToolHook,
+  formatInjectionContext,
   formatMaintenanceBacklogContext,
   parseInteger,
   parseRecentToolCallsOption,
@@ -287,7 +288,16 @@ hookCmd
           prev_assistant_turn: opts.prevAssistant,
           recent_tool_calls: parseRecentToolCallsOption(opts.recentTools),
         };
-    await executePromptHook(input);
+    const result = await executePromptHook(input);
+    if (opts.claudeCodeStdin && result.injection) {
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: "UserPromptSubmit",
+          additionalContext: formatInjectionContext(result.injection),
+        },
+      };
+      process.stdout.write(`${JSON.stringify(output)}\n`);
+    }
   });
 
 hookCmd
@@ -338,14 +348,21 @@ hookCmd
           path: opts.path,
         };
     const result = await executeSessionStartHook(input);
-    if (opts.claudeCodeStdin && result.maintenance_backlog) {
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: "SessionStart",
-          additionalContext: formatMaintenanceBacklogContext(result.maintenance_backlog),
-        },
-      };
-      process.stdout.write(`${JSON.stringify(output)}\n`);
+    if (opts.claudeCodeStdin) {
+      const parts: string[] = [];
+      if (result.injection) parts.push(formatInjectionContext(result.injection));
+      if (result.maintenance_backlog) {
+        parts.push(formatMaintenanceBacklogContext(result.maintenance_backlog));
+      }
+      if (parts.length > 0) {
+        const output = {
+          hookSpecificOutput: {
+            hookEventName: "SessionStart",
+            additionalContext: parts.join("\n\n"),
+          },
+        };
+        process.stdout.write(`${JSON.stringify(output)}\n`);
+      }
     }
   });
 

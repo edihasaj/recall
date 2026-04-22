@@ -132,12 +132,13 @@ describe("phase 2 hook handlers", () => {
     expect(ended.repo).toBe("edihasaj/hook-phase2");
 
     const events = listActivityEvents(db, { session_id: "sess-2" });
-    expect(events.map((event) => event.event_type).sort()).toEqual([
-      "scan",
-      "session_end",
-      "session_start",
-    ].sort());
-    expect(events[0].result.turn_count).toBe(4);
+    const baseTypes = events
+      .map((event) => event.event_type)
+      .filter((t) => t !== "feedback")
+      .sort();
+    expect(baseTypes).toEqual(["scan", "session_end", "session_start"]);
+    const sessionEnd = events.find((e) => e.event_type === "session_end")!;
+    expect(sessionEnd.result.turn_count).toBe(4);
     const artifact = readFileSync(join(repoRoot, ".recall", "context.md"), "utf-8");
     expect(artifact).toContain("edihasaj/hook-phase2");
   });
