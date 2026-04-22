@@ -19,6 +19,8 @@ function freshDb() {
 beforeEach(() => {
   process.env.RECALL_EMBEDDINGS_DISABLED = "true";
   delete process.env.RECALL_HOOK_INJECT_CONTEXT;
+  delete process.env.RECALL_HOOK_INJECT_PROMPT;
+  delete process.env.RECALL_HOOK_INJECT_STYLE;
 });
 
 afterEach(() => {
@@ -26,7 +28,7 @@ afterEach(() => {
 });
 
 describe("hook context injection", () => {
-  it("handlePromptHook returns injection when repo has active memories", async () => {
+  it("handlePromptHook is silent by default (no per-turn re-injection)", async () => {
     const db = freshDb();
     createMemory(db, {
       type: "rule",
@@ -37,6 +39,31 @@ describe("hook context injection", () => {
       confidence: 0.9,
     });
 
+    const result = await handlePromptHook(
+      {
+        session_id: "sess-silent",
+        repo: "edihasaj/recall",
+        text: "how do I add a dependency",
+        agent: "claude-code",
+      },
+      { db },
+    );
+
+    expect(result.injection).toBeUndefined();
+  });
+
+  it("handlePromptHook injects when RECALL_HOOK_INJECT_PROMPT=true", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "always use uv, never pip in this repo",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    process.env.RECALL_HOOK_INJECT_PROMPT = "true";
     const result = await handlePromptHook(
       {
         session_id: "sess-1",
@@ -53,8 +80,9 @@ describe("hook context injection", () => {
     expect(result.injection!.token_estimate).toBeGreaterThan(0);
   });
 
-  it("handlePromptHook omits injection when repo has no active memories", async () => {
+  it("handlePromptHook omits injection when opted in but repo has no active memories", async () => {
     const db = freshDb();
+    process.env.RECALL_HOOK_INJECT_PROMPT = "true";
     const result = await handlePromptHook(
       {
         session_id: "sess-1",
@@ -67,7 +95,7 @@ describe("hook context injection", () => {
     expect(result.injection).toBeUndefined();
   });
 
-  it("handleSessionStartHook returns injection for repo with memories", async () => {
+  it("handleSessionStartHook still returns injection for repo with memories", async () => {
     const db = freshDb();
     createMemory(db, {
       type: "command",
@@ -91,7 +119,7 @@ describe("hook context injection", () => {
     expect(result.injection!.text).toContain("pnpm test");
   });
 
-  it("respects RECALL_HOOK_INJECT_CONTEXT=false", async () => {
+  it("respects RECALL_HOOK_INJECT_CONTEXT=false on session-start", async () => {
     const db = freshDb();
     createMemory(db, {
       type: "rule",
@@ -103,12 +131,11 @@ describe("hook context injection", () => {
     });
 
     process.env.RECALL_HOOK_INJECT_CONTEXT = "false";
-    const result = await handlePromptHook(
+    const result = await handleSessionStartHook(
       {
         session_id: "sess-3",
-        repo: "edihasaj/recall",
-        text: "anything",
         agent: "claude-code",
+        repo: "edihasaj/recall",
       },
       { db },
     );
@@ -116,8 +143,6 @@ describe("hook context injection", () => {
   });
 
   it("falls back to non-hybrid compile when hybrid returns empty", async () => {
-    // With embeddings disabled and a query_text, hybrid yields no ranked results,
-    // so the collector must fall back to plain compileContext.
     const db = freshDb();
     createMemory(db, {
       type: "rule",
@@ -128,6 +153,7 @@ describe("hook context injection", () => {
       confidence: 0.9,
     });
 
+    process.env.RECALL_HOOK_INJECT_PROMPT = "true";
     const result = await handlePromptHook(
       {
         session_id: "sess-4",
@@ -140,14 +166,28 @@ describe("hook context injection", () => {
     expect(result.injection).toBeDefined();
     expect(result.injection!.text).toContain("conventional commits");
   });
+});
 
-  it("formatInjectionContext prefixes with repo memory header", () => {
-    const line = formatInjectionContext({
-      text: "- rule: use pnpm\n- command: pnpm test",
-      memories_included: ["a", "b"],
-      token_estimate: 10,
-    });
-    expect(line).toMatch(/Recall memory for this repo/);
-    expect(line).toContain("pnpm");
+describe("formatInjectionContext", () => {
+  const surface = {
+    text: "# Recall: edihasaj/recall\n\n## Commands\n- dev: tsup --watch\n",
+    memories_included: ["a"],
+    token_estimate: 10,
+  };
+
+  it("defaults to minimal style — strips the repo header and boilerplate prefix", () => {
+    const line = formatInjectionContext(surface);
+    expect(line).not.toMatch(/Recall memory for this repo/);
+    expect(line).not.toMatch(/# Recall:/);
+    expect(line).toContain("## Commands");
+    expect(line).toContain("dev: tsup --watch");
+    expect(line.endsWith("\n")).toBe(false);
+  });
+
+  it("verbose style keeps the historical prefix + header", () => {
+    process.env.RECALL_HOOK_INJECT_STYLE = "verbose";
+    const line = formatInjectionContext(surface);
+    expect(line).toMatch(/^Recall memory for this repo:/);
+    expect(line).toContain("# Recall: edihasaj/recall");
   });
 });

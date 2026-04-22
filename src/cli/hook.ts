@@ -257,7 +257,12 @@ export async function handlePromptHook(
       }, source);
     }
 
-    const injection = repo
+    // UserPromptSubmit stays silent by default to avoid re-injecting the same
+    // memory on every turn — SessionStart already dumped it. Set
+    // RECALL_HOOK_INJECT_PROMPT=true to opt back in (e.g. for agents that run
+    // long sessions and want per-prompt relevance injection).
+    const promptInjectionEnabled = process.env.RECALL_HOOK_INJECT_PROMPT === "true";
+    const injection = repo && promptInjectionEnabled
       ? await collectInjectionSurface(db, {
           repo,
           path: input.path,
@@ -403,7 +408,15 @@ export function formatMaintenanceBacklogContext(surface: MaintenanceBacklogSurfa
 }
 
 export function formatInjectionContext(surface: InjectionSurface): string {
-  return `Recall memory for this repo:\n${surface.text}`;
+  const style = (process.env.RECALL_HOOK_INJECT_STYLE ?? "minimal").toLowerCase();
+  if (style === "verbose") {
+    return `Recall memory for this repo:\n${surface.text}`;
+  }
+  // Minimal: drop the "# Recall: <repo>" header from renderPack plus any
+  // trailing whitespace. The system-reminder wrapping already tells the
+  // agent this is repo memory — no need to re-announce.
+  const stripped = surface.text.replace(/^#\s+Recall:[^\n]*\n\n?/, "").trimEnd();
+  return stripped;
 }
 
 async function collectInjectionSurface(
