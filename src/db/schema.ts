@@ -133,9 +133,10 @@ export const activityEvents = sqliteTable("activity_events", {
   session_id: text("session_id"),
   repo: text("repo"),
   path: text("path"),
-  source: text("source", {
-    enum: ["cli", "daemon", "mcp", "system"],
-  }).notNull(),
+  // source is a free-form string tagged as "<transport>[:<client>]"
+  // (e.g. "mcp", "mcp:claude-code", "hook:codex", "cli", "daemon").
+  // The runtime regex in src/types.ts validates the shape.
+  source: text("source").notNull(),
   event_type: text("event_type", {
     enum: [
       "compile",
