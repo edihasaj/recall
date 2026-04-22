@@ -35,6 +35,8 @@ recall setup --scope project --yes      # add project-scoped hooks to the curren
 recall setup --uninstall-hooks --yes    # remove Recall-managed hooks
 ```
 
+By default the hooks inject repo memory once at `SessionStart` (minimal format) and stay silent on every subsequent `UserPromptSubmit`. To re-enable per-prompt injection, opt back into the verbose format, or wire up an OpenAI/Anthropic key so the daemon can run memory maintenance on a schedule, see [docs/configuration.md](docs/configuration.md).
+
 ## First Run
 
 Initialize DB:
