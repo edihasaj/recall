@@ -29,6 +29,8 @@ import {
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
+import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
+import { getApiKey } from "./credentials/keychain.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
 import {
@@ -42,6 +44,13 @@ let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
 const maintenanceConfig = loadMaintenanceConfigFromEnv();
 let maintenanceRunning = false;
+
+const dispatcherConfig = {
+  enabled: process.env.RECALL_DISPATCHER_ENABLED !== "false",
+  intervalSeconds: parseInt(process.env.RECALL_DISPATCHER_INTERVAL_SECONDS ?? "86400", 10),
+  maxTasksPerRun: parseInt(process.env.RECALL_DISPATCHER_MAX_TASKS_PER_RUN ?? "5", 10),
+};
+let dispatcherRunning = false;
 
 function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -85,6 +94,39 @@ function scheduleMaintenanceLoop() {
   const timer = setInterval(() => {
     void run();
   }, Math.max(30, maintenanceConfig.interval_seconds) * 1000);
+  timer.unref?.();
+}
+
+function scheduleDispatcherLoop() {
+  if (!dispatcherConfig.enabled) return;
+
+  const run = async () => {
+    if (dispatcherRunning) return;
+    // Skip if no API key is currently configured — picked up again next tick.
+    const hasKey = Boolean(getApiKey("anthropic") ?? getApiKey("openai"));
+    if (!hasKey) return;
+
+    dispatcherRunning = true;
+    try {
+      const report = await dispatchPendingTasks(db, {
+        maxTasks: dispatcherConfig.maxTasksPerRun,
+      });
+      if (report.attempted > 0 || report.applied > 0) {
+        console.log(
+          `[recall] dispatcher ${report.provider}: attempted=${report.attempted} applied=${report.applied} rejected=${report.rejected} released=${report.released}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[recall] dispatcher failed: ${message}`);
+    } finally {
+      dispatcherRunning = false;
+    }
+  };
+
+  const timer = setInterval(() => {
+    void run();
+  }, Math.max(60, dispatcherConfig.intervalSeconds) * 1000);
   timer.unref?.();
 }
 
@@ -672,6 +714,7 @@ async function startDaemon() {
   db = initDb();
 
   scheduleMaintenanceLoop();
+  scheduleDispatcherLoop();
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (embeddingConfig) {
