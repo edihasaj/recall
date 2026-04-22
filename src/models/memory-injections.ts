@@ -41,6 +41,17 @@ export function recordMemoryInjections(
   return inserted;
 }
 
+export function listInjectedMemoryIdsForSession(
+  db: RecallDb,
+  sessionId: string,
+): Set<string> {
+  const rows = db.select({ memory_id: memoryInjections.memory_id })
+    .from(memoryInjections)
+    .where(eq(memoryInjections.session_id, sessionId))
+    .all();
+  return new Set(rows.map((row) => row.memory_id));
+}
+
 export function listPendingMemoryInjections(
   db: RecallDb,
   sessionId: string,

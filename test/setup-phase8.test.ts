@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { program } from "../src/cli.js";
@@ -36,7 +36,12 @@ describe("phase 8 setup uninstall CLI", () => {
     writeFileSync(join(home, ".codex", "config.toml"), 'model = "gpt-5.4"\n');
 
     process.env.HOME = home;
-    process.env.PATH = "";
+    // Stub `codex` so the version probe in installCodexHooks sees a build
+    // that supports hooks.json; real `claude` / `codex` still fail cleanly.
+    const stubDir = mkdtempSync(join(tmpdir(), "recall-phase8-stub-"));
+    writeFileSync(join(stubDir, "codex"), `#!/usr/bin/env bash\necho "codex-cli 0.122.0"\n`);
+    chmodSync(join(stubDir, "codex"), 0o755);
+    process.env.PATH = `${stubDir}:/usr/bin:/bin`;
 
     runRecallSetup({
       appPath,

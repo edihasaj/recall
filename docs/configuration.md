@@ -11,8 +11,9 @@ You can tune that with these env vars (read fresh on each hook invocation — no
 | Variable | Default | Effect |
 |---|---|---|
 | `RECALL_HOOK_INJECT_CONTEXT` | `true` | Set to `false` to disable all hook-driven memory injection (SessionStart + UserPromptSubmit). Hooks still fire for telemetry and correction capture. |
-| `RECALL_HOOK_INJECT_PROMPT` | `false` | Set to `true` to re-enable per-prompt memory injection on `UserPromptSubmit`. Useful for long sessions where you want context re-ranked against every prompt. |
+| `RECALL_HOOK_INJECT_PROMPT` | `false` | Set to `true` to re-enable per-prompt memory injection on `UserPromptSubmit`. Uses hybrid retrieval with your prompt as the query — if nothing scores above the relevance floor, nothing is injected (no fall-through to a full-repo dump). Per-session dedup also applies: memories already delivered in this session are not re-emitted. |
 | `RECALL_HOOK_INJECT_STYLE` | `minimal` | Set to `verbose` to restore the historical format (`Recall memory for this repo:\n# Recall: <slug>\n\n...`). `minimal` strips the prefix and repo header — the section bullets are all that lands in context. |
+| `RECALL_CODEX_HOOKS_MIN_VERSION` | `0.115.0` | Minimum Codex CLI version eligible for the `hooks.json` install path. Below this, `recall setup local` / `recall doctor --fix` fall back to the legacy `notify` bridge so memory capture still works. Override if you've forked/patched your Codex. |
 
 Where to set them:
 
