@@ -30,7 +30,7 @@ import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
 import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
-import { getApiKey } from "./credentials/keychain.js";
+import { hasProviderConfigured } from "./credentials/keychain.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
 import {
@@ -102,8 +102,11 @@ function scheduleDispatcherLoop() {
 
   const run = async () => {
     if (dispatcherRunning) return;
-    // Skip if no API key is currently configured — picked up again next tick.
-    const hasKey = Boolean(getApiKey("anthropic") ?? getApiKey("openai"));
+    // Skip if no provider is currently configured — picked up again next tick.
+    const hasKey =
+      hasProviderConfigured("anthropic") ||
+      hasProviderConfigured("azure-openai") ||
+      hasProviderConfigured("openai");
     if (!hasKey) return;
 
     dispatcherRunning = true;
