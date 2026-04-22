@@ -19,6 +19,8 @@ export interface LocalSetupResult {
   runtimeMcpPath: string;
   codex: SetupStepResult;
   claude: SetupStepResult;
+  codex_hooks: SetupStepResult;
+  claude_hooks: SetupStepResult;
 }
 
 export interface SetupStepResult {
@@ -85,17 +87,22 @@ export function runLocalSetup(opts: LocalSetupOptions = {}): LocalSetupResult {
       ...(targetClaude ? ["claude-code" as const] : []),
     ],
     hooksOnly: false,
-    mcpOnly: true,
+    mcpOnly: false,
     scope: "global",
   });
+
+  const codex = result.agents.find((agent) => agent.agent === "codex");
+  const claude = result.agents.find((agent) => agent.agent === "claude-code");
 
   return {
     appPath: result.appPath,
     runtimeNodePath: result.runtimeNodePath,
     runtimeCliPath: result.runtimeCliPath,
     runtimeMcpPath: result.runtimeMcpPath,
-    codex: result.agents.find((agent) => agent.agent === "codex")?.mcp ?? skipped("skipped"),
-    claude: result.agents.find((agent) => agent.agent === "claude-code")?.mcp ?? skipped("skipped"),
+    codex: codex?.mcp ?? skipped("skipped"),
+    claude: claude?.mcp ?? skipped("skipped"),
+    codex_hooks: codex?.hooks ?? skipped("skipped"),
+    claude_hooks: claude?.hooks ?? skipped("skipped"),
   };
 }
 

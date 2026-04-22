@@ -241,10 +241,10 @@ setupCmd
 
 setupCmd
   .command("local")
-  .description("Configure local Codex/Claude MCP to use the installed Recall.app")
+  .description("Configure local Codex/Claude MCP + hooks against the installed Recall.app")
   .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
-  .option("--codex-only", "Configure only Codex MCP")
-  .option("--claude-only", "Configure only Claude MCP")
+  .option("--codex-only", "Configure only Codex")
+  .option("--claude-only", "Configure only Claude")
   .action((opts) => {
     const result = runLocalSetup({
       appPath: opts.appPath,
@@ -257,8 +257,10 @@ setupCmd
     console.log(`Bundled CLI:  ${result.runtimeCliPath}`);
     console.log(`Bundled MCP:  ${result.runtimeMcpPath}`);
     console.log("");
-    console.log(`Codex:  ${formatSetupStep(result.codex)}`);
-    console.log(`Claude: ${formatSetupStep(result.claude)}`);
+    console.log(`Codex MCP:    ${formatSetupStep(result.codex)}`);
+    console.log(`Codex hooks:  ${formatSetupStep(result.codex_hooks)}`);
+    console.log(`Claude MCP:   ${formatSetupStep(result.claude)}`);
+    console.log(`Claude hooks: ${formatSetupStep(result.claude_hooks)}`);
   });
 
 // --- hook ---
