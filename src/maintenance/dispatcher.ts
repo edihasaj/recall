@@ -8,7 +8,7 @@ import {
   submitTask,
 } from "./tasks.js";
 import { callLlm, LlmCredentialError, type LlmProvider } from "../llm/client.js";
-import { getApiKey } from "../credentials/keychain.js";
+import { hasProviderConfigured } from "../credentials/keychain.js";
 
 const DISPATCH_AGENT = "recall:dispatcher";
 const DEFAULT_LEASE_SECONDS = 120;
@@ -207,9 +207,9 @@ async function runSingle(
 function resolveProvider(preferred?: LlmProvider): LlmProvider | null {
   const candidates: LlmProvider[] = preferred
     ? [preferred]
-    : ["anthropic", "openai"];
+    : ["anthropic", "azure-openai", "openai"];
   for (const provider of candidates) {
-    if (getApiKey(provider)) return provider;
+    if (hasProviderConfigured(provider)) return provider;
   }
   return null;
 }

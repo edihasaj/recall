@@ -1792,54 +1792,116 @@ credentialsCmd
       return;
     }
     for (const cred of creds) {
-      console.log(`${cred.provider.padEnd(10)} ${cred.source.padEnd(8)} ${cred.preview}`);
+      const detail = cred.detail ? `  ${cred.detail}` : "";
+      console.log(`${cred.provider.padEnd(14)} ${cred.source.padEnd(8)} ${cred.preview}${detail}`);
     }
   });
 
 credentialsCmd
   .command("set")
-  .description("Store an API key in the macOS Keychain for a provider")
-  .argument("<provider>", "openai|anthropic")
-  .argument("[key]", "API key (prompts via stdin if omitted)")
-  .action(async (providerArg: string, keyArg?: string) => {
-    const { setApiKey } = await import("./credentials/keychain.js");
-    if (providerArg !== "openai" && providerArg !== "anthropic") {
-      console.error(`Provider must be "openai" or "anthropic", got "${providerArg}".`);
-      process.exit(1);
+  .description("Store credentials for an LLM provider in the macOS Keychain")
+  .argument("<provider>", "openai|anthropic|azure")
+  .argument("[key]", "API key (prompts via stdin if omitted; required for openai/anthropic and for azure unless --stdin-json is used)")
+  .option("--endpoint <url>", "Azure OpenAI resource endpoint (e.g. https://myresource.openai.azure.com)")
+  .option("--deployment <name>", "Azure OpenAI deployment name")
+  .option("--api-version <version>", "Azure OpenAI api-version (e.g. 2024-10-21)")
+  .option("--stdin-json", "Read the azure config (endpoint/deployment/api_version/key) as a JSON object from stdin")
+  .action(async (providerArg: string, keyArg: string | undefined, opts) => {
+    const { setApiKey, setAzureConfig } = await import("./credentials/keychain.js");
+    const provider = providerArg === "azure" ? "azure-openai" : providerArg;
+
+    if (provider === "openai" || provider === "anthropic") {
+      const key = keyArg ?? await readStdinKey();
+      if (!key) {
+        console.error("No API key provided (pass as argument or pipe via stdin).");
+        process.exit(1);
+      }
+      try {
+        setApiKey(provider, key);
+        console.log(`Stored ${provider} API key in Keychain (service com.recall.llm).`);
+      } catch (err) {
+        console.error(`Failed to store key: ${(err as Error).message}`);
+        process.exit(1);
+      }
+      return;
     }
-    const key = keyArg ?? await readStdinKey();
-    if (!key) {
-      console.error("No API key provided (pass as argument or pipe via stdin).");
-      process.exit(1);
+
+    if (provider === "azure-openai") {
+      let azureConfig;
+      if (opts.stdinJson) {
+        const body = await readStdinText();
+        if (!body) {
+          console.error("No JSON payload received on stdin.");
+          process.exit(1);
+        }
+        try {
+          azureConfig = JSON.parse(body) as {
+            endpoint: string;
+            deployment: string;
+            api_version: string;
+            key: string;
+          };
+        } catch (err) {
+          console.error(`Failed to parse stdin JSON: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      } else {
+        const key = keyArg ?? await readStdinKey();
+        if (!opts.endpoint || !opts.deployment || !opts.apiVersion || !key) {
+          console.error(
+            "Azure setup requires --endpoint, --deployment, --api-version, and a key.\n" +
+              "Example: recall maintenance credentials set azure \\\n" +
+              "  --endpoint https://myresource.openai.azure.com \\\n" +
+              "  --deployment gpt-4o-mini \\\n" +
+              "  --api-version 2024-10-21 \\\n" +
+              "  <key>",
+          );
+          process.exit(1);
+        }
+        azureConfig = {
+          endpoint: opts.endpoint,
+          deployment: opts.deployment,
+          api_version: opts.apiVersion,
+          key,
+        };
+      }
+      try {
+        setAzureConfig(azureConfig);
+        console.log(`Stored azure-openai config in Keychain (service com.recall.llm).`);
+        console.log(`  endpoint:    ${azureConfig.endpoint}`);
+        console.log(`  deployment:  ${azureConfig.deployment}`);
+        console.log(`  api_version: ${azureConfig.api_version}`);
+      } catch (err) {
+        console.error(`Failed to store azure config: ${(err as Error).message}`);
+        process.exit(1);
+      }
+      return;
     }
-    try {
-      setApiKey(providerArg, key);
-      console.log(`Stored ${providerArg} API key in Keychain (service com.recall.llm).`);
-    } catch (err) {
-      console.error(`Failed to store key: ${(err as Error).message}`);
-      process.exit(1);
-    }
+
+    console.error(`Provider must be "openai", "anthropic", or "azure", got "${providerArg}".`);
+    process.exit(1);
   });
 
 credentialsCmd
   .command("clear")
-  .description("Remove an API key from the macOS Keychain")
-  .argument("<provider>", "openai|anthropic")
+  .description("Remove provider credentials from the macOS Keychain")
+  .argument("<provider>", "openai|anthropic|azure")
   .action(async (providerArg: string) => {
     const { deleteApiKey } = await import("./credentials/keychain.js");
-    if (providerArg !== "openai" && providerArg !== "anthropic") {
-      console.error(`Provider must be "openai" or "anthropic", got "${providerArg}".`);
+    const provider = providerArg === "azure" ? "azure-openai" : providerArg;
+    if (provider !== "openai" && provider !== "anthropic" && provider !== "azure-openai") {
+      console.error(`Provider must be "openai", "anthropic", or "azure", got "${providerArg}".`);
       process.exit(1);
     }
-    const removed = deleteApiKey(providerArg);
-    if (removed) console.log(`Removed ${providerArg} API key from Keychain.`);
-    else console.log(`No ${providerArg} key found in Keychain.`);
+    const removed = deleteApiKey(provider);
+    if (removed) console.log(`Removed ${provider} credentials from Keychain.`);
+    else console.log(`No ${provider} credentials found in Keychain.`);
   });
 
 maintenanceCmd
   .command("dispatch")
-  .description("Run the daemon-owned dispatcher once against pending maintenance tasks (requires a configured LLM API key)")
-  .option("--provider <provider>", "openai|anthropic (defaults to whichever has a key)")
+  .description("Run the daemon-owned dispatcher once against pending maintenance tasks (requires a configured LLM provider)")
+  .option("--provider <provider>", "openai|anthropic|azure-openai (defaults to whichever is configured)")
   .option("--model <model>", "Model override")
   .option("--kind <kind>", "Restrict to a single task kind (repeatable)", (value: string, acc: string[] = []) => [...acc, value], [] as string[])
   .option("--repo <repo>", "Restrict to a single repo")
@@ -1885,12 +1947,19 @@ maintenanceCmd
   });
 
 async function readStdinKey(): Promise<string | null> {
+  const raw = await readStdinText();
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function readStdinText(): Promise<string | null> {
   if (process.stdin.isTTY) return null;
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
     chunks.push(Buffer.from(chunk));
   }
-  const text = Buffer.concat(chunks).toString("utf-8").trim();
+  const text = Buffer.concat(chunks).toString("utf-8");
   return text.length > 0 ? text : null;
 }
 

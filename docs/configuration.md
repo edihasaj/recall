@@ -31,13 +31,22 @@ Recall enqueues maintenance tasks (refine candidates, merge near-duplicates, sum
 
 Give Recall an API key and it will run maintenance itself on a schedule, with no live agent session required.
 
-1. Store a key in the macOS Keychain under service `com.recall.llm`:
+1. Store credentials in the macOS Keychain under service `com.recall.llm`:
    ```bash
    recall maintenance credentials set openai sk-...
    # or:
    recall maintenance credentials set anthropic sk-ant-...
+   # or Azure OpenAI (deployment-scoped):
+   recall maintenance credentials set azure \
+     --endpoint https://myresource.openai.azure.com \
+     --deployment gpt-4o-mini \
+     --api-version 2024-10-21 \
+     az-...
    ```
-   Non-macOS platforms fall back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars.
+   Non-macOS platforms fall back to env vars:
+   `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or the Azure quartet
+   `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`,
+   `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_API_KEY`.
 2. Verify:
    ```bash
    recall maintenance credentials
@@ -45,10 +54,13 @@ Give Recall an API key and it will run maintenance itself on a schedule, with no
    ```
 3. Trigger once manually to sanity-check (uses the configured key, calls the LLM):
    ```bash
-   recall maintenance dispatch --dry-run          # lists what would run
-   recall maintenance dispatch --max 3            # actually runs up to 3 tasks
+   recall maintenance dispatch --dry-run                   # lists what would run
+   recall maintenance dispatch --max 3                     # runs up to 3 tasks
+   recall maintenance dispatch --provider azure-openai     # force a specific provider
    ```
 4. Let the daemon take over. It runs the dispatcher on the cadence below (default: daily).
+
+Provider auto-selection order when multiple are configured and you don't pass `--provider`: **anthropic → azure-openai → openai**. For Azure, the deployment name stored at setup time is used as the model (unless you pass `--model` to override). If the deployment name matches a known base model (`gpt-4o-mini`, `gpt-4o`, etc.), Recall applies the same per-token cost estimate as direct OpenAI; if it doesn't match, `llm_usage.cost_usd` is left null (tokens still tracked).
 
 ### Path 2 — Delegated fallback (no API key)
 
@@ -62,7 +74,11 @@ If no key is configured, the daemon still enqueues tasks and dispatches them to 
 | `RECALL_DISPATCHER_INTERVAL_SECONDS` | `86400` | Seconds between dispatcher ticks. Daily by default. |
 | `RECALL_DISPATCHER_MAX_TASKS_PER_RUN` | `5` | Max tasks per tick. Floor on memory_maintenance_tasks churn. |
 | `OPENAI_API_KEY` | — | Fallback when Keychain is unavailable or `recall maintenance credentials set openai` hasn't been run. |
-| `ANTHROPIC_API_KEY` | — | Same, for Anthropic. When both providers have keys, the dispatcher prefers Anthropic. |
+| `ANTHROPIC_API_KEY` | — | Same, for Anthropic. |
+| `AZURE_OPENAI_ENDPOINT` | — | Azure resource URL (e.g. `https://myresource.openai.azure.com`). |
+| `AZURE_OPENAI_DEPLOYMENT` | — | Azure deployment name (acts as the model). |
+| `AZURE_OPENAI_API_VERSION` | — | Azure API version (e.g. `2024-10-21`). |
+| `AZURE_OPENAI_API_KEY` | — | Azure API key. All four `AZURE_OPENAI_*` must be set together to count as configured. |
 
 ### Observability
 

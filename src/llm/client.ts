@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { getApiKey, type LlmProvider } from "../credentials/keychain.js";
+import {
+  getProviderConfig,
+  type AzureOpenAiConfig,
+  type LlmProvider,
+} from "../credentials/keychain.js";
 import type { RecallDb } from "../db/client.js";
 import { llmUsage } from "../db/schema.js";
 
@@ -38,6 +42,10 @@ export class LlmRequestError extends Error {}
 export const DEFAULT_MODELS: Record<LlmProvider, string> = {
   openai: "gpt-4o-mini",
   anthropic: "claude-haiku-4-5-20251001",
+  // For Azure the "model" is the deployment name, set by the user when they
+  // provisioned the deployment. We leave it empty so we always fall through
+  // to the deployment from AzureOpenAiConfig.
+  "azure-openai": "",
 };
 
 // Rough per-1M token rates ($). Kept conservative; tighten when model pricing shifts.
@@ -55,22 +63,26 @@ export async function callLlm(
   input: LlmCallInput,
 ): Promise<LlmCallResult> {
   const provider = input.provider;
-  const model = input.model ?? DEFAULT_MODELS[provider];
-  const apiKey = getApiKey(provider);
-  if (!apiKey) {
-    throw new LlmCredentialError(
-      `No API key for provider "${provider}". Set it via \`recall maintenance credentials --set ${provider}\` or the ${provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"} env var.`,
-    );
+  const config = getProviderConfig(provider);
+  if (!config) {
+    throw new LlmCredentialError(missingCredentialMessage(provider));
   }
+  const model = input.model ?? (provider === "azure-openai"
+    ? (config as AzureOpenAiConfig).deployment
+    : DEFAULT_MODELS[provider]);
 
   const started = Date.now();
   let result: LlmCallResult | null = null;
   let errorMessage: string | undefined;
 
   try {
-    result = provider === "openai"
-      ? await callOpenAi(apiKey, model, input)
-      : await callAnthropic(apiKey, model, input);
+    if (provider === "openai") {
+      result = await callOpenAi((config as { key: string }).key, model, input);
+    } else if (provider === "anthropic") {
+      result = await callAnthropic((config as { key: string }).key, model, input);
+    } else {
+      result = await callAzureOpenAi(config as AzureOpenAiConfig, model, input);
+    }
     return result;
   } catch (err) {
     errorMessage = err instanceof Error ? err.message : String(err);
@@ -141,6 +153,57 @@ async function callOpenAi(
       completion_tokens,
       total_tokens,
       cost_usd: computeCost(model, prompt_tokens, completion_tokens),
+    },
+  };
+}
+
+async function callAzureOpenAi(
+  config: AzureOpenAiConfig,
+  deployment: string,
+  input: LlmCallInput,
+): Promise<LlmCallResult> {
+  const started = Date.now();
+  const url = `${config.endpoint}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(config.api_version)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": config.key,
+    },
+    body: JSON.stringify({
+      messages: [
+        { role: "system", content: input.system },
+        { role: "user", content: input.user },
+      ],
+      max_tokens: input.max_output_tokens ?? 2048,
+      temperature: input.temperature ?? 0,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await safeText(response);
+    throw new LlmRequestError(`Azure OpenAI ${response.status}: ${body.slice(0, 400)}`);
+  }
+
+  const payload = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  };
+  const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
+  const prompt_tokens = payload.usage?.prompt_tokens ?? 0;
+  const completion_tokens = payload.usage?.completion_tokens ?? 0;
+  const total_tokens = payload.usage?.total_tokens ?? prompt_tokens + completion_tokens;
+
+  return {
+    text,
+    model: deployment,
+    provider: "azure-openai",
+    duration_ms: Date.now() - started,
+    usage: {
+      prompt_tokens,
+      completion_tokens,
+      total_tokens,
+      cost_usd: computeCost(deployment, prompt_tokens, completion_tokens),
     },
   };
 }
@@ -237,6 +300,17 @@ async function recordUsage(
     error: row.error ?? null,
     created_at: new Date().toISOString(),
   });
+}
+
+function missingCredentialMessage(provider: LlmProvider): string {
+  switch (provider) {
+    case "openai":
+      return `No API key for provider "openai". Set it via \`recall maintenance credentials set openai <key>\` or the OPENAI_API_KEY env var.`;
+    case "anthropic":
+      return `No API key for provider "anthropic". Set it via \`recall maintenance credentials set anthropic <key>\` or the ANTHROPIC_API_KEY env var.`;
+    case "azure-openai":
+      return `Azure OpenAI is not fully configured. Run \`recall maintenance credentials set azure --endpoint <url> --deployment <name> --api-version <version> <key>\` or set AZURE_OPENAI_{ENDPOINT,DEPLOYMENT,API_VERSION,API_KEY}.`;
+  }
 }
 
 async function safeText(response: Response): Promise<string> {
