@@ -95,6 +95,17 @@ auto-promotes high-signal corrections. Every action lands in
 
 Run on demand: `recall maintenance cleanup` (dry-run) or `recall maintenance cleanup --apply`.
 
+### Quality snapshot env vars
+
+The daemon records a `quality_snapshots` row weekly so trends in injection
+followed-rate, active-rule count, and candidate backlog become visible via
+`recall maintenance quality --history` over time.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `RECALL_QUALITY_SNAPSHOT_ENABLED` | `true` | Set to `false` to disable automatic snapshots. |
+| `RECALL_QUALITY_SNAPSHOT_INTERVAL_SECONDS` | `604800` | Minimum age before a new snapshot is recorded. Daemon checks hourly. |
+
 ### Observability
 
 ```bash
