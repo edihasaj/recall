@@ -17,6 +17,7 @@ import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.
 import { inferScope } from "./scope.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
+import { qualityReasons } from "../maintenance/cleanup.js";
 
 // --- Detection patterns ---
 
@@ -155,6 +156,14 @@ export async function processCorrection(
   const captureContext = buildCaptureContext(ctx);
 
   for (const correction of corrections) {
+    // Drop voice/typing fragments at capture time. Mirrors the daemon-side
+    // rejectFragmentCandidates filter so trash never enters the candidate
+    // queue in the first place.
+    if (correction.type !== "review_pattern") {
+      const reasons = qualityReasons(correction.text);
+      if (reasons.length > 0) continue;
+    }
+
     const evidence: EvidenceEntry = correction.type === "review_pattern"
       ? {
           type: "review_feedback",
