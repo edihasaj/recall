@@ -31,6 +31,7 @@ import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
 import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
 import { runDeterministicCleanup } from "./maintenance/cleanup.js";
+import { computeQualityReport, listQualitySnapshots, recordQualitySnapshot } from "./maintenance/quality.js";
 import { hasProviderConfigured } from "./credentials/keychain.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
@@ -58,6 +59,12 @@ const cleanupConfig = {
   intervalSeconds: parseInt(process.env.RECALL_CLEANUP_INTERVAL_SECONDS ?? "86400", 10),
 };
 let cleanupRunning = false;
+
+const qualitySnapshotConfig = {
+  enabled: process.env.RECALL_QUALITY_SNAPSHOT_ENABLED !== "false",
+  intervalSeconds: parseInt(process.env.RECALL_QUALITY_SNAPSHOT_INTERVAL_SECONDS ?? "604800", 10),
+};
+let qualitySnapshotRunning = false;
 
 function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -168,6 +175,40 @@ function scheduleCleanupLoop() {
   const timer = setInterval(() => {
     void run();
   }, Math.max(60, cleanupConfig.intervalSeconds) * 1000);
+  timer.unref?.();
+}
+
+function scheduleQualitySnapshotLoop() {
+  if (!qualitySnapshotConfig.enabled) return;
+
+  const intervalMs = Math.max(60, qualitySnapshotConfig.intervalSeconds) * 1000;
+
+  const run = () => {
+    if (qualitySnapshotRunning) return;
+    qualitySnapshotRunning = true;
+    try {
+      // Only snapshot if the most recent snapshot is older than the interval.
+      const last = listQualitySnapshots(db, 1)[0];
+      if (last) {
+        const ageMs = Date.now() - new Date(last.taken_at).getTime();
+        if (ageMs < intervalMs) return;
+      }
+      const report = computeQualityReport(db);
+      const row = recordQualitySnapshot(db, report, "auto");
+      console.log(
+        `[recall] quality snapshot ${row.id.slice(0, 8)} followed=${row.followed_rate_resolved != null ? (row.followed_rate_resolved * 100).toFixed(1) + "%" : "n/a"} resolved=${row.injections_resolved} rules=${row.active_rule_count} cand=${row.candidate_correction_count}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[recall] quality snapshot failed: ${message}`);
+    } finally {
+      qualitySnapshotRunning = false;
+    }
+  };
+
+  setTimeout(run, 60_000).unref?.();
+  // Re-check hourly; the age gate keeps actual writes weekly.
+  const timer = setInterval(run, 3600 * 1000);
   timer.unref?.();
 }
 
@@ -757,6 +798,7 @@ async function startDaemon() {
   scheduleMaintenanceLoop();
   scheduleDispatcherLoop();
   scheduleCleanupLoop();
+  scheduleQualitySnapshotLoop();
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (embeddingConfig) {
