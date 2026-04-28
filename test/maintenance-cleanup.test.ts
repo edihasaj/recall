@@ -117,10 +117,10 @@ describe("maintenance cleanup — rejectFragmentCandidates", () => {
   it("rejects too-short, trailing-question, bare-modal, and verbless candidates", () => {
     const db = freshDb();
     const cases: Array<[string, string[]]> = [
-      ["never downtime?", ["too_short", "trailing_question"]],
+      ["never downtime?", ["trailing_question"]],
       ["must stay", ["too_short", "bare_modal"]],
       ["required scope per endpoint. Drive and the new", ["no_verb"]],
-      ["required I guess", ["too_short"]],
+      ["required I guess", ["no_verb"]],
     ];
     for (const [text] of cases) {
       createMemory(db, {
@@ -251,6 +251,33 @@ describe("maintenance cleanup — revert", () => {
     const runs = listCleanupRuns(db);
     expect(runs).toHaveLength(1);
     expect(runs[0].total).toBeGreaterThan(0);
+  });
+});
+
+describe("capture-time fragment filter", () => {
+  it("does not create candidate memories for low-quality user corrections", async () => {
+    const { processCorrection } = await import("../src/capture/correction.js");
+    const db = freshDb();
+
+    // Both phrases match detectCorrections (start with always/never) but fail
+    // the quality filter — should not enter the candidate queue.
+    const idsA = await processCorrection(db, "must stay", { sessionId: "s1", repo: "r" });
+    const idsB = await processCorrection(db, "never downtime?", { sessionId: "s2", repo: "r" });
+    expect(idsA).toEqual([]);
+    expect(idsB).toEqual([]);
+
+    const all = db.select().from(memories).all();
+    expect(all).toHaveLength(0);
+  });
+
+  it("still captures well-formed corrections", async () => {
+    const { processCorrection } = await import("../src/capture/correction.js");
+    const db = freshDb();
+    const ids = await processCorrection(db, "always use pnpm not npm", {
+      sessionId: "s1",
+      repo: "r",
+    });
+    expect(ids.length).toBeGreaterThan(0);
   });
 });
 
