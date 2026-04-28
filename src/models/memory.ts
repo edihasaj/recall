@@ -1,4 +1,4 @@
-import { eq, and, gte, like, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, like, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
@@ -405,6 +405,79 @@ export function getMemoryFeedback(
     .from(feedbackEvents)
     .where(eq(feedbackEvents.memory_id, memoryId))
     .all();
+}
+
+export interface FeedbackSummary {
+  followed: number;
+  overridden: number;
+  contradicted: number;
+  ignored: number;
+  resolved: number;
+}
+
+/**
+ * Aggregate feedback outcomes for a batch of memories in a single query.
+ * `resolved` excludes `ignored` because the post-Phase-2.3 detector only
+ * writes meaningful outcomes.
+ */
+export function getMemoryFeedbackSummaries(
+  db: RecallDb,
+  memoryIds: readonly string[],
+): Map<string, FeedbackSummary> {
+  const empty = (): FeedbackSummary => ({
+    followed: 0,
+    overridden: 0,
+    contradicted: 0,
+    ignored: 0,
+    resolved: 0,
+  });
+  const result = new Map<string, FeedbackSummary>();
+  if (memoryIds.length === 0) return result;
+  for (const id of memoryIds) result.set(id, empty());
+
+  const rows = db.select({
+    memory_id: feedbackEvents.memory_id,
+    outcome: feedbackEvents.outcome,
+    count: sql<number>`count(*)`.as("count"),
+  })
+    .from(feedbackEvents)
+    .where(inArray(feedbackEvents.memory_id, [...memoryIds]))
+    .groupBy(feedbackEvents.memory_id, feedbackEvents.outcome)
+    .all();
+
+  for (const row of rows) {
+    const entry = result.get(row.memory_id) ?? empty();
+    if (row.outcome === "followed") entry.followed += row.count;
+    else if (row.outcome === "overridden") entry.overridden += row.count;
+    else if (row.outcome === "contradicted") entry.contradicted += row.count;
+    else if (row.outcome === "ignored") entry.ignored += row.count;
+    if (row.outcome !== "ignored") entry.resolved += row.count;
+    result.set(row.memory_id, entry);
+  }
+  return result;
+}
+
+/**
+ * Smoothed feedback-driven score in [0, 1]. Cold-start memories return their
+ * confidence directly; as resolved samples accumulate, the score blends in
+ * the empirical followed rate (Bayesian beta(1,1) prior, weight ramps to 1
+ * at FEEDBACK_MATURITY resolved samples).
+ */
+export const FEEDBACK_MATURITY = 5;
+export function feedbackWeightedScore(
+  confidence: number,
+  summary: FeedbackSummary,
+): number {
+  const total = summary.resolved;
+  const maturity = Math.min(total, FEEDBACK_MATURITY) / FEEDBACK_MATURITY;
+  if (maturity === 0) return confidence;
+  // Penalize contradictions harder than overrides.
+  const positive = summary.followed;
+  const negative = summary.overridden + 2 * summary.contradicted;
+  const numerator = Math.max(0, positive - negative + 1);
+  const denominator = Math.max(1, total + 2);
+  const empirical = Math.min(1, numerator / denominator);
+  return (1 - maturity) * confidence + maturity * empirical;
 }
 
 // --- Helpers ---

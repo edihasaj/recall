@@ -1,4 +1,4 @@
-import { queryMemories } from "../models/memory.js";
+import { queryMemories, getMemoryFeedbackSummaries, feedbackWeightedScore } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
 import { recordMemoryInjections } from "../models/memory-injections.js";
 import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type MemoryItem } from "../types.js";
@@ -81,12 +81,23 @@ export function compileContext(
     };
   }
 
-  // 4. Sort by confidence (highest first), then by type priority
-  const sorted = passing.sort((a, b) => {
-    const typePrio = typePriority(a.type) - typePriority(b.type);
-    if (typePrio !== 0) return typePrio;
-    return b.confidence - a.confidence;
-  });
+  // 4. Sort by feedback-weighted score (cold-start = confidence; matures
+  // into followed-rate as resolved samples accumulate). Type priority still
+  // groups rules ahead of commands.
+  const summaries = getMemoryFeedbackSummaries(db, passing.map((m) => m.id));
+  const scored = passing.map((m) => ({
+    mem: m,
+    score: feedbackWeightedScore(m.confidence, summaries.get(m.id) ?? {
+      followed: 0, overridden: 0, contradicted: 0, ignored: 0, resolved: 0,
+    }),
+  }));
+  const sorted = scored
+    .sort((a, b) => {
+      const typePrio = typePriority(a.mem.type) - typePriority(b.mem.type);
+      if (typePrio !== 0) return typePrio;
+      return b.score - a.score;
+    })
+    .map((s) => s.mem);
 
   // 5. Budget: pick memories that fit
   const selected: MemoryItem[] = [];
@@ -200,6 +211,9 @@ export async function compileContextHybrid(
     retrieval.map((item) => [item.memory.id, item]),
   );
 
+  const summaries = getMemoryFeedbackSummaries(db, passing.map((m) => m.id));
+  const emptySummary = { followed: 0, overridden: 0, contradicted: 0, ignored: 0, resolved: 0 };
+
   const ranked = passing
     .filter((memory) => {
       const retrievalItem = retrievalById.get(memory.id);
@@ -216,13 +230,14 @@ export async function compileContextHybrid(
     })
     .map((memory) => {
       const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
+      const weighted = feedbackWeightedScore(memory.confidence, summaries.get(memory.id) ?? emptySummary);
       const score = req.query_text
         ? (retrievalScore * 0.45) +
-          (memory.confidence * 0.25) +
+          (weighted * 0.25) +
           (scopeScore(memory, req.path) * 0.15) +
           (freshnessScore(memory) * 0.05) +
           (typeScore(memory.type) * 0.10)
-        : (memory.confidence * 0.55) +
+        : (weighted * 0.55) +
           (scopeScore(memory, req.path) * 0.20) +
           (freshnessScore(memory) * 0.10) +
           (typeScore(memory.type) * 0.15);
