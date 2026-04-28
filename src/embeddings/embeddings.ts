@@ -653,5 +653,6 @@ function rowToMemory(row: MemoryRow): MemoryItem {
     injection_count: row.injection_count,
     override_count: row.override_count,
     repetition_count: row.repetition_count,
+    auto_inject: row.auto_inject,
   };
 }

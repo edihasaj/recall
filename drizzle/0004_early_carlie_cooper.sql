@@ -1,0 +1,1 @@
+ALTER TABLE `memories` ADD `auto_inject` integer DEFAULT true NOT NULL;

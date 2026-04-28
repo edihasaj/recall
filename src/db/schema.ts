@@ -36,6 +36,10 @@ export const memories = sqliteTable("memories", {
   // Phase 2: sync + embeddings
   team_id: text("team_id"),
   sync_version: integer("sync_version").notNull().default(0),
+  // When false, the memory stays queryable via MCP but is excluded from the
+  // auto-injected SessionStart context block. Used to suppress noisy
+  // command-type memories that the agent re-derives from the repo anyway.
+  auto_inject: integer("auto_inject", { mode: "boolean" }).notNull().default(true),
 }, (table) => ([
   index("idx_memories_repo").on(table.repo),
   index("idx_memories_status").on(table.status),
@@ -406,6 +410,7 @@ export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
       "dedupe_exact_merge",
       "reject_fragment_candidate",
       "promote_repeat_correction",
+      "suppress_unproductive_command",
     ],
   }).notNull(),
   memory_id: text("memory_id").notNull(),

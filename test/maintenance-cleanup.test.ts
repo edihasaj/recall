@@ -254,6 +254,63 @@ describe("maintenance cleanup — revert", () => {
   });
 });
 
+describe("maintenance cleanup — suppressUnproductiveCommands", () => {
+  it("suppresses high-injection command memories with zero followed feedback", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      source: "config_parse", confidence: 0.9,
+    });
+    db.update(memories).set({ injection_count: 60 }).where(eq(memories.id, id)).run();
+
+    const report = runDeterministicCleanup(db, { dryRun: false });
+    expect(report.counts.command_suppressions).toBe(1);
+    const after = getMemory(db, id);
+    expect(after?.auto_inject).toBe(false);
+    expect(after?.status).toBe("active");
+  });
+
+  it("does not suppress when at least one followed event exists", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      source: "config_parse", confidence: 0.9,
+    });
+    db.update(memories).set({ injection_count: 60 }).where(eq(memories.id, id)).run();
+    db.insert(feedbackEvents).values({
+      id: randomUUID(), memory_id: id, session_id: "s",
+      injected: true, outcome: "followed", timestamp: new Date().toISOString(),
+    }).run();
+
+    const report = runDeterministicCleanup(db, { dryRun: false });
+    expect(report.counts.command_suppressions).toBe(0);
+    expect(getMemory(db, id)?.auto_inject).toBe(true);
+  });
+
+  it("does not suppress below the injection floor", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      source: "config_parse", confidence: 0.9,
+    });
+    db.update(memories).set({ injection_count: 10 }).where(eq(memories.id, id)).run();
+    expect(runDeterministicCleanup(db, { dryRun: true }).counts.command_suppressions).toBe(0);
+  });
+
+  it("revert restores auto_inject=true", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      source: "config_parse", confidence: 0.9,
+    });
+    db.update(memories).set({ injection_count: 60 }).where(eq(memories.id, id)).run();
+    const report = runDeterministicCleanup(db, { dryRun: false });
+    expect(getMemory(db, id)?.auto_inject).toBe(false);
+    revertCleanupRun(db, report.run_id);
+    expect(getMemory(db, id)?.auto_inject).toBe(true);
+  });
+});
+
 describe("maintenance cleanup — memory_injections re-pointing", () => {
   it("merges injections without violating the (memory_id, session_id) unique constraint", () => {
     const db = freshDb();
