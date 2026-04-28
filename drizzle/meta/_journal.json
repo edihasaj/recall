@@ -15,6 +15,13 @@
       "when": 1776866038225,
       "tag": "0001_rich_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1777411056856,
+      "tag": "0002_unknown_spot",
+      "breakpoints": true
     }
   ]
 }
