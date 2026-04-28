@@ -1931,10 +1931,50 @@ maintenanceCmd
   .description("Run deterministic, LLM-free cleanup: exact-text dedupe, fragment rejection, repeat-correction promotion")
   .option("--apply", "Persist changes (default is dry-run)")
   .option("--only <action>", "Restrict to one action: dedupe_exact_merge|reject_fragment_candidate|promote_repeat_correction")
+  .option("--revert <run-id>", "Revert a previous cleanup run (id or 8-char prefix)")
+  .option("--list", "List recent cleanup runs")
   .option("--json", "Emit the raw JSON report")
   .action(async (opts) => {
-    const { runDeterministicCleanup, formatCleanupReport } = await import("./maintenance/cleanup.js");
+    const { runDeterministicCleanup, formatCleanupReport, revertCleanupRun, listCleanupRuns } = await import("./maintenance/cleanup.js");
     const db = initDb();
+
+    if (opts.list) {
+      const runs = listCleanupRuns(db);
+      if (opts.json) {
+        console.log(JSON.stringify(runs, null, 2));
+        return;
+      }
+      if (runs.length === 0) {
+        console.log("No cleanup runs recorded.");
+        return;
+      }
+      for (const r of runs) {
+        const flag = r.reverted === r.total && r.total > 0 ? " [reverted]" : r.reverted > 0 ? ` [partial-revert ${r.reverted}/${r.total}]` : "";
+        const actions = Object.entries(r.by_action).map(([k, v]) => `${k}=${v}`).join(" ");
+        console.log(`${r.run_id.slice(0, 8)}  ${r.finished_at.slice(0, 19)}  total=${r.total}  ${actions}${flag}`);
+      }
+      return;
+    }
+
+    if (opts.revert) {
+      const all = listCleanupRuns(db, 10_000);
+      const match = all.find((r) => r.run_id === opts.revert || r.run_id.startsWith(opts.revert));
+      if (!match) {
+        console.error(`No cleanup run matching "${opts.revert}".`);
+        process.exit(1);
+      }
+      const result = revertCleanupRun(db, match.run_id);
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(`Reverted ${result.reverted} entries from run ${result.run_id.slice(0, 8)}; skipped ${result.skipped}.`);
+      for (const [reason, count] of Object.entries(result.reasons)) {
+        console.log(`  ${reason}: ${count}`);
+      }
+      return;
+    }
+
     const report = runDeterministicCleanup(db, {
       dryRun: !opts.apply,
       only: opts.only,
@@ -1944,6 +1984,22 @@ maintenanceCmd
       return;
     }
     console.log(formatCleanupReport(report));
+  });
+
+maintenanceCmd
+  .command("quality")
+  .description("Show injection outcome distribution and followed-rate over a window")
+  .option("--since <iso>", "Window start (default: last 14 days)")
+  .option("--json", "Emit raw JSON")
+  .action(async (opts) => {
+    const { computeQualityReport, formatQualityReport } = await import("./maintenance/quality.js");
+    const db = initDb();
+    const report = computeQualityReport(db, { sinceIso: opts.since });
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    console.log(formatQualityReport(report));
   });
 
 maintenanceCmd

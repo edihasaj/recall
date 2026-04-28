@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { getDbPath, getDbUserVersion, RECALL_DB_USER_VERSION } from "../db/client.js";
 import { getEmbeddingModelInfo } from "../embeddings/embeddings.js";
 import { getLaunchAgentStatus } from "../daemon/launchd.js";
@@ -21,6 +22,16 @@ export interface UpgradeSignal {
   reasons: string[];
 }
 
+export interface CleanupHealth {
+  last_run_id: string | null;
+  last_run_at: string | null;
+  last_run_actions: Record<string, number>;
+  total_runs: number;
+  pending_candidate_corrections: number;
+  followed_rate_resolved: number | null;
+  resolved_injections: number;
+}
+
 export interface DoctorReport {
   db_path: string;
   db_user_version: number;
@@ -33,6 +44,7 @@ export interface DoctorReport {
   } | null;
   agents: AgentDoctorEntry[];
   upgrade: UpgradeSignal;
+  cleanup: CleanupHealth | null;
 }
 
 export function getDoctorReport(): DoctorReport {
@@ -61,7 +73,79 @@ export function getDoctorReport(): DoctorReport {
     launchd,
     agents,
     upgrade: computeUpgradeSignal(agents),
+    cleanup: readCleanupHealth(dbPath),
   };
+}
+
+function readCleanupHealth(dbPath: string): CleanupHealth | null {
+  if (!existsSync(dbPath)) return null;
+  let sqlite: Database.Database | null = null;
+  try {
+    sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
+
+    const tables = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('maintenance_cleanup_log','memories','memory_injections')",
+    ).all() as Array<{ name: string }>;
+    const names = new Set(tables.map((t) => t.name));
+    if (!names.has("maintenance_cleanup_log")) return null;
+
+    const totals = sqlite.prepare(
+      "SELECT COUNT(DISTINCT run_id) AS runs, MAX(created_at) AS last_at FROM maintenance_cleanup_log",
+    ).get() as { runs: number; last_at: string | null };
+
+    let lastRunId: string | null = null;
+    const actions: Record<string, number> = {};
+    if (totals.last_at) {
+      const lastRow = sqlite.prepare(
+        "SELECT run_id FROM maintenance_cleanup_log WHERE created_at = ? LIMIT 1",
+      ).get(totals.last_at) as { run_id: string } | undefined;
+      lastRunId = lastRow?.run_id ?? null;
+      if (lastRunId) {
+        const rows = sqlite.prepare(
+          "SELECT action, COUNT(*) as c FROM maintenance_cleanup_log WHERE run_id = ? GROUP BY action",
+        ).all(lastRunId) as Array<{ action: string; c: number }>;
+        for (const r of rows) actions[r.action] = r.c;
+      }
+    }
+
+    let pending = 0;
+    if (names.has("memories")) {
+      const row = sqlite.prepare(
+        "SELECT COUNT(*) AS n FROM memories WHERE status='candidate' AND source='user_correction'",
+      ).get() as { n: number };
+      pending = row.n;
+    }
+
+    let followedRate: number | null = null;
+    let resolvedInjections = 0;
+    if (names.has("memory_injections")) {
+      const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const rows = sqlite.prepare(
+        "SELECT outcome, COUNT(*) as c FROM memory_injections WHERE injected_at >= ? GROUP BY outcome",
+      ).all(since) as Array<{ outcome: string | null; c: number }>;
+      let followed = 0;
+      for (const r of rows) {
+        if (!r.outcome) continue;
+        resolvedInjections += r.c;
+        if (r.outcome === "followed") followed += r.c;
+      }
+      followedRate = resolvedInjections > 0 ? followed / resolvedInjections : null;
+    }
+
+    return {
+      last_run_id: lastRunId,
+      last_run_at: totals.last_at,
+      last_run_actions: actions,
+      total_runs: totals.runs,
+      pending_candidate_corrections: pending,
+      followed_rate_resolved: followedRate,
+      resolved_injections: resolvedInjections,
+    };
+  } catch {
+    return null;
+  } finally {
+    sqlite?.close();
+  }
 }
 
 function computeUpgradeSignal(agents: AgentDoctorEntry[]): UpgradeSignal {
@@ -221,6 +305,27 @@ export function formatDoctorReport(report: DoctorReport): string {
     lines.push(`${label} mcp:${mcp} hooks:${hooks}${legacy}`);
     for (const note of agent.notes) {
       lines.push(`             - ${note}`);
+    }
+  }
+
+  if (report.cleanup) {
+    lines.push("", "## Cleanup");
+    if (report.cleanup.last_run_at) {
+      const actions = Object.entries(report.cleanup.last_run_actions)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ");
+      lines.push(`Last run:  ${report.cleanup.last_run_id?.slice(0, 8)} at ${report.cleanup.last_run_at.slice(0, 19)}`);
+      lines.push(`Actions:   ${actions || "(none)"}`);
+    } else {
+      lines.push("Last run:  never");
+    }
+    lines.push(`Total runs: ${report.cleanup.total_runs}`);
+    lines.push(`Pending correction candidates: ${report.cleanup.pending_candidate_corrections}`);
+    if (report.cleanup.followed_rate_resolved != null) {
+      const pct = (report.cleanup.followed_rate_resolved * 100).toFixed(1);
+      lines.push(`Followed rate (last 14d, of ${report.cleanup.resolved_injections} resolved): ${pct}%`);
+    } else {
+      lines.push(`Followed rate (last 14d): n/a (no resolved injections)`);
     }
   }
 
