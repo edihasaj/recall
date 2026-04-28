@@ -156,11 +156,28 @@ function scheduleCleanupLoop() {
     try {
       const report = runDeterministicCleanup(db, { dryRun: false });
       const c = report.counts;
-      const total = c.dedupe_clusters + c.fragment_rejections + c.repeat_promotions;
+      const total =
+        c.dedupe_clusters +
+        c.fragment_rejections +
+        c.repeat_promotions +
+        c.command_suppressions +
+        c.globalizations;
       if (total > 0) {
         console.log(
-          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions}`,
+          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions} suppress=${c.command_suppressions} globalize=${c.globalizations}/${c.globalize_losers}`,
         );
+      }
+      // Surface logical conflicts after each tick. Cheap (O(n²) over active
+      // memories) and lets users see "Use pnpm" vs "Use bun" before the
+      // model gets the contradictory pair injected.
+      const newContradictions = detectContradictions(db);
+      if (newContradictions.length > 0) {
+        console.log(
+          `[recall] contradictions detected: ${newContradictions.length} new pair(s)`,
+        );
+        for (const c of newContradictions.slice(0, 5)) {
+          console.log(`  [${c.severity}] ${c.contradiction_type}: ${c.description.slice(0, 120)}`);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
