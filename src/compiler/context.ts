@@ -44,10 +44,12 @@ export function compileContext(
       req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
   };
 
-  // 1. Pull repo-scoped + path-scoped memories
+  // 1. Pull repo-scoped + path-scoped memories. Skip rows that have been
+  // suppressed from auto-injection (still queryable via MCP).
   const allActive = queryMemories(db, {
     repo: req.repo,
     status: "active",
+    auto_inject: true,
   });
 
   // 2. Filter by path scope if provided
@@ -149,8 +151,9 @@ export async function compileContextHybrid(
   const allMemories = queryMemories(db, {
     repo: req.repo,
   }).filter((memory) =>
-    memory.status === "active" ||
-    (config.include_candidates && memory.status === "candidate")
+    memory.auto_inject &&
+    (memory.status === "active" ||
+      (config.include_candidates && memory.status === "candidate"))
   );
 
   const scoped = req.path

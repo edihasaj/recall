@@ -106,6 +106,7 @@ export const MemoryItem = z.object({
   injection_count: z.number().int().nonnegative(),
   override_count: z.number().int().nonnegative(),
   repetition_count: z.number().int().nonnegative(),
+  auto_inject: z.boolean(),
 });
 export type MemoryItem = z.infer<typeof MemoryItem>;
 
@@ -314,6 +315,7 @@ export const MemoryQuery = z.object({
   status: MemoryStatus.optional(),
   min_confidence: z.number().optional(),
   semantic_query: z.string().optional(),
+  auto_inject: z.boolean().optional(),
   limit: z.number().int().positive().optional(),
   offset: z.number().int().nonnegative().optional(),
 });

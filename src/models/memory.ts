@@ -98,6 +98,7 @@ export function queryMemories(
   if (query.min_confidence != null)
     conditions.push(gte(memories.confidence, query.min_confidence));
   if (query.path) conditions.push(like(memories.path_scope, `%${query.path}%`));
+  if (query.auto_inject != null) conditions.push(eq(memories.auto_inject, query.auto_inject));
 
   let statement = db.select().from(memories).$dynamic();
   if (conditions.length > 0) {
@@ -439,6 +440,7 @@ function rowToMemory(row: MemoryRow): MemoryItem {
     injection_count: row.injection_count,
     override_count: row.override_count,
     repetition_count: row.repetition_count,
+    auto_inject: row.auto_inject,
   };
 }
 
