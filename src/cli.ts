@@ -1927,6 +1927,26 @@ maintenanceCmd
   });
 
 maintenanceCmd
+  .command("cleanup")
+  .description("Run deterministic, LLM-free cleanup: exact-text dedupe, fragment rejection, repeat-correction promotion")
+  .option("--apply", "Persist changes (default is dry-run)")
+  .option("--only <action>", "Restrict to one action: dedupe_exact_merge|reject_fragment_candidate|promote_repeat_correction")
+  .option("--json", "Emit the raw JSON report")
+  .action(async (opts) => {
+    const { runDeterministicCleanup, formatCleanupReport } = await import("./maintenance/cleanup.js");
+    const db = initDb();
+    const report = runDeterministicCleanup(db, {
+      dryRun: !opts.apply,
+      only: opts.only,
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    console.log(formatCleanupReport(report));
+  });
+
+maintenanceCmd
   .command("usage")
   .description("Summarize LLM API usage (tokens, cost) across recent maintenance runs")
   .option("--since <iso>", "Window start (default: last 30 days)")

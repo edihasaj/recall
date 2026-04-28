@@ -374,3 +374,29 @@ export const llmUsage = sqliteTable("llm_usage", {
   index("idx_llm_usage_task_kind").on(table.task_kind),
   index("idx_llm_usage_repo").on(table.repo),
 ]));
+
+// Phase-1 deterministic cleanup log (revertable, no LLM required)
+export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
+  id: text("id").primaryKey(),
+  run_id: text("run_id").notNull(),
+  action: text("action", {
+    enum: [
+      "dedupe_exact_merge",
+      "reject_fragment_candidate",
+      "promote_repeat_correction",
+    ],
+  }).notNull(),
+  memory_id: text("memory_id").notNull(),
+  related_memory_id: text("related_memory_id"),
+  before_snapshot: text("before_snapshot", { mode: "json" }),
+  after_snapshot: text("after_snapshot", { mode: "json" }),
+  details: text("details", { mode: "json" }).notNull().default("{}"),
+  reverted: integer("reverted", { mode: "boolean" }).notNull().default(false),
+  reverted_at: text("reverted_at"),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_cleanup_log_run").on(table.run_id),
+  index("idx_cleanup_log_memory").on(table.memory_id),
+  index("idx_cleanup_log_action").on(table.action),
+  index("idx_cleanup_log_created").on(table.created_at),
+]));
