@@ -1907,10 +1907,48 @@ maintenanceCmd
   .option("--repo <repo>", "Restrict to a single repo")
   .option("--max <n>", "Max tasks to run this round", "5")
   .option("--dry-run", "Show which tasks would be dispatched; do not call the LLM")
+  .option("--preview", "Show the actual prompts that would be sent (no provider needed; no LLM call)")
   .option("--json", "Emit the raw JSON report")
   .action(async (opts) => {
-    const { dispatchPendingTasks, formatDispatchReport } = await import("./maintenance/dispatcher.js");
+    const { dispatchPendingTasks, formatDispatchReport, buildPrompt } = await import("./maintenance/dispatcher.js");
+    const { listTasks } = await import("./maintenance/tasks.js");
     const db = initDb();
+
+    if (opts.preview) {
+      const pending = listTasks(db, {
+        status: "pending",
+        kinds: opts.kind.length > 0 ? opts.kind : undefined,
+        repo: opts.repo,
+        limit: parseInt(opts.max, 10),
+      });
+      const previews = pending.map((task) => ({
+        task_id: task.id,
+        kind: task.kind,
+        repo: task.repo,
+        prompt: buildPrompt(task),
+      }));
+      if (opts.json) {
+        console.log(JSON.stringify(previews, null, 2));
+        return;
+      }
+      if (previews.length === 0) {
+        console.log("No pending tasks to preview.");
+        return;
+      }
+      for (const p of previews) {
+        console.log(`# ${p.task_id.slice(0, 8)}  ${p.kind}  ${p.repo ?? "-"}`);
+        if (!p.prompt) {
+          console.log("  (no prompt builder for this kind)\n");
+          continue;
+        }
+        console.log(`## system\n${p.prompt.system}\n`);
+        console.log(`## user\n${p.prompt.user}\n`);
+        if (p.prompt.max_output_tokens) console.log(`## max_output_tokens\n${p.prompt.max_output_tokens}\n`);
+        console.log("---");
+      }
+      return;
+    }
+
     const report = await dispatchPendingTasks(db, {
       provider: opts.provider,
       model: opts.model,

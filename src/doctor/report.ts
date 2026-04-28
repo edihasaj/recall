@@ -32,6 +32,13 @@ export interface CleanupHealth {
   resolved_injections: number;
 }
 
+export interface DispatcherHealth {
+  providers_configured: string[];
+  pending_tasks: Record<string, number>;
+  last_dispatch_at: string | null;
+  last_dispatch_outcome: "ok" | "error" | null;
+}
+
 export interface DoctorReport {
   db_path: string;
   db_user_version: number;
@@ -45,6 +52,7 @@ export interface DoctorReport {
   agents: AgentDoctorEntry[];
   upgrade: UpgradeSignal;
   cleanup: CleanupHealth | null;
+  dispatcher: DispatcherHealth | null;
 }
 
 export function getDoctorReport(): DoctorReport {
@@ -74,7 +82,63 @@ export function getDoctorReport(): DoctorReport {
     agents,
     upgrade: computeUpgradeSignal(agents),
     cleanup: readCleanupHealth(dbPath),
+    dispatcher: readDispatcherHealth(dbPath),
   };
+}
+
+function readDispatcherHealth(dbPath: string): DispatcherHealth | null {
+  if (!existsSync(dbPath)) return null;
+  let sqlite: Database.Database | null = null;
+  try {
+    sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const tables = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('memory_maintenance_tasks','llm_usage')",
+    ).all() as Array<{ name: string }>;
+    const names = new Set(tables.map((t) => t.name));
+
+    let providers: string[] = [];
+    try {
+      // Probe synchronously without importing the keychain module (which would
+      // pull node-keychain into the read-only doctor path).
+      const { hasProviderConfigured } = require("../credentials/keychain.js");
+      providers = ["anthropic", "azure-openai", "openai"].filter((p) =>
+        hasProviderConfigured(p),
+      );
+    } catch {
+      providers = [];
+    }
+
+    const pending: Record<string, number> = {};
+    if (names.has("memory_maintenance_tasks")) {
+      const rows = sqlite.prepare(
+        "SELECT kind, COUNT(*) AS n FROM memory_maintenance_tasks WHERE status='pending' GROUP BY kind",
+      ).all() as Array<{ kind: string; n: number }>;
+      for (const r of rows) pending[r.kind] = r.n;
+    }
+
+    let lastAt: string | null = null;
+    let lastOk: "ok" | "error" | null = null;
+    if (names.has("llm_usage")) {
+      const row = sqlite.prepare(
+        "SELECT created_at, ok FROM llm_usage ORDER BY created_at DESC LIMIT 1",
+      ).get() as { created_at: string; ok: number } | undefined;
+      if (row) {
+        lastAt = row.created_at;
+        lastOk = row.ok ? "ok" : "error";
+      }
+    }
+
+    return {
+      providers_configured: providers,
+      pending_tasks: pending,
+      last_dispatch_at: lastAt,
+      last_dispatch_outcome: lastOk,
+    };
+  } catch {
+    return null;
+  } finally {
+    sqlite?.close();
+  }
 }
 
 function readCleanupHealth(dbPath: string): CleanupHealth | null {
@@ -326,6 +390,27 @@ export function formatDoctorReport(report: DoctorReport): string {
       lines.push(`Followed rate (last 14d, of ${report.cleanup.resolved_injections} resolved): ${pct}%`);
     } else {
       lines.push(`Followed rate (last 14d): n/a (no resolved injections)`);
+    }
+  }
+
+  if (report.dispatcher) {
+    lines.push("", "## Dispatcher (LLM refinement)");
+    const provs = report.dispatcher.providers_configured;
+    lines.push(`Providers: ${provs.length === 0 ? "none configured (LLM tier dormant)" : provs.join(", ")}`);
+    const pendingEntries = Object.entries(report.dispatcher.pending_tasks);
+    if (pendingEntries.length === 0) {
+      lines.push("Pending tasks: 0");
+    } else {
+      const total = pendingEntries.reduce((s, [, n]) => s + n, 0);
+      lines.push(`Pending tasks: ${total} (${pendingEntries.map(([k, n]) => `${k}=${n}`).join(", ")})`);
+    }
+    if (report.dispatcher.last_dispatch_at) {
+      lines.push(`Last dispatch: ${report.dispatcher.last_dispatch_at.slice(0, 19)} (${report.dispatcher.last_dispatch_outcome ?? "unknown"})`);
+    } else {
+      lines.push("Last dispatch: never");
+    }
+    if (provs.length === 0 && pendingEntries.length > 0) {
+      lines.push("Tasks are queued but no provider is configured. Run `recall maintenance dispatch --preview` to inspect prompts, or `recall maintenance credentials set <provider> <key>` to enable.");
     }
   }
 

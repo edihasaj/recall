@@ -111,6 +111,7 @@ function scheduleMaintenanceLoop() {
   timer.unref?.();
 }
 
+let dispatcherDormantLogged = false;
 function scheduleDispatcherLoop() {
   if (!dispatcherConfig.enabled) return;
 
@@ -121,7 +122,14 @@ function scheduleDispatcherLoop() {
       hasProviderConfigured("anthropic") ||
       hasProviderConfigured("azure-openai") ||
       hasProviderConfigured("openai");
-    if (!hasKey) return;
+    if (!hasKey) {
+      if (!dispatcherDormantLogged) {
+        console.log("[recall] dispatcher dormant: no LLM provider configured (set one via 'recall maintenance credentials set <provider> <key>'; preview prompts via 'recall maintenance dispatch --preview')");
+        dispatcherDormantLogged = true;
+      }
+      return;
+    }
+    dispatcherDormantLogged = false;
 
     dispatcherRunning = true;
     try {

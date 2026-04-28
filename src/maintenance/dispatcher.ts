@@ -239,13 +239,13 @@ function parseJson(text: string): unknown | null {
   }
 }
 
-interface Prompt {
+export interface Prompt {
   system: string;
   user: string;
   max_output_tokens?: number;
 }
 
-function buildPrompt(task: MaintenanceTask): Prompt | null {
+export function buildPrompt(task: MaintenanceTask): Prompt | null {
   switch (task.kind) {
     case "refine_candidate":
       return buildRefineCandidatePrompt(task);
