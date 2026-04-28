@@ -45,12 +45,19 @@ export function compileContext(
   };
 
   // 1. Pull repo-scoped + path-scoped memories. Skip rows that have been
-  // suppressed from auto-injection (still queryable via MCP).
-  const allActive = queryMemories(db, {
+  // suppressed from auto-injection (still queryable via MCP). Also include
+  // scope='global' rules — those apply across every repo.
+  const repoActive = queryMemories(db, {
     repo: req.repo,
     status: "active",
     auto_inject: true,
   });
+  const globalActive = queryMemories(db, {
+    scope: "global",
+    status: "active",
+    auto_inject: true,
+  });
+  const allActive = [...repoActive, ...globalActive];
 
   // 2. Filter by path scope if provided
   const scoped = req.path
@@ -148,9 +155,9 @@ export async function compileContextHybrid(
       req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
   };
 
-  const allMemories = queryMemories(db, {
-    repo: req.repo,
-  }).filter((memory) =>
+  const repoMemories = queryMemories(db, { repo: req.repo });
+  const globalMemories = queryMemories(db, { scope: "global" });
+  const allMemories = [...repoMemories, ...globalMemories].filter((memory) =>
     memory.auto_inject &&
     (memory.status === "active" ||
       (config.include_candidates && memory.status === "candidate"))
@@ -316,8 +323,8 @@ function renderPack(items: MemoryItem[], repo: string): string {
 // --- Path matching ---
 
 function pathMatches(mem: MemoryItem, targetPath: string): boolean {
-  // Repo-scoped memories always match
-  if (mem.scope === "repo" || mem.scope === "team") return true;
+  // Repo, team, and global memories always match
+  if (mem.scope === "repo" || mem.scope === "team" || mem.scope === "global") return true;
   if (!mem.path_scope) return true;
 
   // Simple glob-like matching
@@ -337,8 +344,11 @@ function pathMatches(mem: MemoryItem, targetPath: string): boolean {
 
 function scopeScore(mem: MemoryItem, targetPath?: string): number {
   if (!targetPath) {
-    return mem.scope === "repo" || mem.scope === "team" ? 0.9 : 0.7;
+    if (mem.scope === "repo" || mem.scope === "team") return 0.9;
+    if (mem.scope === "global") return 0.8;
+    return 0.7;
   }
+  if (mem.scope === "global") return 0.8;
   if (mem.scope === "path" && mem.path_scope) return 1;
   if (mem.scope === "repo" || mem.scope === "team") return 0.75;
   return pathMatches(mem, targetPath) ? 0.6 : 0;

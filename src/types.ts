@@ -19,7 +19,7 @@ export const MemoryType = z.enum([
 ]);
 export type MemoryType = z.infer<typeof MemoryType>;
 
-export const MemoryScope = z.enum(["session", "path", "repo", "team"]);
+export const MemoryScope = z.enum(["session", "path", "repo", "team", "global"]);
 export type MemoryScope = z.infer<typeof MemoryScope>;
 
 export const MemorySource = z.enum([
