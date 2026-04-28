@@ -367,6 +367,31 @@ describe("maintenance cleanup — globalizeCrossRepo", () => {
     expect(getMemory(db, ids[2])?.status).toBe("rejected");
   });
 
+  it("does not globalize when another repo holds a contradicting active memory", () => {
+    const db = freshDb();
+    for (const repo of ["r1", "r2", "r3"]) {
+      createMemory(db, {
+        type: "rule",
+        text: "Use pnpm as the package manager",
+        scope: "repo",
+        repo,
+        source: "user_correction",
+        confidence: 0.9,
+      });
+    }
+    // r4 has an active rule that would clash if we globalize "Use pnpm…".
+    createMemory(db, {
+      type: "rule",
+      text: "Use bun as the package manager",
+      scope: "repo",
+      repo: "r4",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const report = runDeterministicCleanup(db, { dryRun: true, only: "globalize_cross_repo" });
+    expect(report.counts.globalizations).toBe(0);
+  });
+
   it("does not globalize when only 2 repos have the text", () => {
     const db = freshDb();
     for (const repo of ["r1", "r2"]) {
