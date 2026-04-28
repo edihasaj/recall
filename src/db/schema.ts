@@ -7,7 +7,7 @@ export const memories = sqliteTable("memories", {
   }).notNull(),
   text: text("text").notNull(),
   scope: text("scope", {
-    enum: ["session", "path", "repo", "team"],
+    enum: ["session", "path", "repo", "team", "global"],
   }).notNull(),
   path_scope: text("path_scope"),
   repo: text("repo"),
@@ -411,6 +411,7 @@ export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
       "reject_fragment_candidate",
       "promote_repeat_correction",
       "suppress_unproductive_command",
+      "globalize_cross_repo",
     ],
   }).notNull(),
   memory_id: text("memory_id").notNull(),

@@ -338,6 +338,69 @@ describe("maintenance cleanup — suppressUnproductiveCommands", () => {
   });
 });
 
+describe("maintenance cleanup — globalizeCrossRepo", () => {
+  it("promotes a winner to scope=global when same text appears in 3+ repos", () => {
+    const db = freshDb();
+    const ids: string[] = [];
+    for (const repo of ["r1", "r2", "r3"]) {
+      ids.push(createMemory(db, {
+        type: "command",
+        text: "Use uv for Python dependency management",
+        scope: "repo",
+        repo,
+        source: "config_parse",
+        confidence: 0.9,
+      }));
+    }
+    db.update(memories).set({ injection_count: 50 }).where(eq(memories.id, ids[0])).run();
+    db.update(memories).set({ injection_count: 10 }).where(eq(memories.id, ids[1])).run();
+    db.update(memories).set({ injection_count: 5 }).where(eq(memories.id, ids[2])).run();
+
+    const report = runDeterministicCleanup(db, { dryRun: false, only: "globalize_cross_repo" });
+    expect(report.counts.globalizations).toBe(1);
+    expect(report.counts.globalize_losers).toBe(2);
+
+    const winner = getMemory(db, ids[0]);
+    expect(winner?.scope).toBe("global");
+    expect(winner?.repo).toBeNull();
+    expect(getMemory(db, ids[1])?.status).toBe("rejected");
+    expect(getMemory(db, ids[2])?.status).toBe("rejected");
+  });
+
+  it("does not globalize when only 2 repos have the text", () => {
+    const db = freshDb();
+    for (const repo of ["r1", "r2"]) {
+      createMemory(db, {
+        type: "command", text: "Use bun", scope: "repo", repo,
+        source: "config_parse", confidence: 0.9,
+      });
+    }
+    expect(runDeterministicCleanup(db, { dryRun: true, only: "globalize_cross_repo" }).counts.globalizations).toBe(0);
+  });
+
+  it("revert restores winner.scope=repo and loser.status", () => {
+    const db = freshDb();
+    const ids: string[] = [];
+    for (const repo of ["r1", "r2", "r3"]) {
+      ids.push(createMemory(db, {
+        type: "rule",
+        text: "Always use pnpm not npm",
+        scope: "repo",
+        repo,
+        source: "user_correction",
+        confidence: 0.9,
+      }));
+    }
+    const report = runDeterministicCleanup(db, { dryRun: false, only: "globalize_cross_repo" });
+    revertCleanupRun(db, report.run_id);
+    for (const id of ids) {
+      const m = getMemory(db, id);
+      expect(m?.scope).toBe("repo");
+      expect(m?.status).toBe("active");
+    }
+  });
+});
+
 describe("maintenance cleanup — memory_injections re-pointing", () => {
   it("merges injections without violating the (memory_id, session_id) unique constraint", () => {
     const db = freshDb();
