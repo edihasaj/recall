@@ -59,6 +59,7 @@ export interface EnqueueCounts {
   per_kind: Partial<Record<MaintenanceTaskKind, number>>;
   expired_leases_swept: number;
   dropped_over_cap: number;
+  expired_pending_tasks: number;
 }
 
 type TaskRow = typeof memoryMaintenanceTasks.$inferSelect;
@@ -262,6 +263,31 @@ export function sweepExpiredLeases(db: RecallDb, now: Date = new Date()): number
   return result.changes;
 }
 
+/**
+ * Abandon pending tasks that have been waiting longer than `maxAgeDays`. The
+ * usual cause is that no LLM provider is configured, so the dispatcher never
+ * picked them up. Stale source data makes the eventual run useless anyway.
+ */
+export function expireStalePendingTasks(
+  db: RecallDb,
+  maxAgeDays: number,
+  now: Date = new Date(),
+): number {
+  const cutoff = new Date(now.getTime() - maxAgeDays * 86_400_000).toISOString();
+  const result = db.update(memoryMaintenanceTasks)
+    .set({
+      status: "abandoned",
+      failure_reason: "expired_no_dispatcher",
+      completed_at: now.toISOString(),
+    })
+    .where(and(
+      eq(memoryMaintenanceTasks.status, "pending"),
+      lt(memoryMaintenanceTasks.created_at, cutoff),
+    ))
+    .run();
+  return result.changes;
+}
+
 export function abandonOverAttemptTasks(db: RecallDb): number {
   const nowIso = new Date().toISOString();
   const result = db.update(memoryMaintenanceTasks)
@@ -437,11 +463,18 @@ export async function produceMergeDuplicateTasks(
     if (visited.has(mem.id)) continue;
     if (!mem.repo) continue;
 
+    // Commands often differ only in punctuation/backticks ("test: vitest run"
+    // vs "test: `vitest run`"), so cosine similarity at the default 0.9 misses
+    // them. Lower the bar to 0.85 for commands; rules stay strict.
+    const threshold = mem.type === "command"
+      ? Math.min(config.merge_similarity_threshold, 0.85)
+      : config.merge_similarity_threshold;
+
     const duplicates = await findSemanticDuplicates(
       db,
       mem.text,
       embeddingConfig,
-      config.merge_similarity_threshold,
+      threshold,
       { repo: mem.repo, type: mem.type, limit: 10 },
     );
 
@@ -606,6 +639,9 @@ export async function enqueueMaintenanceTasks(
 ): Promise<EnqueueCounts> {
   const expired = sweepExpiredLeases(db);
   abandonOverAttemptTasks(db);
+  // Tasks older than 2x the summary window are almost certainly stuck because
+  // no LLM provider is configured. Abandon them so the queue stays interpretable.
+  const expiredPending = expireStalePendingTasks(db, config.summary_max_age_days * 2);
 
   const counts: Partial<Record<MaintenanceTaskKind, number>> = {};
   counts.refine_candidate = produceRefineCandidateTasks(db, config);
@@ -623,6 +659,7 @@ export async function enqueueMaintenanceTasks(
     per_kind: counts,
     expired_leases_swept: expired,
     dropped_over_cap: dropped,
+    expired_pending_tasks: expiredPending,
   };
 }
 

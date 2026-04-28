@@ -80,7 +80,10 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(getMemory(db, memoryId)!.confidence).toBeCloseTo(0.85);
   });
 
-  it("marks ignored when the next prompt has no relevant tool activity", async () => {
+  it("leaves outcome unresolved when the next prompt has no relevant tool activity", async () => {
+    // Honest signaling (Phase 2.3): we don't know whether a non-applicable
+    // prompt means the memory was ignored or simply wasn't relevant, so leave
+    // it unresolved instead of writing a misleading "ignored".
     const db = freshDb();
     const memoryId = createMemory(db, {
       type: "rule",
@@ -107,9 +110,8 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     );
 
     const feedback = getMemoryFeedback(db, memoryId);
-    expect(feedback).toHaveLength(1);
-    expect(feedback[0].outcome).toBe("ignored");
-    expect(getMemory(db, memoryId)!.confidence).toBeCloseTo(0.78);
+    expect(feedback).toHaveLength(0);
+    expect(getMemory(db, memoryId)!.confidence).toBeCloseTo(0.8);
   });
 
   it("marks contradicted when the next prompt repeats the same correction", async () => {
