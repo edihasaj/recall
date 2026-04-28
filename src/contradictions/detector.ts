@@ -300,6 +300,8 @@ export function listContradictions(
 // --- Helpers ---
 
 function scopesOverlap(a: MemoryItem, b: MemoryItem): boolean {
+  // Global scope overlaps with everything (applies in every repo)
+  if (a.scope === "global" || b.scope === "global") return true;
   // Team scope overlaps with everything
   if (a.scope === "team" || b.scope === "team") return true;
 
