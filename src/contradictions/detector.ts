@@ -96,13 +96,13 @@ export function detectContradictions(
 
 // --- Check two memories for contradiction ---
 
-interface ContradictionMatch {
+export interface ContradictionMatch {
   type: Contradiction["contradiction_type"];
   severity: Contradiction["severity"];
   description: string;
 }
 
-function checkContradiction(
+export function checkContradiction(
   a: MemoryItem,
   b: MemoryItem,
 ): ContradictionMatch | null {
