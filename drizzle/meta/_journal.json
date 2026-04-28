@@ -22,6 +22,13 @@
       "when": 1777411056856,
       "tag": "0002_unknown_spot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1777412971682,
+      "tag": "0003_red_wendigo",
+      "breakpoints": true
     }
   ]
 }

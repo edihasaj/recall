@@ -375,6 +375,28 @@ export const llmUsage = sqliteTable("llm_usage", {
   index("idx_llm_usage_repo").on(table.repo),
 ]));
 
+// Phase-4 quality snapshots — periodic sample of injection-outcome ratios
+// so we can compare followed-rate before/after cleanup tuning over weeks.
+export const qualitySnapshots = sqliteTable("quality_snapshots", {
+  id: text("id").primaryKey(),
+  taken_at: text("taken_at").notNull(),
+  window_start: text("window_start").notNull(),
+  window_end: text("window_end").notNull(),
+  injections_total: integer("injections_total").notNull(),
+  injections_resolved: integer("injections_resolved").notNull(),
+  injections_followed: integer("injections_followed").notNull(),
+  injections_overridden: integer("injections_overridden").notNull(),
+  injections_contradicted: integer("injections_contradicted").notNull(),
+  injections_ignored: integer("injections_ignored").notNull(),
+  followed_rate_resolved: real("followed_rate_resolved"),
+  active_rule_count: integer("active_rule_count").notNull(),
+  active_command_count: integer("active_command_count").notNull(),
+  candidate_correction_count: integer("candidate_correction_count").notNull(),
+  notes: text("notes"),
+}, (table) => ([
+  index("idx_quality_snapshots_taken").on(table.taken_at),
+]));
+
 // Phase-1 deterministic cleanup log (revertable, no LLM required)
 export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
   id: text("id").primaryKey(),

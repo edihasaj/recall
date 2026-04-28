@@ -1,6 +1,7 @@
-import { and, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
-import { feedbackEvents, memoryInjections } from "../db/schema.js";
+import { feedbackEvents, memories, memoryInjections, qualitySnapshots } from "../db/schema.js";
 
 export interface QualityReport {
   window_start: string;
@@ -77,6 +78,80 @@ export function computeQualityReport(
       total: feedbackTotal,
       by_outcome: feedbackByOutcome,
     },
+  };
+}
+
+export interface QualitySnapshotRow {
+  id: string;
+  taken_at: string;
+  window_start: string;
+  window_end: string;
+  injections_total: number;
+  injections_resolved: number;
+  injections_followed: number;
+  injections_overridden: number;
+  injections_contradicted: number;
+  injections_ignored: number;
+  followed_rate_resolved: number | null;
+  active_rule_count: number;
+  active_command_count: number;
+  candidate_correction_count: number;
+  notes: string | null;
+}
+
+export function recordQualitySnapshot(
+  db: RecallDb,
+  report: QualityReport,
+  notes?: string,
+): QualitySnapshotRow {
+  const counts = report.injections.by_outcome;
+  const ruleRow = db.select({ n: sql<number>`count(*)` }).from(memories)
+    .where(and(eq(memories.status, "active"), eq(memories.type, "rule"))).get();
+  const cmdRow = db.select({ n: sql<number>`count(*)` }).from(memories)
+    .where(and(eq(memories.status, "active"), eq(memories.type, "command"))).get();
+  const candRow = db.select({ n: sql<number>`count(*)` }).from(memories)
+    .where(and(eq(memories.status, "candidate"), eq(memories.source, "user_correction"))).get();
+
+  const row: QualitySnapshotRow = {
+    id: randomUUID(),
+    taken_at: new Date().toISOString(),
+    window_start: report.window_start,
+    window_end: report.window_end,
+    injections_total: report.injections.total,
+    injections_resolved: report.injections.resolved,
+    injections_followed: counts.followed ?? 0,
+    injections_overridden: counts.overridden ?? 0,
+    injections_contradicted: counts.contradicted ?? 0,
+    injections_ignored: counts.ignored ?? 0,
+    followed_rate_resolved: report.injections.followed_rate_resolved,
+    active_rule_count: ruleRow?.n ?? 0,
+    active_command_count: cmdRow?.n ?? 0,
+    candidate_correction_count: candRow?.n ?? 0,
+    notes: notes ?? null,
+  };
+
+  db.insert(qualitySnapshots).values(row).run();
+  return row;
+}
+
+export function listQualitySnapshots(db: RecallDb, limit = 20): QualitySnapshotRow[] {
+  return db.select().from(qualitySnapshots)
+    .orderBy(desc(qualitySnapshots.taken_at))
+    .limit(limit)
+    .all();
+}
+
+export function diffQualitySnapshots(prev: QualitySnapshotRow, curr: QualitySnapshotRow) {
+  const prevRate = prev.followed_rate_resolved ?? 0;
+  const currRate = curr.followed_rate_resolved ?? 0;
+  return {
+    days_apart: (new Date(curr.taken_at).getTime() - new Date(prev.taken_at).getTime()) / 86_400_000,
+    followed_rate_delta_pp: (currRate - prevRate) * 100,
+    resolved_delta: curr.injections_resolved - prev.injections_resolved,
+    followed_delta: curr.injections_followed - prev.injections_followed,
+    contradicted_delta: curr.injections_contradicted - prev.injections_contradicted,
+    active_rule_delta: curr.active_rule_count - prev.active_rule_count,
+    candidate_delta: curr.candidate_correction_count - prev.candidate_correction_count,
   };
 }
 
