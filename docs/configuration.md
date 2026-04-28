@@ -81,6 +81,20 @@ If no key is configured, the daemon still enqueues tasks and dispatches them to 
 | `AZURE_OPENAI_API_VERSION` | — | Azure API version (e.g. `2024-10-21`). |
 | `AZURE_OPENAI_API_KEY` | — | Azure API key. All four `AZURE_OPENAI_*` must be set together to count as configured. |
 
+### Cleanup env vars
+
+The deterministic cleanup loop (no LLM required) merges exact-text duplicates,
+rejects voice/typing fragments captured as user_correction candidates, and
+auto-promotes high-signal corrections. Every action lands in
+`maintenance_cleanup_log` with before/after snapshots.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `RECALL_CLEANUP_ENABLED` | `true` | Set to `false` to disable the deterministic cleanup loop. |
+| `RECALL_CLEANUP_INTERVAL_SECONDS` | `86400` | Seconds between cleanup ticks. Daily by default. |
+
+Run on demand: `recall maintenance cleanup` (dry-run) or `recall maintenance cleanup --apply`.
+
 ### Observability
 
 ```bash
