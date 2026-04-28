@@ -83,6 +83,7 @@ export interface MaintenanceResult {
   maintenance_tasks_enqueued: number;
   maintenance_leases_swept: number;
   maintenance_tasks_dropped: number;
+  maintenance_tasks_expired: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -178,7 +179,7 @@ export async function runMaintenanceCycle(
 
   const tasks = config.llm_tasks_enabled
     ? await enqueueMaintenanceTasks(db, config.llm_task_config)
-    : { tasks_enqueued: 0, per_kind: {}, expired_leases_swept: 0, dropped_over_cap: 0 };
+    : { tasks_enqueued: 0, per_kind: {}, expired_leases_swept: 0, dropped_over_cap: 0, expired_pending_tasks: 0 };
 
   return {
     prune_total: prune.total,
@@ -214,6 +215,7 @@ export async function runMaintenanceCycle(
     maintenance_tasks_enqueued: tasks.tasks_enqueued,
     maintenance_leases_swept: tasks.expired_leases_swept,
     maintenance_tasks_dropped: tasks.dropped_over_cap,
+    maintenance_tasks_expired: tasks.expired_pending_tasks,
   };
 }
 

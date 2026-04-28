@@ -765,21 +765,26 @@ async function resolvePendingInjectionOutcomesOnPrompt(
     const memory = injection.memory;
     if (!memory) continue;
 
-    let outcome: "followed" | "overridden" | "ignored" | "contradicted";
+    let outcome: "followed" | "overridden" | "ignored" | "contradicted" | null = null;
     if (correctionTexts.length > 0) {
       const contradicted = correctionTexts.some((text) =>
         similarity(text, memory.text.toLowerCase()) >= 0.7
       );
       const relevant = isPromptRelevant(memory, promptPath, recentToolCalls);
+      // Only label "ignored" when we know the memory was applicable to the
+      // current prompt/tool context. Otherwise leave the injection unresolved
+      // so we don't bias the followed/ignored ratio with unknowable cases.
       outcome = contradicted
         ? "contradicted"
         : relevant
           ? "overridden"
-          : "ignored";
+          : null;
     } else {
       const relevantTool = recentToolCalls.some((toolCall) => toolCallTouchesMemory(memory, toolCall));
-      outcome = relevantTool ? "followed" : "ignored";
+      outcome = relevantTool ? "followed" : null;
     }
+
+    if (outcome === null) continue;
 
     signalOutcomeFallback(db, {
       memory_id: memory.id,
@@ -822,14 +827,16 @@ async function resolvePendingInjectionOutcomesOnSessionEnd(
   const toolCalls = loadRecentToolCalls(db, sessionId);
   for (const injection of pending) {
     if (!injection.memory) continue;
-    const outcome = toolCalls.some((toolCall) => toolCallTouchesMemory(injection.memory!, toolCall))
-      ? "followed"
-      : "ignored";
+    const followed = toolCalls.some((toolCall) => toolCallTouchesMemory(injection.memory!, toolCall));
+    // At session_end, only "followed" is observable. We can't honestly
+    // distinguish "ignored a relevant rule" from "rule was never applicable",
+    // so leave non-followed injections unresolved (outcome=null).
+    if (!followed) continue;
     signalOutcomeFallback(db, {
       memory_id: injection.memory.id,
       session_id: sessionId,
       injected: true,
-      outcome,
+      outcome: "followed",
       context: "auto:session_end",
     }, "cli");
   }
