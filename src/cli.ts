@@ -1990,11 +1990,62 @@ maintenanceCmd
   .command("quality")
   .description("Show injection outcome distribution and followed-rate over a window")
   .option("--since <iso>", "Window start (default: last 14 days)")
+  .option("--snapshot", "Persist this report as a baseline for later comparison")
+  .option("--note <text>", "Optional note attached to a snapshot")
+  .option("--history", "List recent snapshots and the diff against the latest one")
   .option("--json", "Emit raw JSON")
   .action(async (opts) => {
-    const { computeQualityReport, formatQualityReport } = await import("./maintenance/quality.js");
+    const {
+      computeQualityReport,
+      formatQualityReport,
+      recordQualitySnapshot,
+      listQualitySnapshots,
+      diffQualitySnapshots,
+    } = await import("./maintenance/quality.js");
     const db = initDb();
+
+    if (opts.history) {
+      const snaps = listQualitySnapshots(db);
+      if (opts.json) {
+        console.log(JSON.stringify(snaps, null, 2));
+        return;
+      }
+      if (snaps.length === 0) {
+        console.log("No quality snapshots recorded.");
+        return;
+      }
+      for (const s of snaps) {
+        const rate = s.followed_rate_resolved != null ? `${(s.followed_rate_resolved * 100).toFixed(1)}%` : "n/a";
+        console.log(`${s.taken_at.slice(0, 19)}  followed=${rate}  resolved=${s.injections_resolved}  rules=${s.active_rule_count}  cand=${s.candidate_correction_count}${s.notes ? `  (${s.notes})` : ""}`);
+      }
+      if (snaps.length >= 2) {
+        const diff = diffQualitySnapshots(snaps[snaps.length - 1], snaps[0]);
+        console.log("");
+        console.log(`Δ since first snapshot (${diff.days_apart.toFixed(1)}d):`);
+        console.log(`  followed rate:   ${diff.followed_rate_delta_pp >= 0 ? "+" : ""}${diff.followed_rate_delta_pp.toFixed(1)}pp`);
+        console.log(`  resolved:        ${diff.resolved_delta >= 0 ? "+" : ""}${diff.resolved_delta}`);
+        console.log(`  followed:        ${diff.followed_delta >= 0 ? "+" : ""}${diff.followed_delta}`);
+        console.log(`  contradicted:    ${diff.contradicted_delta >= 0 ? "+" : ""}${diff.contradicted_delta}`);
+        console.log(`  active rules:    ${diff.active_rule_delta >= 0 ? "+" : ""}${diff.active_rule_delta}`);
+        console.log(`  candidates:      ${diff.candidate_delta >= 0 ? "+" : ""}${diff.candidate_delta}`);
+      }
+      return;
+    }
+
     const report = computeQualityReport(db, { sinceIso: opts.since });
+
+    if (opts.snapshot) {
+      const row = recordQualitySnapshot(db, report, opts.note);
+      if (opts.json) {
+        console.log(JSON.stringify({ snapshot: row, report }, null, 2));
+        return;
+      }
+      console.log(formatQualityReport(report));
+      console.log("");
+      console.log(`Recorded snapshot ${row.id.slice(0, 8)} at ${row.taken_at.slice(0, 19)}`);
+      return;
+    }
+
     if (opts.json) {
       console.log(JSON.stringify(report, null, 2));
       return;
