@@ -30,6 +30,7 @@ import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
 import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
+import { runDeterministicCleanup } from "./maintenance/cleanup.js";
 import { hasProviderConfigured } from "./credentials/keychain.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
@@ -51,6 +52,12 @@ const dispatcherConfig = {
   maxTasksPerRun: parseInt(process.env.RECALL_DISPATCHER_MAX_TASKS_PER_RUN ?? "5", 10),
 };
 let dispatcherRunning = false;
+
+const cleanupConfig = {
+  enabled: process.env.RECALL_CLEANUP_ENABLED !== "false",
+  intervalSeconds: parseInt(process.env.RECALL_CLEANUP_INTERVAL_SECONDS ?? "86400", 10),
+};
+let cleanupRunning = false;
 
 function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -130,6 +137,37 @@ function scheduleDispatcherLoop() {
   const timer = setInterval(() => {
     void run();
   }, Math.max(60, dispatcherConfig.intervalSeconds) * 1000);
+  timer.unref?.();
+}
+
+function scheduleCleanupLoop() {
+  if (!cleanupConfig.enabled) return;
+
+  const run = async () => {
+    if (cleanupRunning) return;
+    cleanupRunning = true;
+    try {
+      const report = runDeterministicCleanup(db, { dryRun: false });
+      const c = report.counts;
+      const total = c.dedupe_clusters + c.fragment_rejections + c.repeat_promotions;
+      if (total > 0) {
+        console.log(
+          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      console.error(`[recall] cleanup failed: ${message}`);
+    } finally {
+      cleanupRunning = false;
+    }
+  };
+
+  // Defer the first run so we don't fight startup migrations.
+  setTimeout(() => void run(), 30_000).unref?.();
+  const timer = setInterval(() => {
+    void run();
+  }, Math.max(60, cleanupConfig.intervalSeconds) * 1000);
   timer.unref?.();
 }
 
@@ -718,6 +756,7 @@ async function startDaemon() {
 
   scheduleMaintenanceLoop();
   scheduleDispatcherLoop();
+  scheduleCleanupLoop();
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (embeddingConfig) {
