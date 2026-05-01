@@ -189,6 +189,7 @@ export function applyMergeDuplicates(
       .set({
         status: "rejected",
         supersedes: winnerId,
+        dedupe_key: null,
         updated_at: now,
       })
       .where(eq(memories.id, cand.id))

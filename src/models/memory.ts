@@ -2,6 +2,7 @@ import { eq, and, gte, inArray, like, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
+import { memoryDedupeKey } from "./dedupe.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import {
   CONFIDENCE,
@@ -32,6 +33,7 @@ export interface CreateMemoryInput {
   evidence?: EvidenceEntry[];
   capture_context?: CaptureContext | null;
   supersedes?: string | null;
+  dedupe?: boolean;
 }
 
 export function statusFromConfidence(confidence: number): MemoryStatus {
@@ -45,6 +47,22 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
   const id = randomUUID();
   const confidence = input.confidence ?? 0.35; // default: low candidate
   const status = statusFromConfidence(confidence);
+  const dedupeKey = input.dedupe === false
+    ? null
+    : memoryDedupeKey({
+        type: input.type,
+        scope: input.scope,
+        repo: input.repo ?? null,
+        path_scope: input.path_scope ?? null,
+        text: input.text,
+      });
+
+  if (dedupeKey) {
+    const existing = db.select().from(memories)
+      .where(and(eq(memories.dedupe_key, dedupeKey), sql`${memories.status} != 'rejected'`))
+      .get();
+    if (existing) return existing.id;
+  }
 
   db.insert(memories)
     .values({
@@ -60,6 +78,7 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       evidence: (input.evidence ?? []) as any,
       capture_context: input.capture_context ? input.capture_context as any : null,
       supersedes: input.supersedes ?? null,
+      dedupe_key: dedupeKey,
       created_at: now,
       updated_at: now,
       last_validated_at: null,
@@ -214,6 +233,7 @@ export function rejectMemory(db: RecallDb, id: string): boolean {
     .set({
       status: "rejected",
       confidence: 0,
+      dedupe_key: null,
       updated_at: new Date().toISOString(),
     })
     .where(eq(memories.id, id))
@@ -242,10 +262,17 @@ export function reactivateMemory(
   if (mem.status !== "rejected") return false;
 
   const now = new Date().toISOString();
+  const dedupeKey = memoryDedupeKey(mem);
+  const existing = db.select().from(memories)
+    .where(and(eq(memories.dedupe_key, dedupeKey), sql`${memories.status} != 'rejected'`))
+    .get();
+  if (existing && existing.id !== id) return false;
+
   db.update(memories)
     .set({
       status: "candidate",
       confidence: CONFIDENCE.TRANSIENT_MAX + 0.05,
+      dedupe_key: dedupeKey,
       evidence: [...mem.evidence, evidence] as any,
       updated_at: now,
     })

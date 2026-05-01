@@ -2,6 +2,7 @@ import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets } from "../db/schema.js";
+import { historySnippetDedupeKey } from "../models/dedupe.js";
 import type { HistorySnippet, HistorySnippetKind } from "../types.js";
 
 type HistorySnippetRow = typeof historySnippets.$inferSelect;
@@ -18,6 +19,12 @@ export function createHistorySnippet(
   db: RecallDb,
   input: CreateHistorySnippetInput,
 ): string {
+  const dedupeKey = historySnippetDedupeKey(input);
+  const existing = db.select().from(historySnippets)
+    .where(eq(historySnippets.dedupe_key, dedupeKey))
+    .get();
+  if (existing) return existing.id;
+
   const id = randomUUID();
   const now = new Date().toISOString();
   db.insert(historySnippets)
@@ -27,6 +34,7 @@ export function createHistorySnippet(
       session_id: input.session_id ?? null,
       kind: input.kind,
       text: input.text,
+      dedupe_key: dedupeKey,
       source_activity_ids: input.source_activity_ids ?? [],
       created_at: now,
       updated_at: now,
@@ -103,9 +111,24 @@ export function updateHistorySnippet(
     source_activity_ids?: string[];
   },
 ) {
+  const current = getHistorySnippet(db, id);
+  if (!current) return;
+  const nextText = updates.text ?? current.text;
+  const dedupeKey = historySnippetDedupeKey({
+    repo: current.repo,
+    session_id: current.session_id,
+    kind: current.kind,
+    text: nextText,
+  });
+  const collision = db.select().from(historySnippets)
+    .where(eq(historySnippets.dedupe_key, dedupeKey))
+    .get();
+  if (collision && collision.id !== id) return;
+
   db.update(historySnippets)
     .set({
       ...(updates.text != null ? { text: updates.text } : {}),
+      dedupe_key: dedupeKey,
       ...(updates.source_activity_ids ? { source_activity_ids: updates.source_activity_ids as any } : {}),
       updated_at: new Date().toISOString(),
     })

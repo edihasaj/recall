@@ -26,6 +26,7 @@ export const memories = sqliteTable("memories", {
   evidence: text("evidence", { mode: "json" }).notNull().default("[]"),
   capture_context: text("capture_context", { mode: "json" }),
   supersedes: text("supersedes"),
+  dedupe_key: text("dedupe_key"),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
   last_validated_at: text("last_validated_at"),
@@ -45,6 +46,7 @@ export const memories = sqliteTable("memories", {
   index("idx_memories_status").on(table.status),
   index("idx_memories_repo_status").on(table.repo, table.status),
   index("idx_memories_team").on(table.team_id),
+  uniqueIndex("uq_memories_dedupe_key").on(table.dedupe_key),
 ]));
 
 export const memoryEmbeddings = sqliteTable("memory_embeddings", {
@@ -71,6 +73,7 @@ export const historySnippets = sqliteTable("history_snippets", {
     enum: ["session_summary", "correction_summary", "review_summary", "compile_summary", "repo_synthesis"],
   }).notNull(),
   text: text("text").notNull(),
+  dedupe_key: text("dedupe_key"),
   source_activity_ids: text("source_activity_ids", { mode: "json" }).notNull().default("[]"),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
@@ -79,6 +82,7 @@ export const historySnippets = sqliteTable("history_snippets", {
   index("idx_history_session").on(table.session_id),
   index("idx_history_kind").on(table.kind),
   index("idx_history_created").on(table.created_at),
+  uniqueIndex("uq_history_snippets_dedupe_key").on(table.dedupe_key),
 ]));
 
 export const historySnippetEmbeddings = sqliteTable("history_snippet_embeddings", {
@@ -157,6 +161,7 @@ export const activityEvents = sqliteTable("activity_events", {
     ],
   }).notNull(),
   memory_ids: text("memory_ids", { mode: "json" }).notNull().default("[]"),
+  dedupe_key: text("dedupe_key"),
   request: text("request", { mode: "json" }).notNull().default("{}"),
   result: text("result", { mode: "json" }).notNull().default("{}"),
   created_at: text("created_at").notNull(),
@@ -165,6 +170,7 @@ export const activityEvents = sqliteTable("activity_events", {
   index("idx_activity_repo").on(table.repo),
   index("idx_activity_event_type").on(table.event_type),
   index("idx_activity_created").on(table.created_at),
+  uniqueIndex("uq_activity_events_dedupe_key").on(table.dedupe_key),
 ]));
 
 export const hookCalls = sqliteTable("hook_calls", {
@@ -173,6 +179,7 @@ export const hookCalls = sqliteTable("hook_calls", {
     enum: ["session_started", "prompt_submitted", "tool_invoked", "session_ended"],
   }).notNull(),
   agent: text("agent").notNull(),
+  dedupe_key: text("dedupe_key"),
   duration_ms: integer("duration_ms").notNull(),
   ok: integer("ok", { mode: "boolean" }).notNull(),
   created_at: text("created_at").notNull(),
@@ -180,6 +187,7 @@ export const hookCalls = sqliteTable("hook_calls", {
   index("idx_hook_calls_event").on(table.event),
   index("idx_hook_calls_agent").on(table.agent),
   index("idx_hook_calls_created").on(table.created_at),
+  uniqueIndex("uq_hook_calls_dedupe_key").on(table.dedupe_key),
 ]));
 
 // Phase 2: sync state tracking

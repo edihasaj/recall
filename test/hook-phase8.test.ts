@@ -36,6 +36,29 @@ describe("phase 8 hook telemetry", () => {
     expect(stats.every((row) => row.ok_calls === 1)).toBe(true);
   });
 
+  it("dedupes repeated hook telemetry by structural key", async () => {
+    const db = freshDb();
+
+    await handlePromptHook(
+      { session_id: "sess-dedupe", repo: "edihasaj/recall", text: "phase 8", agent: "codex" },
+      { db },
+    );
+    await handlePromptHook(
+      { session_id: "sess-dedupe", repo: "edihasaj/recall", text: "phase 8", agent: "codex" },
+      { db },
+    );
+    await handlePromptHook(
+      { session_id: "sess-dedupe", repo: "edihasaj/recall", text: "phase 8 changed", agent: "codex" },
+      { db },
+    );
+
+    const calls = listHookCalls(db);
+    expect(calls).toHaveLength(2);
+    const stats = getHookCallStats(db, { agent: "codex" });
+    expect(stats).toHaveLength(1);
+    expect(stats[0]!.ok_calls).toBe(2);
+  });
+
   it("records failed hook calls too", async () => {
     const db = freshDb();
 

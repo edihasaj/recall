@@ -21,6 +21,7 @@ import {
 } from "../session/lifecycle.js";
 import { peekTasks } from "../maintenance/tasks.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
+import { hookCallDedupeKey } from "../models/dedupe.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 25;
@@ -204,7 +205,16 @@ export async function handlePromptHook(
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
   const db = opts.db ?? initDb();
-  return withHookTelemetry(db, "prompt_submitted", input.agent ?? "hook", async () => {
+  const telemetrySessionId = input.session_id?.trim() || "hook";
+  return withHookTelemetry(db, "prompt_submitted", input.agent ?? "hook", {
+    session_id: telemetrySessionId,
+    payload: {
+      repo: input.repo ?? null,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+      text: truncateText(input.text, MAX_PROMPT_TEXT_LENGTH),
+    },
+  }, async () => {
     const text = truncateText(requireNonEmpty(input.text, "text"), MAX_PROMPT_TEXT_LENGTH);
     const sessionId = input.session_id?.trim() || "hook";
     const repo = resolveRepo(input.repo, input.repo_path);
@@ -288,7 +298,18 @@ export async function handleToolHook(
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
   const db = opts.db ?? initDb();
-  return withHookTelemetry(db, "tool_invoked", input.agent ?? "hook", async () => {
+  const telemetrySessionId = input.session_id?.trim() || "hook";
+  return withHookTelemetry(db, "tool_invoked", input.agent ?? "hook", {
+    session_id: telemetrySessionId,
+    payload: {
+      repo: input.repo ?? null,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+      name: input.name,
+      input_summary: truncateOptionalText(input.input_summary, MAX_TOOL_INPUT_SUMMARY_LENGTH) ?? null,
+      exit_code: input.exit_code,
+    },
+  }, async () => {
     const name = requireNonEmpty(input.name, "name");
     const sessionId = input.session_id?.trim() || "hook";
     const repo = resolveRepo(input.repo, input.repo_path);
@@ -337,7 +358,14 @@ export async function handleSessionStartHook(
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
   const db = opts.db ?? initDb();
-  return withHookTelemetry(db, "session_started", input.agent ?? "hook", async () => {
+  return withHookTelemetry(db, "session_started", input.agent ?? "hook", {
+    session_id: input.session_id,
+    payload: {
+      repo: input.repo ?? null,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+    },
+  }, async () => {
     const result = startSessionLifecycle(db, {
       session_id: requireNonEmpty(input.session_id, "session_id"),
       client: requireNonEmpty(input.agent, "agent"),
@@ -487,7 +515,15 @@ export async function handleSessionEndHook(
   opts: HookRuntimeOptions = {},
 ): Promise<HookResult> {
   const db = opts.db ?? initDb();
-  return withHookTelemetry(db, "session_ended", input.agent ?? "hook", async () => {
+  return withHookTelemetry(db, "session_ended", input.agent ?? "hook", {
+    session_id: input.session_id,
+    payload: {
+      repo: input.repo ?? null,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+      turn_count: input.turn_count ?? null,
+    },
+  }, async () => {
     const sessionId = requireNonEmpty(input.session_id, "session_id");
     const repo = resolveRepo(input.repo, input.repo_path);
 
@@ -725,6 +761,10 @@ async function withHookTelemetry<T>(
   db: RecallDb,
   event: "session_started" | "prompt_submitted" | "tool_invoked" | "session_ended",
   agent: string,
+  dedupe: {
+    session_id?: string | null;
+    payload?: Record<string, unknown>;
+  },
   run: () => Promise<T>,
 ): Promise<T> {
   const startedAt = performance.now();
@@ -735,6 +775,13 @@ async function withHookTelemetry<T>(
       agent,
       duration_ms: performance.now() - startedAt,
       ok: true,
+      dedupe_key: hookCallDedupeKey({
+        session_id: dedupe.session_id,
+        agent,
+        event,
+        ok: true,
+        payload: dedupe.payload,
+      }),
     });
     return result;
   } catch (error) {
@@ -743,6 +790,13 @@ async function withHookTelemetry<T>(
       agent,
       duration_ms: performance.now() - startedAt,
       ok: false,
+      dedupe_key: hookCallDedupeKey({
+        session_id: dedupe.session_id,
+        agent,
+        event,
+        ok: false,
+        payload: dedupe.payload,
+      }),
     });
     throw error;
   }

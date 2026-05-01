@@ -13,14 +13,26 @@ export function recordHookCall(
     agent: string;
     duration_ms: number;
     ok: boolean;
+    dedupe_key?: string | null;
   },
 ): string {
+  if (input.dedupe_key) {
+    const existing = db
+      .select({ id: hookCalls.id })
+      .from(hookCalls)
+      .where(eq(hookCalls.dedupe_key, input.dedupe_key))
+      .limit(1)
+      .get();
+    if (existing?.id) return existing.id;
+  }
+
   const id = randomUUID();
   db.insert(hookCalls)
     .values({
       id,
       event: input.event,
       agent: input.agent,
+      dedupe_key: input.dedupe_key ?? null,
       duration_ms: Math.max(0, Math.round(input.duration_ms)),
       ok: input.ok,
       created_at: new Date().toISOString(),
