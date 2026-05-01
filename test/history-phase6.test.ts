@@ -101,6 +101,80 @@ describe("phase 6 history retrieval", () => {
     expect(snippets.some((snippet) => snippet.kind === "correction_summary")).toBe(true);
   });
 
+  it("rolls up durable prompt decisions into searchable history", async () => {
+    const db = freshDb();
+
+    createActivityEvent(db, {
+      session_id: "sess-decisions",
+      repo: "test/repo",
+      source: "hook:codex",
+      event_type: "session_event",
+      request: { client: "codex", name: "prompt_submitted" },
+      result: { text: "we should go with sqlite instead of postgres for the runtime database" },
+    });
+    createActivityEvent(db, {
+      session_id: "sess-decisions",
+      repo: "test/repo",
+      source: "hook:codex",
+      event_type: "session_event",
+      request: { client: "codex", name: "prompt_submitted" },
+      result: { text: "make the memory cleanup self healing in the daemon" },
+    });
+    createActivityEvent(db, {
+      session_id: "sess-decisions",
+      repo: "test/repo",
+      source: "hook:codex",
+      event_type: "session_event",
+      request: { client: "codex", name: "prompt_submitted" },
+      result: { text: "do phase 3" },
+    });
+    createActivityEvent(db, {
+      session_id: "sess-decisions",
+      repo: "test/repo",
+      source: "daemon",
+      event_type: "session_end",
+      request: {},
+      result: { exit_code: 0 },
+    });
+
+    const result = await runMaintenanceCycle(db, {
+      enabled: true,
+      interval_seconds: 300,
+      stale_days: 90,
+      min_health_score: 0.2,
+      activity_retention_days: 90,
+      feedback_retention_days: 180,
+      signal_retention_days: 180,
+      history_session_retention_days: 30,
+    });
+
+    expect(result.history_snippets_created).toBe(1);
+    expect(result.history_summaries_created).toBeGreaterThanOrEqual(1);
+
+    const session = listHistorySnippets(db, {
+      repo: "test/repo",
+      kind: "session_summary",
+    })[0]!;
+    expect(session.text).toContain("Decisions:");
+    expect(session.text).toContain("Prefer sqlite over postgres");
+    expect(session.text).toContain("User direction: make the memory cleanup self healing in the daemon.");
+    expect(session.text).toContain("User direction: do phase 3.");
+
+    const decisionSummary = listHistorySnippets(db, {
+      repo: "test/repo",
+      kind: "decision_summary",
+    })[0]!;
+    expect(decisionSummary.text).toContain("Frequent user decisions");
+    expect(decisionSummary.text).toContain("sqlite");
+    expect(decisionSummary.text).toContain("self healing");
+    expect(decisionSummary.text).toContain("do phase 3");
+
+    const results = await searchHistorySnippets(db, "self healing daemon", {
+      repo: "test/repo",
+    });
+    expect(results.some((item) => item.snippet.kind === "decision_summary")).toBe(true);
+  });
+
   it("searches history snippets independently from memories", async () => {
     const db = freshDb();
     delete process.env.RECALL_EMBEDDINGS_DISABLED;

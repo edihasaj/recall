@@ -113,6 +113,9 @@ recall history list -r owner/repo
 recall history search -r owner/repo "pnpm"
 ```
 
+Session history rolls up corrections, review feedback, compile observations,
+and durable user decisions/directions from prompt activity.
+
 Run retrieval eval fixtures:
 
 ```bash

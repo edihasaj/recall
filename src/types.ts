@@ -368,6 +368,7 @@ export type EmbeddingConfig = z.infer<typeof EmbeddingConfig>;
 export const HistorySnippetKind = z.enum([
   "session_summary",
   "correction_summary",
+  "decision_summary",
   "review_summary",
   "compile_summary",
   "repo_synthesis",
