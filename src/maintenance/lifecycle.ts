@@ -24,6 +24,7 @@ import { removeHistoryFtsRow, syncHistoryFtsIndex } from "../vector/sqlite-fts-h
 import { removeHistoryVecRow } from "../vector/sqlite-vec-history.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { evaluateScannedMemory } from "../scanner/signal.js";
+import { detectCorrections } from "../capture/correction.js";
 import {
   DEFAULT_ENQUEUE_CONFIG,
   enqueueMaintenanceTasks,
@@ -502,6 +503,7 @@ export function cleanupSessionHistory(
 
     const hasRepoSummary =
       findHistorySnippetByRepoKind(db, snippet.repo, "correction_summary") ||
+      findHistorySnippetByRepoKind(db, snippet.repo, "decision_summary") ||
       findHistorySnippetByRepoKind(db, snippet.repo, "review_summary") ||
       findHistorySnippetByRepoKind(db, snippet.repo, "compile_summary");
     if (!hasRepoSummary) continue;
@@ -530,6 +532,7 @@ function summarizeSessionEvents(
     .filter((event) => event.event_type === "review")
     .map((event) => String(event.request.feedback ?? ""))
     .filter(Boolean);
+  const decisions = extractPromptDecisions(events);
   const compileEvents = events.filter((event) => event.event_type === "compile");
 
   const lines = [
@@ -553,6 +556,10 @@ function summarizeSessionEvents(
     lines.push(`Reviews: ${reviews.slice(0, 3).join(" | ")}`);
   }
 
+  if (decisions.length > 0) {
+    lines.push(`Decisions: ${decisions.slice(0, 5).join(" | ")}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -560,11 +567,12 @@ function aggregateRepoHistory(
   repo: string,
   snippets: ReturnType<typeof listHistorySnippets>,
 ): Array<{
-  kind: "correction_summary" | "review_summary" | "compile_summary";
+  kind: "correction_summary" | "decision_summary" | "review_summary" | "compile_summary";
   text: string;
   source_activity_ids: string[];
 }> {
   const corrections = new Map<string, number>();
+  const decisions = new Map<string, number>();
   const reviews = new Map<string, number>();
   let compileObservations = 0;
   let compileIncludedTotal = 0;
@@ -590,6 +598,13 @@ function aggregateRepoHistory(
       }
     }
 
+    const decisionsLine = lines.find((line) => line.startsWith("Decisions: "));
+    if (decisionsLine) {
+      for (const item of decisionsLine.replace("Decisions: ", "").split(" | ").filter(Boolean)) {
+        decisions.set(item, (decisions.get(item) ?? 0) + 1);
+      }
+    }
+
     const compileLine = lines.find((line) => line.startsWith("Latest compile included "));
     if (compileLine) {
       compileObservations++;
@@ -607,6 +622,11 @@ function aggregateRepoHistory(
     {
       kind: "review_summary",
       text: renderSummary(repo, "Frequent review guidance", reviews),
+      source_activity_ids: [...sourceActivityIds],
+    },
+    {
+      kind: "decision_summary",
+      text: renderSummary(repo, "Frequent user decisions", decisions),
       source_activity_ids: [...sourceActivityIds],
     },
     {
@@ -640,3 +660,57 @@ function renderSummary(
     ...top,
   ].join("\n");
 }
+
+function extractPromptDecisions(
+  events: Array<ReturnType<typeof listActivityEvents>[number]>,
+): string[] {
+  const seen = new Set<string>();
+  const decisions: string[] = [];
+
+  for (const event of events) {
+    if (event.event_type !== "session_event") continue;
+    if (event.request.name !== "prompt_submitted") continue;
+    const text = String(event.result.text ?? "").trim();
+    if (!text) continue;
+
+    const durable = detectCorrections(text)
+      .filter((match) => match.type === "decision")
+      .map((match) => match.text);
+    for (const item of durable) {
+      addUniqueDecision(seen, decisions, item);
+    }
+
+    const directive = extractDurablePromptDirective(text);
+    if (directive) {
+      addUniqueDecision(seen, decisions, directive);
+    }
+  }
+
+  return decisions;
+}
+
+function addUniqueDecision(seen: Set<string>, decisions: string[], text: string) {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalized || seen.has(normalized)) return;
+  seen.add(normalized);
+  decisions.push(text);
+}
+
+function extractDurablePromptDirective(text: string): string | null {
+  const compact = text
+    .replace(/\s+/g, " ")
+    .replace(/^[-*]\s+/, "")
+    .trim();
+  const phaseDirective = /\b(?:do\s+phase|phase\s+\d+)\b/i.test(compact);
+  if ((!phaseDirective && compact.length < 14) || compact.length > 240) return null;
+  if (!DURABLE_PROMPT_DIRECTIVE.test(compact)) return null;
+  if (!DURABLE_PROMPT_DOMAIN.test(compact)) return null;
+  if (/^(?:can|could|would|should|why|what|how)\b.*\?$/i.test(compact)) return null;
+  return `User direction: ${compact.replace(/[.!?]+$/u, "")}.`;
+}
+
+const DURABLE_PROMPT_DIRECTIVE =
+  /\b(?:let's|lets|let us|we should|we need to|make|improve|add|change|implement|ship|do phase|phase\s+\d+|production ready|open source|self[- ]healing|self healing)\b/i;
+
+const DURABLE_PROMPT_DOMAIN =
+  /\b(?:recall|memory|memories|dedupe|duplicate|question|prompt|capture|history|summary|quality|maintenance|cleanup|doctor|daemon|dispatcher|migration|test|phase|production|open source|self[- ]healing|self healing)\b/i;
