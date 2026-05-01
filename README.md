@@ -117,6 +117,8 @@ Session history rolls up corrections, review feedback, compile observations,
 and durable user decisions/directions from prompt activity.
 Compiled context includes a small relevant history section so decisions can be
 reused without promoting every prompt into a durable memory.
+History injections are tracked separately from memory injections in
+`recall maintenance quality`.
 
 Run retrieval eval fixtures:
 

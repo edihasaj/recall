@@ -2055,7 +2055,7 @@ maintenanceCmd
       }
       for (const s of snaps) {
         const rate = s.followed_rate_resolved != null ? `${(s.followed_rate_resolved * 100).toFixed(1)}%` : "n/a";
-        console.log(`${s.taken_at.slice(0, 19)}  followed=${rate}  resolved=${s.injections_resolved}  rules=${s.active_rule_count}  cand=${s.candidate_correction_count}${s.notes ? `  (${s.notes})` : ""}`);
+        console.log(`${s.taken_at.slice(0, 19)}  followed=${rate}  resolved=${s.injections_resolved}  history=${s.history_injections_total}  rules=${s.active_rule_count}  cand=${s.candidate_correction_count}${s.notes ? `  (${s.notes})` : ""}`);
       }
       if (snaps.length >= 2) {
         const diff = diffQualitySnapshots(snaps[snaps.length - 1], snaps[0]);
@@ -2067,6 +2067,8 @@ maintenanceCmd
         console.log(`  contradicted:    ${diff.contradicted_delta >= 0 ? "+" : ""}${diff.contradicted_delta}`);
         console.log(`  active rules:    ${diff.active_rule_delta >= 0 ? "+" : ""}${diff.active_rule_delta}`);
         console.log(`  candidates:      ${diff.candidate_delta >= 0 ? "+" : ""}${diff.candidate_delta}`);
+        console.log(`  history injects: ${diff.history_injections_delta >= 0 ? "+" : ""}${diff.history_injections_delta}`);
+        console.log(`  history snippets:${diff.history_snippets_delta >= 0 ? "+" : ""}${diff.history_snippets_delta}`);
       }
       return;
     }

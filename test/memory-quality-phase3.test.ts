@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { createMemory, getMemory, getMemoryFeedback } from "../src/models/memory.js";
 import { compileContext } from "../src/compiler/context.js";
+import { createHistorySnippet } from "../src/history/snippets.js";
+import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
 import { handlePromptHook, handleToolHook } from "../src/cli/hook.js";
 
 let dbCounter = 0;
@@ -42,6 +44,39 @@ describe("memory quality phase 3 outcome-after-injection", () => {
       .prepare("select count(*) as count from memory_injections where session_id = ? and memory_id = ?")
       .get("sess-1", memoryId) as { count: number };
     expect(rows.count).toBe(1);
+  });
+
+  it("tracks injected history snippets once per snippet/session", () => {
+    const db = freshDb();
+    const snippetId = createHistorySnippet(db, {
+      repo: "edihasaj/recall",
+      kind: "decision_summary",
+      text: "Repo: edihasaj/recall\nFrequent user decisions:\n- (1) User direction: do phase 5.",
+    });
+
+    const first = compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-history",
+    });
+    const second = compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-history",
+    });
+
+    expect(first.history_included).toEqual([snippetId]);
+    expect(second.history_included).toEqual([snippetId]);
+    const rows = db.$client
+      .prepare("select count(*) as count from history_injections where session_id = ? and snippet_id = ?")
+      .get("sess-history", snippetId) as { count: number };
+    expect(rows.count).toBe(1);
+
+    const report = computeQualityReport(db, { sinceIso: new Date(Date.now() - 60_000).toISOString() });
+    expect(report.history_injections.total).toBe(1);
+    expect(report.history_injections.unique_snippets).toBe(1);
+
+    const snapshot = recordQualitySnapshot(db, report, "history-telemetry");
+    expect(snapshot.history_injections_total).toBe(1);
+    expect(snapshot.history_snippets_injected).toBe(1);
   });
 
   it("marks followed when a relevant tool runs after injection", async () => {
