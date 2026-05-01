@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
-import { feedbackEvents, memories, memoryInjections, qualitySnapshots } from "../db/schema.js";
+import { feedbackEvents, historyInjections, memories, memoryInjections, qualitySnapshots } from "../db/schema.js";
 
 export interface QualityReport {
   window_start: string;
@@ -16,6 +16,10 @@ export interface QualityReport {
   feedback_events: {
     total: number;
     by_outcome: Record<string, number>;
+  };
+  history_injections: {
+    total: number;
+    unique_snippets: number;
   };
 }
 
@@ -64,6 +68,14 @@ export function computeQualityReport(
     feedbackByOutcome[row.outcome] = row.count;
   }
 
+  const historyRow = db.select({
+    total: sql<number>`count(*)`.as("total"),
+    unique_snippets: sql<number>`count(distinct ${historyInjections.snippet_id})`.as("unique_snippets"),
+  })
+    .from(historyInjections)
+    .where(gte(historyInjections.injected_at, start))
+    .get();
+
   return {
     window_start: start,
     window_end: end,
@@ -77,6 +89,10 @@ export function computeQualityReport(
     feedback_events: {
       total: feedbackTotal,
       by_outcome: feedbackByOutcome,
+    },
+    history_injections: {
+      total: Number(historyRow?.total ?? 0),
+      unique_snippets: Number(historyRow?.unique_snippets ?? 0),
     },
   };
 }
@@ -96,6 +112,8 @@ export interface QualitySnapshotRow {
   active_rule_count: number;
   active_command_count: number;
   candidate_correction_count: number;
+  history_injections_total: number;
+  history_snippets_injected: number;
   notes: string | null;
 }
 
@@ -127,6 +145,8 @@ export function recordQualitySnapshot(
     active_rule_count: ruleRow?.n ?? 0,
     active_command_count: cmdRow?.n ?? 0,
     candidate_correction_count: candRow?.n ?? 0,
+    history_injections_total: report.history_injections.total,
+    history_snippets_injected: report.history_injections.unique_snippets,
     notes: notes ?? null,
   };
 
@@ -152,6 +172,8 @@ export function diffQualitySnapshots(prev: QualitySnapshotRow, curr: QualitySnap
     contradicted_delta: curr.injections_contradicted - prev.injections_contradicted,
     active_rule_delta: curr.active_rule_count - prev.active_rule_count,
     candidate_delta: curr.candidate_correction_count - prev.candidate_correction_count,
+    history_injections_delta: curr.history_injections_total - prev.history_injections_total,
+    history_snippets_delta: curr.history_snippets_injected - prev.history_snippets_injected,
   };
 }
 
@@ -177,5 +199,9 @@ export function formatQualityReport(r: QualityReport): string {
   for (const [k, v] of Object.entries(r.feedback_events.by_outcome)) {
     lines.push(`    ${k.padEnd(12)} ${v}`);
   }
+  lines.push("");
+  lines.push("History injections:");
+  lines.push(`  total:        ${r.history_injections.total}`);
+  lines.push(`  snippets:     ${r.history_injections.unique_snippets}`);
   return lines.join("\n");
 }

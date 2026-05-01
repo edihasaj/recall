@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { getEmbeddingCacheRoot } from "../embeddings/cache.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const RECALL_DB_USER_VERSION = 8;
+export const RECALL_DB_USER_VERSION = 9;
 
 export function getDbPath(): string {
   const dataDir =

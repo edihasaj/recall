@@ -221,7 +221,7 @@ function scheduleQualitySnapshotLoop() {
       const report = computeQualityReport(db);
       const row = recordQualitySnapshot(db, report, "auto");
       console.log(
-        `[recall] quality snapshot ${row.id.slice(0, 8)} followed=${row.followed_rate_resolved != null ? (row.followed_rate_resolved * 100).toFixed(1) + "%" : "n/a"} resolved=${row.injections_resolved} rules=${row.active_rule_count} cand=${row.candidate_correction_count}`,
+        `[recall] quality snapshot ${row.id.slice(0, 8)} followed=${row.followed_rate_resolved != null ? (row.followed_rate_resolved * 100).toFixed(1) + "%" : "n/a"} resolved=${row.injections_resolved} history=${row.history_injections_total} rules=${row.active_rule_count} cand=${row.candidate_correction_count}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -321,6 +321,7 @@ const server = createServer(async (req, res) => {
         result: {
           included: result.memories_included,
           dropped: result.memories_dropped,
+          history_included: result.history_included,
           token_estimate: result.token_estimate,
           repo_path: bootstrap.repo_path,
         },

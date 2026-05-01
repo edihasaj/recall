@@ -101,6 +101,21 @@ export const historySnippetEmbeddings = sqliteTable("history_snippet_embeddings"
   index("idx_history_embeddings_updated").on(table.updated_at),
 ]));
 
+export const historyInjections = sqliteTable("history_injections", {
+  id: text("id").primaryKey(),
+  snippet_id: text("snippet_id")
+    .notNull()
+    .references(() => historySnippets.id, { onDelete: "cascade" }),
+  session_id: text("session_id").notNull(),
+  repo: text("repo"),
+  injected_at: text("injected_at").notNull(),
+}, (table) => ([
+  index("idx_history_injections_snippet").on(table.snippet_id),
+  index("idx_history_injections_session").on(table.session_id),
+  index("idx_history_injections_repo").on(table.repo),
+  uniqueIndex("uq_history_injections_snippet_session").on(table.snippet_id, table.session_id),
+]));
+
 export const feedbackEvents = sqliteTable("feedback_events", {
   id: text("id").primaryKey(),
   memory_id: text("memory_id")
@@ -404,6 +419,8 @@ export const qualitySnapshots = sqliteTable("quality_snapshots", {
   active_rule_count: integer("active_rule_count").notNull(),
   active_command_count: integer("active_command_count").notNull(),
   candidate_correction_count: integer("candidate_correction_count").notNull(),
+  history_injections_total: integer("history_injections_total").notNull().default(0),
+  history_snippets_injected: integer("history_snippets_injected").notNull().default(0),
   notes: text("notes"),
 }, (table) => ([
   index("idx_quality_snapshots_taken").on(table.taken_at),

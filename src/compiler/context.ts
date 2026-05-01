@@ -1,6 +1,7 @@
 import { queryMemories, getMemoryFeedbackSummaries, feedbackWeightedScore } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
 import { recordMemoryInjections } from "../models/memory-injections.js";
+import { recordHistoryInjections } from "../models/history-injections.js";
 import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type HistorySnippet, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
@@ -145,6 +146,11 @@ export function compileContext(
     session_id: req.session_id,
     repo: req.repo,
   });
+  recordHistoryInjections(db, {
+    snippet_ids: selectedHistory.map((snippet) => snippet.id),
+    session_id: req.session_id,
+    repo: req.repo,
+  });
 
   return {
     text: finalText,
@@ -279,6 +285,11 @@ export async function compileContextHybrid(
   if (selected.length === 0) {
     const historyOnlyText = renderPack([], req.repo, selectedHistory);
     if (historyOnlyText) {
+      recordHistoryInjections(db, {
+        snippet_ids: selectedHistory.map((snippet) => snippet.id),
+        session_id: req.session_id,
+        repo: req.repo,
+      });
       return {
         text: historyOnlyText,
         memories_included: [],
@@ -307,6 +318,11 @@ export async function compileContextHybrid(
   const finalText = renderPack(selected, req.repo, selectedHistory);
   recordMemoryInjections(db, {
     memory_ids: selected.map((memory) => memory.id),
+    session_id: req.session_id,
+    repo: req.repo,
+  });
+  recordHistoryInjections(db, {
+    snippet_ids: selectedHistory.map((snippet) => snippet.id),
     session_id: req.session_id,
     repo: req.repo,
   });

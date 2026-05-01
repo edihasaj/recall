@@ -15,6 +15,7 @@ import {
   toolCallTouchesMemory,
   pathMatchesMemory,
 } from "../models/memory-injections.js";
+import { listInjectedHistoryIdsForSession } from "../models/history-injections.js";
 import {
   endSessionLifecycle,
   startSessionLifecycle,
@@ -473,6 +474,9 @@ async function collectInjectionSurface(
   const priorInjected = isPromptPath
     ? listInjectedMemoryIdsForSession(db, req.session_id)
     : null;
+  const priorHistoryInjected = isPromptPath
+    ? listInjectedHistoryIdsForSession(db, req.session_id)
+    : null;
 
   let compiled;
   if (isPromptPath) {
@@ -496,11 +500,18 @@ async function collectInjectionSurface(
     if (!compiled.text) return undefined;
   }
 
-  // Per-session dedup (prompt path only): if every memory in this injection
-  // was already delivered earlier in the session, skip. Partial overlap is
-  // allowed — the fresh rows still add value.
-  if (priorInjected && compiled.memories_included.length > 0 &&
-      compiled.memories_included.every((id) => priorInjected.has(id))) {
+  // Per-session dedup (prompt path only): if every memory/history item in
+  // this injection was already delivered earlier in the session, skip.
+  // Partial overlap is allowed — the fresh rows still add value.
+  const everyMemoryWasPrior = compiled.memories_included.length === 0 ||
+    Boolean(priorInjected && compiled.memories_included.every((id) => priorInjected.has(id)));
+  const everyHistoryWasPrior = compiled.history_included.length === 0 ||
+    Boolean(priorHistoryInjected && compiled.history_included.every((id) => priorHistoryInjected.has(id)));
+  if (
+    (compiled.memories_included.length > 0 || compiled.history_included.length > 0) &&
+    everyMemoryWasPrior &&
+    everyHistoryWasPrior
+  ) {
     return undefined;
   }
 
