@@ -1,15 +1,18 @@
 import { queryMemories, getMemoryFeedbackSummaries, feedbackWeightedScore } from "../models/memory.js";
 import type { RecallDb } from "../db/client.js";
 import { recordMemoryInjections } from "../models/memory-injections.js";
-import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type MemoryItem } from "../types.js";
+import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type HistorySnippet, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { listHistorySnippets } from "../history/snippets.js";
+import { searchHistorySnippets } from "../history/retrieval.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
   max_lines: 15,
   max_commands: 3,
   max_gotchas: 3,
+  max_history_snippets: 2,
   token_budget: 2000,
   include_candidates: false,
 };
@@ -29,6 +32,7 @@ export interface CompiledContext {
   text: string;
   memories_included: string[];
   memories_dropped: string[];
+  history_included: string[];
   token_estimate: number;
 }
 
@@ -43,6 +47,7 @@ export function compileContext(
     confidence_threshold:
       req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
   };
+  const selectedHistory = selectRepoHistory(db, req.repo, config.max_history_snippets);
 
   // 1. Pull repo-scoped + path-scoped memories. Skip rows that have been
   // suppressed from auto-injection (still queryable via MCP). Also include
@@ -72,11 +77,12 @@ export function compileContext(
     (m) => m.confidence < config.confidence_threshold,
   );
 
-  if (passing.length === 0) {
+  if (passing.length === 0 && selectedHistory.length === 0) {
     return {
       text: "",
       memories_included: [],
       memories_dropped: dropped.map((m) => m.id),
+      history_included: [],
       token_estimate: 0,
     };
   }
@@ -119,21 +125,21 @@ export function compileContext(
   }
 
   // 6. Compile into text
-  const text = renderPack(selected, req.repo);
+  const text = renderPack(selected, req.repo, selectedHistory);
   const tokenEstimate = Math.ceil(text.length / 4); // rough chars-to-tokens
 
   if (tokenEstimate > config.token_budget) {
     // Trim from the bottom (lowest confidence)
     while (
       selected.length > 1 &&
-      Math.ceil(renderPack(selected, req.repo).length / 4) >
+      Math.ceil(renderPack(selected, req.repo, selectedHistory).length / 4) >
         config.token_budget
     ) {
       selected.pop();
     }
   }
 
-  const finalText = renderPack(selected, req.repo);
+  const finalText = renderPack(selected, req.repo, selectedHistory);
   recordMemoryInjections(db, {
     memory_ids: selected.map((memory) => memory.id),
     session_id: req.session_id,
@@ -149,6 +155,7 @@ export function compileContext(
         .filter((m) => !selected.includes(m))
         .map((m) => m.id),
     ],
+    history_included: selectedHistory.map((snippet) => snippet.id),
     token_estimate: Math.ceil(finalText.length / 4),
   };
 }
@@ -165,6 +172,9 @@ export async function compileContextHybrid(
     confidence_threshold:
       req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
   };
+  const selectedHistory = req.query_text
+    ? await selectRelevantHistory(db, req.repo, req.query_text, config.max_history_snippets)
+    : selectRepoHistory(db, req.repo, config.max_history_snippets);
 
   const repoMemories = queryMemories(db, { repo: req.repo });
   const globalMemories = queryMemories(db, { scope: "global" });
@@ -191,11 +201,12 @@ export async function compileContextHybrid(
 
   const dropped = scoped.filter((memory) => !passing.includes(memory));
 
-  if (passing.length === 0) {
+  if (passing.length === 0 && selectedHistory.length === 0) {
     return {
       text: "",
       memories_included: [],
       memories_dropped: dropped.map((m) => m.id),
+      history_included: [],
       token_estimate: 0,
     };
   }
@@ -266,22 +277,34 @@ export async function compileContextHybrid(
   }
 
   if (selected.length === 0) {
+    const historyOnlyText = renderPack([], req.repo, selectedHistory);
+    if (historyOnlyText) {
+      return {
+        text: historyOnlyText,
+        memories_included: [],
+        memories_dropped: [...dropped, ...passing].map((m) => m.id),
+        history_included: selectedHistory.map((snippet) => snippet.id),
+        token_estimate: Math.ceil(historyOnlyText.length / 4),
+      };
+    }
+
     return {
       text: "",
       memories_included: [],
       memories_dropped: [...dropped, ...passing].map((m) => m.id),
+      history_included: [],
       token_estimate: 0,
     };
   }
 
   while (
     selected.length > 1 &&
-    Math.ceil(renderPack(selected, req.repo).length / 4) > config.token_budget
+    Math.ceil(renderPack(selected, req.repo, selectedHistory).length / 4) > config.token_budget
   ) {
     selected.pop();
   }
 
-  const finalText = renderPack(selected, req.repo);
+  const finalText = renderPack(selected, req.repo, selectedHistory);
   recordMemoryInjections(db, {
     memory_ids: selected.map((memory) => memory.id),
     session_id: req.session_id,
@@ -297,14 +320,15 @@ export async function compileContextHybrid(
         .filter((memory) => !selected.includes(memory))
         .map((memory) => memory.id),
     ],
+    history_included: selectedHistory.map((snippet) => snippet.id),
     token_estimate: Math.ceil(finalText.length / 4),
   };
 }
 
 // --- Render ---
 
-function renderPack(items: MemoryItem[], repo: string): string {
-  if (items.length === 0) return "";
+function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[] = []): string {
+  if (items.length === 0 && history.length === 0) return "";
 
   const rules = items.filter((m) => m.type === "rule" || m.type === "decision");
   const commands = items.filter((m) => m.type === "command");
@@ -332,7 +356,57 @@ function renderPack(items: MemoryItem[], repo: string): string {
     );
   }
 
+  if (history.length > 0) {
+    sections.push(
+      "## History\n" + history.map(renderHistorySnippet).join("\n"),
+    );
+  }
+
   return `# Recall: ${repo}\n\n${sections.join("\n\n")}\n`;
+}
+
+const HISTORY_KINDS = new Set([
+  "decision_summary",
+  "correction_summary",
+  "review_summary",
+  "repo_synthesis",
+]);
+
+function selectRepoHistory(
+  db: RecallDb,
+  repo: string,
+  limit: number,
+): HistorySnippet[] {
+  if (limit <= 0) return [];
+  return listHistorySnippets(db, { repo, limit: Math.max(limit * 3, 6) })
+    .filter((snippet) => !snippet.session_id && HISTORY_KINDS.has(snippet.kind))
+    .slice(0, limit);
+}
+
+async function selectRelevantHistory(
+  db: RecallDb,
+  repo: string,
+  query: string,
+  limit: number,
+): Promise<HistorySnippet[]> {
+  if (limit <= 0) return [];
+  const results = await searchHistorySnippets(db, query, {
+    repo,
+    limit: Math.max(limit * 3, 6),
+  });
+  return results
+    .map((result) => result.snippet)
+    .filter((snippet) => HISTORY_KINDS.has(snippet.kind))
+    .slice(0, limit);
+}
+
+function renderHistorySnippet(snippet: HistorySnippet): string {
+  const lines = snippet.text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  return `- [${snippet.kind}] ${lines.join(" | ")}`;
 }
 
 // --- Path matching ---

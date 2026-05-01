@@ -675,19 +675,20 @@ program
       result: {
         included: result.memories_included,
         dropped: result.memories_dropped,
+        history_included: result.history_included,
         token_estimate: result.token_estimate,
       },
     });
 
     if (!result.text) {
-      console.log("No memories above threshold. Nothing to inject.");
+      console.log("No context above threshold. Nothing to inject.");
       return;
     }
 
     console.log(result.text);
     console.log(`---`);
     console.log(
-      `${result.memories_included.length} included, ${result.memories_dropped.length} dropped, ~${result.token_estimate} tokens`,
+      `${result.memories_included.length} memories included, ${result.history_included.length} history snippets included, ${result.memories_dropped.length} dropped, ~${result.token_estimate} tokens`,
     );
   });
 

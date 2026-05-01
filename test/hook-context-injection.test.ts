@@ -9,6 +9,7 @@ import {
   handlePromptHook,
   handleSessionStartHook,
 } from "../src/cli/hook.js";
+import { createHistorySnippet } from "../src/history/snippets.js";
 
 let dbCounter = 0;
 function freshDb() {
@@ -195,6 +196,29 @@ describe("hook context injection", () => {
     expect(result.injection!.text).toContain("conventional commits");
   });
 
+  it("handleSessionStartHook can inject repo history even without active memories", async () => {
+    const db = freshDb();
+    createHistorySnippet(db, {
+      repo: "edihasaj/recall",
+      kind: "decision_summary",
+      text: "Repo: edihasaj/recall\nFrequent user decisions:\n- (1) User direction: do phase 3.",
+    });
+
+    const result = await handleSessionStartHook(
+      {
+        session_id: "sess-history",
+        agent: "claude-code",
+        repo: "edihasaj/recall",
+      },
+      { db },
+    );
+
+    expect(result.injection).toBeDefined();
+    expect(result.injection!.memories_included).toHaveLength(0);
+    expect(result.injection!.history_included).toHaveLength(1);
+    expect(result.injection!.text).toContain("do phase 3");
+  });
+
   it("per-session dedup: SessionStart fires once, subsequent opt-in prompt hooks skip if all ids already injected", async () => {
     const db = freshDb();
     createMemory(db, {
@@ -236,6 +260,7 @@ describe("formatInjectionContext", () => {
   const surface = {
     text: "# Recall: edihasaj/recall\n\n## Commands\n- dev: tsup --watch\n",
     memories_included: ["a"],
+    history_included: [],
     token_estimate: 10,
   };
 
