@@ -26,6 +26,9 @@ export function createActivityEvent(
   db: RecallDb,
   input: CreateActivityEventInput,
 ): string {
+  const duplicateId = findRecentDuplicateActivityEvent(db, input);
+  if (duplicateId) return duplicateId;
+
   const id = randomUUID();
   db.insert(activityEvents)
     .values({
@@ -42,6 +45,48 @@ export function createActivityEvent(
     })
     .run();
   return id;
+}
+
+function findRecentDuplicateActivityEvent(
+  db: RecallDb,
+  input: CreateActivityEventInput,
+): string | null {
+  if (!input.session_id) return null;
+
+  const since = new Date(Date.now() - 2_000).toISOString();
+  const rows = db.select().from(activityEvents)
+    .where(and(
+      eq(activityEvents.session_id, input.session_id),
+      eq(activityEvents.source, input.source),
+      eq(activityEvents.event_type, input.event_type),
+      gte(activityEvents.created_at, since),
+    ))
+    .all();
+
+  const requestKey = stableJson(stripVolatileFields(input.request ?? {}));
+  const resultKey = stableJson(stripVolatileFields(input.result ?? {}));
+  const repo = input.repo ?? null;
+  const path = input.path ?? null;
+
+  for (const row of rows) {
+    if (row.repo !== repo || row.path !== path) continue;
+    const request =
+      typeof row.request === "string"
+        ? JSON.parse(row.request)
+        : row.request ?? {};
+    const result =
+      typeof row.result === "string"
+        ? JSON.parse(row.result)
+        : row.result ?? {};
+    if (
+      stableJson(stripVolatileFields(request as Record<string, unknown>)) === requestKey &&
+      stableJson(stripVolatileFields(result as Record<string, unknown>)) === resultKey
+    ) {
+      return row.id;
+    }
+  }
+
+  return null;
 }
 
 export function getActivityEvent(
@@ -138,4 +183,35 @@ function rowToActivityEvent(row: ActivityRow): ActivityEvent {
     result: result as Record<string, unknown>,
     created_at: row.created_at,
   };
+}
+
+function stripVolatileFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripVolatileFields);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (/_at$/u.test(key) || key === "timestamp") continue;
+    if (entry === undefined) continue;
+    out[key] = stripVolatileFields(entry);
+  }
+  return out;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(",")}]`;
+  }
+  if (!value || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => (
+    `${JSON.stringify(key)}:${stableJson(record[key])}`
+  )).join(",")}}`;
 }

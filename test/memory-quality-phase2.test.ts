@@ -93,4 +93,34 @@ describe("memory quality phase 2 rich context", () => {
     expect(memory.capture_context?.prev_assistant_text).toBe("Run pip install -e .");
     expect(memory.capture_context?.agent).toBe("codex");
   });
+
+  it("hook prompt dedupes repeated prompt and correction activity", async () => {
+    const db = freshDb();
+    const input = {
+      session_id: "sess-dup",
+      repo: "edihasaj/recall",
+      text: "don't use pip, use uv",
+      agent: "codex",
+      prev_assistant_turn: "Run pip install -e .",
+      recent_tool_calls: [
+        {
+          name: "shell",
+          input_summary: "pip install -e .",
+          exit_code: 0,
+        },
+      ],
+    } as const;
+
+    await handlePromptHook(input, { db, source: "cli" });
+    await handlePromptHook(input, { db, source: "cli" });
+
+    expect(listActivityEvents(db, {
+      session_id: "sess-dup",
+      event_type: "session_event",
+    })).toHaveLength(1);
+    expect(listActivityEvents(db, {
+      session_id: "sess-dup",
+      event_type: "correction",
+    })).toHaveLength(1);
+  });
 });

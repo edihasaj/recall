@@ -52,72 +52,81 @@ const QUESTION_ONLY =
 export function detectCorrections(text: string): CorrectionMatch[] {
   const normalizedText = text.trim();
   if (QUESTION_ONLY.test(normalizedText)) return [];
+  if (looksLikePastedTranscript(normalizedText)) return [];
 
   const matches: CorrectionMatch[] = [];
+  const segments = correctionCandidateSegments(normalizedText);
 
-  // Negation + replacement: "don't use X, use Y"
-  const negMatch = text.match(NEGATION_REPLACEMENT);
-  if (negMatch) {
-    matches.push({
-      type: "rule",
-      text: `Do not use ${negMatch[1].trim()}. Use ${negMatch[2].trim()} instead.`,
-      confidence: 0.45,
-      original: text,
-    });
-  }
+  for (const segment of segments) {
+    // Negation + replacement: "don't use X, use Y"
+    const negMatch = segment.match(NEGATION_REPLACEMENT);
+    if (negMatch) {
+      matches.push({
+        type: "rule",
+        text: `Do not use ${negMatch[1].trim()}. Use ${negMatch[2].trim()} instead.`,
+        confidence: 0.45,
+        original: segment,
+      });
+      continue;
+    }
 
-  // Review feedback: "review said to do X" (check before explicit rule to avoid dupes)
-  const reviewMatch = text.match(REVIEW_FEEDBACK);
-  if (reviewMatch) {
-    matches.push({
-      type: "review_pattern",
-      text: reviewMatch[1].trim(),
-      confidence: 0.55, // stronger — review feedback
-    });
-  }
+    // Review feedback: "review said to do X" (check before explicit rule to avoid dupes)
+    const reviewMatch = segment.match(REVIEW_FEEDBACK);
+    if (reviewMatch) {
+      matches.push({
+        type: "review_pattern",
+        text: reviewMatch[1].trim(),
+        confidence: 0.55, // stronger — review feedback
+      });
+      continue;
+    }
 
-  // Explicit rule: "always do X" / "never do Y"
-  const ruleMatch = text.match(EXPLICIT_RULE);
-  if (ruleMatch && !negMatch && !reviewMatch) {
-    matches.push({
-      type: "rule",
-      text: `${ruleMatch[1]} ${ruleMatch[2].trim()}`,
-      confidence: 0.5,
-    });
-  }
+    // Explicit rule: "always do X" / "never do Y"
+    const ruleMatch = segment.match(EXPLICIT_RULE);
+    if (ruleMatch) {
+      matches.push({
+        type: "rule",
+        text: `${ruleMatch[1]} ${ruleMatch[2].trim()}`,
+        confidence: 0.5,
+      });
+      continue;
+    }
 
-  // Preference: "we prefer X over Y"
-  const decisionMatch = text.match(SOFT_DECISION);
-  if (decisionMatch && !negMatch && !ruleMatch && !reviewMatch) {
-    const decision = decisionMatch[2]
-      ? `Prefer ${decisionMatch[1].trim()} over ${decisionMatch[2].trim()}`
-      : `Use ${stripTrailingPunctuation(decisionMatch[1])}`;
-    matches.push({
-      type: "decision",
-      text: ensureSentence(decision),
-      confidence: 0.38,
-    });
-  }
+    // Preference: "we prefer X over Y"
+    const decisionMatch = segment.match(SOFT_DECISION);
+    if (decisionMatch && isDurableDecision(segment, decisionMatch[1], decisionMatch[2])) {
+      const decision = decisionMatch[2]
+        ? `Prefer ${decisionMatch[1].trim()} over ${decisionMatch[2].trim()}`
+        : `Use ${stripTrailingPunctuation(decisionMatch[1])}`;
+      matches.push({
+        type: "decision",
+        text: ensureSentence(decision),
+        confidence: 0.38,
+      });
+      continue;
+    }
 
-  const prefMatch = text.match(SOFT_PREFERENCE);
-  if (prefMatch && !negMatch && !ruleMatch && !reviewMatch && !decisionMatch) {
-    const pref = prefMatch[2]
-      ? `Prefer ${prefMatch[1].trim()} over ${prefMatch[2].trim()}`
-      : `Prefer ${stripTrailingPunctuation(prefMatch[1])}`;
-    matches.push({
-      type: "decision",
-      text: ensureSentence(pref),
-      confidence: 0.36,
-    });
-  }
+    const prefMatch = segment.match(SOFT_PREFERENCE);
+    if (prefMatch && isDurableDecision(segment, prefMatch[1], prefMatch[2])) {
+      const pref = prefMatch[2]
+        ? `Prefer ${prefMatch[1].trim()} over ${prefMatch[2].trim()}`
+        : `Prefer ${stripTrailingPunctuation(prefMatch[1])}`;
+      matches.push({
+        type: "decision",
+        text: ensureSentence(pref),
+        confidence: 0.36,
+      });
+      continue;
+    }
 
-  const configMatch = text.match(CONFIG_BACKED_DECISION);
-  if (configMatch && !negMatch && !ruleMatch && !reviewMatch && !decisionMatch) {
-    matches.push({
-      type: "decision",
-      text: ensureSentence(`Follow configured repo convention: ${stripTrailingPunctuation(configMatch[1])}`),
-      confidence: 0.42,
-    });
+    const configMatch = segment.match(CONFIG_BACKED_DECISION);
+    if (configMatch) {
+      matches.push({
+        type: "decision",
+        text: ensureSentence(`Follow configured repo convention: ${stripTrailingPunctuation(configMatch[1])}`),
+        confidence: 0.42,
+      });
+    }
   }
 
   return matches;
@@ -141,6 +150,59 @@ function stripTrailingPunctuation(text: string): string {
 function ensureSentence(text: string): string {
   const cleaned = stripTrailingPunctuation(text);
   return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
+}
+
+const TRANSCRIPT_MARKERS = [
+  "※ recap:",
+  "✻",
+  "⏺",
+  "⎿",
+  "❯",
+  "Bash(",
+  "Hook activity",
+  "Top reused memories",
+  "RECENT INJECTIONS",
+  "BREAKDOWN BY TYPE",
+  "sqlite3",
+];
+
+const DURABLE_DECISION_HINT =
+  /\b(repo|repository|project|default|defaults|convention|configured|config|editorconfig|prettier|eslint|tsconfig|package\.json|ci|workflow|style|pattern|architecture|runtime|database|sqlite|pnpm|yarn|npm|uv|pytest|vitest)\b/i;
+
+const TRANSCRIPT_LINE_RE =
+  /^(?:[⏺⎿❯✻※]|(?:Bash|Edit|Write|Read|Grep|Glob|Task|TodoWrite)\(|\s*(?:│|├|┌|└|─)|\s*…|\s*={3,})/u;
+
+function looksLikePastedTranscript(text: string): boolean {
+  if (text.length < 1_200) return false;
+  const markerCount = TRANSCRIPT_MARKERS.reduce(
+    (total, marker) => total + (text.includes(marker) ? 1 : 0),
+    0,
+  );
+  return markerCount >= 2;
+}
+
+function correctionCandidateSegments(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const singleLine = lines.length === 1;
+  const segments = singleLine
+    ? [text]
+    : lines.map((line) => line.trim()).filter(Boolean);
+
+  return segments
+    .map(stripListPrefix)
+    .filter((line) => line.length >= 8 && line.length <= 500)
+    .filter((line) => !TRANSCRIPT_LINE_RE.test(line))
+    .filter((line) => !line.startsWith("```"));
+}
+
+function stripListPrefix(text: string): string {
+  return text.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "").trim();
+}
+
+function isDurableDecision(segment: string, first: string, second?: string): boolean {
+  const haystack = `${segment} ${first} ${second ?? ""}`;
+  if (/\b(?:instead of|over)\b/i.test(haystack)) return true;
+  return DURABLE_DECISION_HINT.test(haystack);
 }
 
 export async function processCorrection(

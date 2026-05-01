@@ -291,6 +291,45 @@ describe("correction detection", () => {
     expect(matches[0].text).toContain("editorconfig");
   });
 
+  it("ignores one-off task steering", () => {
+    const matches = detectCorrections("let's keep up do 1 now then 2, also in 2 if all pass then we can cleanup those docs");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("ignores pasted agent transcripts", () => {
+    const pasted = `
+~/.recall/recall.db (128 MB). Top-line stats below.
+
+  Hook activity (who's calling Recall)
+
+  ┌─────────────┬─────────────┬──────────────────┬───────────────────┐
+  │    agent    │ hook calls  │ sessions started │ corrections saved │
+  └─────────────┴─────────────┴──────────────────┴───────────────────┘
+
+⏺ Bash(echo "=== TOP REUSED MEMORIES (most injected) ==="
+      sqlite3 -header ~/.recall/recall.db <<'SQL'…)
+  ⎿  === TOP REUSED MEMORIES (most injected) ===
+
+  - eunify: Helm release name must be eunify-platform with
+    meta.helm.sh/release-namespace="eunify" (9)
+
+※ recap: Inspected ~/.recall/recall.db to measure savings.
+
+why do I get duplicates for the same questions still?
+${"x".repeat(1_300)}
+`;
+    expect(detectCorrections(pasted)).toHaveLength(0);
+  });
+
+  it("drops incomplete rule fragments", async () => {
+    const db = freshDb();
+    const ids = await processCorrection(db, "must be eunify-platform with", {
+      sessionId: "s1",
+      repo: "test/repo",
+    });
+    expect(ids).toEqual([]);
+  });
+
   it("detects soft preferences as decisions", () => {
     const matches = detectCorrections("we prefer tabs over spaces in this repo");
     expect(matches).toHaveLength(1);
