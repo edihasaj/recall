@@ -104,10 +104,13 @@ function scheduleMaintenanceLoop() {
     }
   };
 
-  void run();
+  const intervalMs = Math.max(30, maintenanceConfig.interval_seconds) * 1000;
+  // Defer first run so startup health checks can succeed before embedding
+  // verification or history refresh work can occupy the event loop.
+  setTimeout(() => void run(), intervalMs).unref?.();
   const timer = setInterval(() => {
     void run();
-  }, Math.max(30, maintenanceConfig.interval_seconds) * 1000);
+  }, intervalMs);
   timer.unref?.();
 }
 
@@ -821,26 +824,27 @@ async function startDaemon() {
 
   db = initDb();
 
-  scheduleMaintenanceLoop();
-  scheduleDispatcherLoop();
-  scheduleCleanupLoop();
-  scheduleQualitySnapshotLoop();
-
-  const embeddingConfig = loadEmbeddingConfigFromEnv();
-  if (embeddingConfig) {
-    const info = getEmbeddingModelInfo(embeddingConfig);
-    if (info && !info.cached) {
-      const approx = info.estimated_size_mb ? `~${info.estimated_size_mb}MB` : "download";
-      console.log(`[recall] Fetching embedding model (one-time, ${approx}) -> ${info.cache_path}`);
-    }
-    void ensureEmbeddingProviderReady(embeddingConfig).catch((error: unknown) => {
-      const message = error instanceof Error ? error.stack ?? error.message : String(error);
-      console.error(`[recall] embedding provider warmup failed: ${message}`);
-    });
-  }
-
   server.listen(PORT, () => {
     console.log(`Recall daemon listening on http://localhost:${PORT}`);
+    scheduleMaintenanceLoop();
+    scheduleDispatcherLoop();
+    scheduleCleanupLoop();
+    scheduleQualitySnapshotLoop();
+
+    setTimeout(() => {
+      const embeddingConfig = loadEmbeddingConfigFromEnv();
+      if (!embeddingConfig) return;
+
+      const info = getEmbeddingModelInfo(embeddingConfig);
+      if (info && !info.cached) {
+        const approx = info.estimated_size_mb ? `~${info.estimated_size_mb}MB` : "download";
+        console.log(`[recall] Fetching embedding model (one-time, ${approx}) -> ${info.cache_path}`);
+      }
+      void ensureEmbeddingProviderReady(embeddingConfig).catch((error: unknown) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        console.error(`[recall] embedding provider warmup failed: ${message}`);
+      });
+    }, 60_000).unref?.();
   });
 }
 
