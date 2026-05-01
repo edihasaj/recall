@@ -2,6 +2,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { activityEvents } from "../db/schema.js";
+import { activityEventDedupeKey } from "./dedupe.js";
 import type {
   ActivityEvent,
   ActivityEventQuery,
@@ -26,7 +27,8 @@ export function createActivityEvent(
   db: RecallDb,
   input: CreateActivityEventInput,
 ): string {
-  const duplicateId = findRecentDuplicateActivityEvent(db, input);
+  const dedupeKey = activityEventDedupeKey(input);
+  const duplicateId = findDuplicateActivityEvent(db, input, dedupeKey);
   if (duplicateId) return duplicateId;
 
   const id = randomUUID();
@@ -39,6 +41,7 @@ export function createActivityEvent(
       source: input.source,
       event_type: input.event_type,
       memory_ids: input.memory_ids ?? [],
+      dedupe_key: dedupeKey,
       request: input.request ?? {},
       result: input.result ?? {},
       created_at: new Date().toISOString(),
@@ -47,11 +50,19 @@ export function createActivityEvent(
   return id;
 }
 
-function findRecentDuplicateActivityEvent(
+function findDuplicateActivityEvent(
   db: RecallDb,
   input: CreateActivityEventInput,
+  dedupeKey: string | null,
 ): string | null {
   if (!input.session_id) return null;
+
+  if (dedupeKey) {
+    const existing = db.select().from(activityEvents)
+      .where(eq(activityEvents.dedupe_key, dedupeKey))
+      .get();
+    if (existing) return existing.id;
+  }
 
   const since = new Date(Date.now() - 2_000).toISOString();
   const rows = db.select().from(activityEvents)
@@ -63,8 +74,8 @@ function findRecentDuplicateActivityEvent(
     ))
     .all();
 
-  const requestKey = stableJson(stripVolatileFields(input.request ?? {}));
-  const resultKey = stableJson(stripVolatileFields(input.result ?? {}));
+  const requestKey = JSON.stringify(input.request ?? {});
+  const resultKey = JSON.stringify(input.result ?? {});
   const repo = input.repo ?? null;
   const path = input.path ?? null;
 
@@ -79,8 +90,8 @@ function findRecentDuplicateActivityEvent(
         ? JSON.parse(row.result)
         : row.result ?? {};
     if (
-      stableJson(stripVolatileFields(request as Record<string, unknown>)) === requestKey &&
-      stableJson(stripVolatileFields(result as Record<string, unknown>)) === resultKey
+      JSON.stringify(request) === requestKey &&
+      JSON.stringify(result) === resultKey
     ) {
       return row.id;
     }
@@ -183,35 +194,4 @@ function rowToActivityEvent(row: ActivityRow): ActivityEvent {
     result: result as Record<string, unknown>,
     created_at: row.created_at,
   };
-}
-
-function stripVolatileFields(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(stripVolatileFields);
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (/_at$/u.test(key) || key === "timestamp") continue;
-    if (entry === undefined) continue;
-    out[key] = stripVolatileFields(entry);
-  }
-  return out;
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableJson).join(",")}]`;
-  }
-  if (!value || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) => (
-    `${JSON.stringify(key)}:${stableJson(record[key])}`
-  )).join(",")}}`;
 }

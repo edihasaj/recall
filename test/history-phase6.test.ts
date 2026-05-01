@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
 import { historySnippetEmbeddings, historySnippets } from "../src/db/schema.js";
 import { createActivityEvent } from "../src/models/activity.js";
-import { listHistorySnippets } from "../src/history/snippets.js";
+import { createHistorySnippet, listHistorySnippets } from "../src/history/snippets.js";
 import { runMaintenanceCycle } from "../src/maintenance/lifecycle.js";
 import { searchHistorySnippets } from "../src/history/retrieval.js";
 import { flushEmbeddingJobs, loadEmbeddingConfigFromEnv } from "../src/embeddings/embeddings.js";
@@ -36,6 +36,25 @@ afterEach(async () => {
 });
 
 describe("phase 6 history retrieval", () => {
+  it("dedupes history snippets by structural key", () => {
+    const db = freshDb();
+    const first = createHistorySnippet(db, {
+      repo: "r",
+      session_id: "s",
+      kind: "session_summary",
+      text: "Repo: r\nEvent types: session_start",
+    });
+    const second = createHistorySnippet(db, {
+      repo: "r",
+      session_id: "s",
+      kind: "session_summary",
+      text: "Repo: r\nEvent types:   session_start.",
+    });
+
+    expect(second).toBe(first);
+    expect(listHistorySnippets(db, { repo: "r" })).toHaveLength(1);
+  });
+
   it("rolls up completed sessions into history snippets", async () => {
     const db = freshDb();
 

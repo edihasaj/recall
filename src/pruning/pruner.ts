@@ -62,7 +62,7 @@ export function pruneMemories(
     if (lastActivity < staleCutoff) {
       if (!cfg.dry_run) {
         db.update(memories)
-          .set({ status: "rejected", updated_at: new Date().toISOString() })
+          .set({ status: "rejected", dedupe_key: null, updated_at: new Date().toISOString() })
           .where(eq(memories.id, mem.id))
           .run();
         queueMemoryEmbeddingSync(db, mem.id);

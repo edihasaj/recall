@@ -114,6 +114,29 @@ describe("memory CRUD", () => {
     expect(active[0].text).toBe("b");
   });
 
+  it("dedupes direct memory creates by normalized structural key", () => {
+    const db = freshDb();
+    const first = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm",
+      scope: "repo",
+      repo: "r1",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+    const second = createMemory(db, {
+      type: "rule",
+      text: "use  pnpm.",
+      scope: "repo",
+      repo: "r1",
+      source: "user_correction",
+      confidence: 0.45,
+    });
+
+    expect(second).toBe(first);
+    expect(queryMemories(db, { repo: "r1" })).toHaveLength(1);
+  });
+
   it("supports limit/offset pagination", () => {
     const db = freshDb();
     createMemory(db, {

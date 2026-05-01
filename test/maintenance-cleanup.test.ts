@@ -34,6 +34,7 @@ describe("maintenance cleanup — dedupeExact", () => {
       repo: "edihasaj/recall",
       source: "config_parse",
       confidence: 0.9,
+      dedupe: false,
     });
     const b = createMemory(db, {
       type: "command",
@@ -42,6 +43,7 @@ describe("maintenance cleanup — dedupeExact", () => {
       repo: "edihasaj/recall",
       source: "config_parse",
       confidence: 0.5,
+      dedupe: false,
     });
 
     const plan = planDedupeExact(db);
@@ -85,11 +87,11 @@ describe("maintenance cleanup — dedupeExact", () => {
     const db = freshDb();
     const winnerId = createMemory(db, {
       type: "rule", text: "Use pnpm", scope: "repo", repo: "r",
-      source: "user_correction", confidence: 0.9,
+      source: "user_correction", confidence: 0.9, dedupe: false,
     });
     const loserId = createMemory(db, {
       type: "rule", text: "Use pnpm.", scope: "repo", repo: "r",
-      source: "user_correction", confidence: 0.5,
+      source: "user_correction", confidence: 0.5, dedupe: false,
     });
 
     db.update(memories).set({ injection_count: 10 }).where(eq(memories.id, winnerId)).run();
@@ -431,11 +433,11 @@ describe("maintenance cleanup — memory_injections re-pointing", () => {
     const db = freshDb();
     const winnerId = createMemory(db, {
       type: "rule", text: "Use pnpm", scope: "repo", repo: "r",
-      source: "user_correction", confidence: 0.9,
+      source: "user_correction", confidence: 0.9, dedupe: false,
     });
     const loserId = createMemory(db, {
       type: "rule", text: "use pnpm.", scope: "repo", repo: "r",
-      source: "user_correction", confidence: 0.5,
+      source: "user_correction", confidence: 0.5, dedupe: false,
     });
 
     // Both rows have an injection for sess-A; only loser has one for sess-B.

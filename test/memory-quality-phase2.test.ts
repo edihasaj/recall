@@ -7,7 +7,7 @@ import { processCorrection, detectCorrections } from "../src/capture/correction.
 import { getMemory } from "../src/models/memory.js";
 import { inferScope } from "../src/capture/scope.js";
 import { handlePromptHook } from "../src/cli/hook.js";
-import { listActivityEvents } from "../src/models/activity.js";
+import { createActivityEvent, listActivityEvents } from "../src/models/activity.js";
 
 let dbCounter = 0;
 
@@ -122,5 +122,28 @@ describe("memory quality phase 2 rich context", () => {
       session_id: "sess-dup",
       event_type: "correction",
     })).toHaveLength(1);
+  });
+
+  it("dedupes activity events through stable structural keys", () => {
+    const db = freshDb();
+    const first = createActivityEvent(db, {
+      session_id: "sess-activity",
+      repo: "edihasaj/recall",
+      source: "hook:codex",
+      event_type: "session_event",
+      request: { name: "prompt_submitted", client: "codex" },
+      result: { text: "don't use pip, use uv", submitted_at: "2026-05-01T20:00:00.000Z" },
+    });
+    const second = createActivityEvent(db, {
+      session_id: "sess-activity",
+      repo: "edihasaj/recall",
+      source: "hook:codex",
+      event_type: "session_event",
+      request: { client: "codex", name: "prompt_submitted" },
+      result: { submitted_at: "2026-05-01T20:00:01.000Z", text: "don't use pip, use uv" },
+    });
+
+    expect(second).toBe(first);
+    expect(listActivityEvents(db, { session_id: "sess-activity" })).toHaveLength(1);
   });
 });
