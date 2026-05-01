@@ -96,6 +96,7 @@ export interface HookResult {
 export interface InjectionSurface {
   text: string;
   memories_included: string[];
+  history_included: string[];
   token_estimate: number;
 }
 
@@ -506,6 +507,7 @@ async function collectInjectionSurface(
   return {
     text: compiled.text,
     memories_included: compiled.memories_included,
+    history_included: compiled.history_included,
     token_estimate: compiled.token_estimate,
   };
 }

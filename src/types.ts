@@ -300,6 +300,7 @@ export const CompilerConfig = z.object({
   max_lines: z.number().default(15),
   max_commands: z.number().default(3),
   max_gotchas: z.number().default(3),
+  max_history_snippets: z.number().default(2),
   token_budget: z.number().default(2000),
   include_candidates: z.boolean().default(false),
 });

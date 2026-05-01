@@ -194,6 +194,7 @@ tool(
       result: {
         included: result.memories_included,
         dropped: result.memories_dropped,
+        history_included: result.history_included,
         token_estimate: result.token_estimate,
         repo_path: bootstrap.repo_path,
       },

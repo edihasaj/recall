@@ -19,6 +19,8 @@ import {
 import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
 import { detectCorrections, processCorrection } from "../src/capture/correction.js";
 import { compileContext, compileContextHybrid } from "../src/compiler/context.js";
+import { createHistorySnippet } from "../src/history/snippets.js";
+import { syncHistoryFtsIndex } from "../src/vector/sqlite-fts-history.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
 let dbCounter = 0;
@@ -511,6 +513,21 @@ describe("compiler", () => {
     expect(result.memories_included).toHaveLength(0);
   });
 
+  it("includes repo history snippets in the first-touch context pack", () => {
+    const db = freshDb();
+    createHistorySnippet(db, {
+      repo: "r",
+      kind: "decision_summary",
+      text: "Repo: r\nFrequent user decisions:\n- (1) User direction: do phase 3.",
+    });
+
+    const result = compileContext(db, { repo: "r" });
+    expect(result.memories_included).toHaveLength(0);
+    expect(result.history_included).toHaveLength(1);
+    expect(result.text).toContain("## History");
+    expect(result.text).toContain("do phase 3");
+  });
+
   it("respects max_commands budget", () => {
     const db = freshDb();
     for (let i = 0; i < 5; i++) {
@@ -656,6 +673,26 @@ describe("compiler", () => {
       config: { include_candidates: true },
     });
     expect(withCandidates.memories_included).toHaveLength(1);
+  });
+
+  it("hybrid compile can return relevant history without matching memories", async () => {
+    const db = freshDb();
+    const snippetId = createHistorySnippet(db, {
+      repo: "test/repo",
+      kind: "decision_summary",
+      text: "Repo: test/repo\nFrequent user decisions:\n- (1) User direction: make memory cleanup self healing in the daemon.",
+    });
+    syncHistoryFtsIndex(db, snippetId);
+
+    const result = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "self healing daemon",
+      embedding_config: null,
+    });
+
+    expect(result.memories_included).toHaveLength(0);
+    expect(result.history_included).toEqual([snippetId]);
+    expect(result.text).toContain("self healing");
   });
 });
 

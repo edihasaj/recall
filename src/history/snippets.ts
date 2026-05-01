@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { desc, eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets } from "../db/schema.js";
@@ -69,6 +69,7 @@ export function listHistorySnippets(
   if (conditions.length > 0) {
     stmt = stmt.where(and(...conditions));
   }
+  stmt = stmt.orderBy(desc(historySnippets.updated_at));
   if (query.limit != null) {
     stmt = stmt.limit(query.limit);
   }

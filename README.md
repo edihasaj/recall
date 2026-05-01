@@ -115,6 +115,8 @@ recall history search -r owner/repo "pnpm"
 
 Session history rolls up corrections, review feedback, compile observations,
 and durable user decisions/directions from prompt activity.
+Compiled context includes a small relevant history section so decisions can be
+reused without promoting every prompt into a durable memory.
 
 Run retrieval eval fixtures:
 
