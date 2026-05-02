@@ -6,6 +6,8 @@ Everything Recall reads at runtime from the environment, plus how to wire up LLM
 
 Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects repo memory on `SessionStart` (once per session). `UserPromptSubmit` fires every turn for telemetry and correction capture but emits **no** additional context by default — this keeps subsequent prompts quiet.
 
+Routine app launch, daemon start, and daemon restart do not restore removed hooks or repo instruction files. Reinstalling agent integrations is explicit: run `recall setup --yes`, `recall doctor --fix`, or use the app's Install + Start action.
+
 You can tune that with these env vars (read fresh on each hook invocation — no daemon restart needed):
 
 | Variable | Default | Effect |

@@ -39,6 +39,7 @@ By default the hooks inject repo memory once at `SessionStart` (minimal format) 
 
 Install + setup behavior:
 
+- Routine app launch, daemon start, and daemon restart are non-mutating for agent integrations. They do not re-add hooks or repo instruction files after you remove them.
 - Memory "rethinking": when provider credentials are stored, the daemon runs the dispatcher daily (tunable via `RECALL_DISPATCHER_INTERVAL_SECONDS`) to refine/merge/summarize memories. Use `recall maintenance credentials --help` for provider-specific fields. Observability: `recall maintenance usage`, `recall maintenance stats`. Without a key, pending tasks surface via SessionStart for the live agent to claim.
 - `recall doctor` checks install state; `recall doctor --fix` or `recall setup --yes` wires MCP + hooks for supported agent runtimes.
 - Repo-local `.recall/context.md` is an optional export/fallback, not the primary integration.
