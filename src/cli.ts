@@ -111,16 +111,15 @@ program
       if (detectedAgents.length === 0) {
         if (!opts.json) console.log("Nothing to fix — all detected agents are wired.");
       } else {
-        const fixResult = runLocalSetup({
-          codex: detectedAgents.includes("codex"),
-          claude: detectedAgents.includes("claude-code"),
+        const fixResult = runRecallSetup({
+          agent: detectedAgents,
         });
         if (!opts.json) {
           console.log(`Applied fix for: ${detectedAgents.join(", ")}`);
-          console.log(`Codex MCP:    ${formatSetupStep(fixResult.codex)}`);
-          console.log(`Codex hooks:  ${formatSetupStep(fixResult.codex_hooks)}`);
-          console.log(`Claude MCP:   ${formatSetupStep(fixResult.claude)}`);
-          console.log(`Claude hooks: ${formatSetupStep(fixResult.claude_hooks)}`);
+          for (const agent of fixResult.agents) {
+            console.log(`${formatAgentName(agent.agent)} MCP:   ${formatSetupStep(agent.mcp)}`);
+            console.log(`${formatAgentName(agent.agent)} hooks: ${formatSetupStep(agent.hooks)}`);
+          }
           console.log("");
         }
       }
@@ -265,7 +264,7 @@ setupCmd
 
 setupCmd
   .command("local")
-  .description("Configure local Codex/Claude MCP + hooks against the installed Recall.app")
+  .description("Configure local agent MCP + hooks against the installed Recall.app")
   .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
   .option("--codex-only", "Configure only Codex")
   .option("--claude-only", "Configure only Claude")

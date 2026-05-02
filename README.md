@@ -27,15 +27,21 @@ npm run install:app
 
 The app embeds its own Node runtime plus Recall `dist/`, `drizzle/`, and `node_modules/`, then manages the bundled daemon via launchd.
 
-Configure local Codex/Claude Code against the installed app. `recall setup local` wires both MCP *and* lifecycle hooks globally (`~/.codex`, `~/.claude`) so memory injection fires on every turn, not only when the model chooses to call `query`:
+Configure local agent runtimes against the installed app. `recall setup --yes` wires MCP and lifecycle hooks for supported detected runtimes so memory injection does not depend on the model choosing to call `query`:
 
 ```bash
-recall setup local                      # global MCP + hooks
-recall setup --scope project --yes      # add project-scoped hooks to the current repo
-recall setup --uninstall-hooks --yes    # remove Recall-managed hooks
+recall setup --yes                       # shared MCP + hooks for detected runtimes
+recall setup --scope project --yes       # add project-scoped hooks to the current repo
+recall setup --uninstall-hooks --yes     # remove Recall-managed hooks
 ```
 
-By default the hooks inject repo memory once at `SessionStart` (minimal format) and stay silent on every subsequent `UserPromptSubmit`. To re-enable per-prompt injection, opt back into the verbose format, or wire up an OpenAI/Anthropic key so the daemon can run memory maintenance on a schedule, see [docs/configuration.md](docs/configuration.md).
+By default the hooks inject repo memory once at `SessionStart` (minimal format) and stay silent on every subsequent `UserPromptSubmit`. To re-enable per-prompt injection or wire provider credentials so the daemon can run memory maintenance on a schedule, see [docs/configuration.md](docs/configuration.md).
+
+Install + setup behavior:
+
+- Memory "rethinking": when provider credentials are stored, the daemon runs the dispatcher daily (tunable via `RECALL_DISPATCHER_INTERVAL_SECONDS`) to refine/merge/summarize memories. Use `recall maintenance credentials --help` for provider-specific fields. Observability: `recall maintenance usage`, `recall maintenance stats`. Without a key, pending tasks surface via SessionStart for the live agent to claim.
+- `recall doctor` checks install state; `recall doctor --fix` or `recall setup --yes` wires MCP + hooks for supported agent runtimes.
+- Repo-local `.recall/context.md` is an optional export/fallback, not the primary integration.
 
 ## First Run
 
@@ -54,7 +60,7 @@ recall publish ~/Projects/some-repo
 ```
 
 If an unseen repo is later queried through the daemon or MCP, Recall now tries a lazy one-time bootstrap by resolving the local clone and scanning just that repo.
-Recall can also publish repo-local context into `.recall/context.md`, but the primary agent integration should be Recall MCP.
+Recall can also publish repo-local context into `.recall/context.md`; treat it as an optional export/fallback, not the primary agent integration.
 Bootstrap now keeps operational commands hot and leaves softer scan facts as candidates or drops them during maintenance cleanup.
 
 Inspect quality / health / injection pack:

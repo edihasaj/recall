@@ -4,7 +4,7 @@ Everything Recall reads at runtime from the environment, plus how to wire up LLM
 
 ## Hook injection
 
-Once `recall setup local` has installed hooks into `~/.claude/settings.json` and `~/.codex/hooks.json`, the daemon injects repo memory on `SessionStart` (once per session). `UserPromptSubmit` fires every turn for telemetry and correction capture but emits **no** additional context by default — this keeps subsequent prompts quiet.
+Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects repo memory on `SessionStart` (once per session). `UserPromptSubmit` fires every turn for telemetry and correction capture but emits **no** additional context by default — this keeps subsequent prompts quiet.
 
 You can tune that with these env vars (read fresh on each hook invocation — no daemon restart needed):
 
@@ -13,7 +13,7 @@ You can tune that with these env vars (read fresh on each hook invocation — no
 | `RECALL_HOOK_INJECT_CONTEXT` | `true` | Set to `false` to disable all hook-driven memory injection (SessionStart + UserPromptSubmit). Hooks still fire for telemetry and correction capture. |
 | `RECALL_HOOK_INJECT_PROMPT` | `false` | Set to `true` to re-enable per-prompt memory injection on `UserPromptSubmit`. Uses hybrid retrieval with your prompt as the query — if nothing scores above the relevance floor, nothing is injected (no fall-through to a full-repo dump). Per-session dedup also applies: memories already delivered in this session are not re-emitted. |
 | `RECALL_HOOK_INJECT_STYLE` | `minimal` | Set to `verbose` to restore the historical format (`Recall memory for this repo:\n# Recall: <slug>\n\n...`). `minimal` strips the prefix and repo header — the section bullets are all that lands in context. |
-| `RECALL_CODEX_HOOKS_MIN_VERSION` | `0.115.0` | Minimum Codex CLI version eligible for the `hooks.json` install path. Below this, `recall setup local` / `recall doctor --fix` fall back to the legacy `notify` bridge so memory capture still works. Override if you've forked/patched your Codex. |
+| `RECALL_CODEX_HOOKS_MIN_VERSION` | `0.115.0` | Minimum CLI version eligible for that runtime's `hooks.json` install path. Below this, `recall setup --yes` / `recall doctor --fix` fall back to the legacy `notify` bridge so memory capture still works. Override if you've forked/patched that runtime. |
 
 Where to set them:
 
@@ -65,7 +65,7 @@ Provider auto-selection order when multiple are configured and you don't pass `-
 
 ### Path 2 — Delegated fallback (no API key)
 
-If no key is configured, the daemon still enqueues tasks and dispatches them to zero. Instead, the pending backlog surfaces in the SessionStart context of the next agent session. The calling agent (your live Claude Code / Codex) picks a task up and runs it against its own LLM — no extra cost because that agent was already running.
+If no key is configured, the daemon still enqueues tasks and dispatches them to zero. Instead, the pending backlog surfaces in the SessionStart context of the next agent session. The active agent can pick a task up and run it against its own LLM — no extra cost because that agent was already running.
 
 ### Dispatcher env vars
 
@@ -141,7 +141,7 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 
 ```bash
 recall doctor              # full state snapshot (DB, embeddings, launchd, installed hooks per agent)
-recall doctor --fix        # install missing MCP/hooks for any detected CLI
+recall doctor --fix        # install missing MCP/hooks for detected supported runtimes
 recall doctor --json       # machine-readable; contains `upgrade.available` for app launch probes
 ```
 
