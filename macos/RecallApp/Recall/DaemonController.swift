@@ -22,8 +22,10 @@ final class DaemonController: ObservableObject {
 
     func start() {
         refresh()
-        if !healthOK {
-            installAndStart()
+        if !healthOK && launchdState != "Not loaded" {
+            startDaemon()
+        } else if !healthOK {
+            setupStatus = "Install required"
         }
         refreshTask?.cancel()
         refreshTask = Task {
