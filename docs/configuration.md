@@ -4,7 +4,7 @@ Everything Recall reads at runtime from the environment, plus how to wire up LLM
 
 ## Hook injection
 
-Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects repo memory on `SessionStart` (once per session). `UserPromptSubmit` fires every turn for telemetry and correction capture but emits **no** additional context by default — this keeps subsequent prompts quiet.
+Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects repo memory on `SessionStart` (once per session). `UserPromptSubmit` also runs per-prompt relevance injection by default — hybrid retrieval scores the prompt against repo memory and only emits matches above the relevance floor (with per-session dedup so already-delivered memories don't repeat). Set `RECALL_HOOK_INJECT_PROMPT=false` to opt out and keep prompts silent after SessionStart.
 
 Routine app launch, daemon start, and daemon restart do not restore removed hooks or repo instruction files. Reinstalling agent integrations is explicit: run `recall setup --yes`, `recall doctor --fix`, or use the app's Install + Start action.
 
@@ -13,7 +13,7 @@ You can tune that with these env vars (read fresh on each hook invocation — no
 | Variable | Default | Effect |
 |---|---|---|
 | `RECALL_HOOK_INJECT_CONTEXT` | `true` | Set to `false` to disable all hook-driven memory injection (SessionStart + UserPromptSubmit). Hooks still fire for telemetry and correction capture. |
-| `RECALL_HOOK_INJECT_PROMPT` | `false` | Set to `true` to re-enable per-prompt memory injection on `UserPromptSubmit`. Uses hybrid retrieval with your prompt as the query — if nothing scores above the relevance floor, nothing is injected (no fall-through to a full-repo dump). Per-session dedup also applies: memories already delivered in this session are not re-emitted. |
+| `RECALL_HOOK_INJECT_PROMPT` | `true` | Per-prompt memory injection on `UserPromptSubmit`. Uses hybrid retrieval with your prompt as the query — if nothing scores above the relevance floor, nothing is injected (no fall-through to a full-repo dump). Per-session dedup also applies: memories already delivered in this session are not re-emitted. Set to `false` to opt out. |
 | `RECALL_HOOK_INJECT_STYLE` | `minimal` | Set to `verbose` to restore the historical format (`Recall memory for this repo:\n# Recall: <slug>\n\n...`). `minimal` strips the prefix and repo header — the section bullets are all that lands in context. |
 | `RECALL_CODEX_HOOKS_MIN_VERSION` | `0.115.0` | Minimum CLI version eligible for that runtime's `hooks.json` install path. Below this, `recall setup --yes` / `recall doctor --fix` fall back to the legacy `notify` bridge so memory capture still works. Override if you've forked/patched that runtime. |
 
@@ -22,8 +22,9 @@ Where to set them:
 - **Per-machine**: edit `~/.zshrc` / `~/.bashrc`.
 - **Per-CLI session** (takes effect immediately; no daemon round-trip):
   ```bash
-  RECALL_HOOK_INJECT_PROMPT=true claude
+  RECALL_HOOK_INJECT_PROMPT=false claude
   ```
+- **At install time**: pass `--no-prompt-injection` to `recall setup` (or `recall setup local`) and the opt-out is written inline into the agent hook command — survives shell rc edits.
 - **Daemon-wide** (affects hooks invoked through the daemon transport only): edit `~/Library/LaunchAgents/com.recall.daemon.plist` under `EnvironmentVariables`, then `recall daemon restart`.
 
 ## LLM-assisted memory maintenance
