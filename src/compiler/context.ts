@@ -416,13 +416,26 @@ async function selectRelevantHistory(
     .slice(0, limit);
 }
 
+const HISTORY_ENTRY_MAX_CHARS = 120;
+const HISTORY_MAX_ENTRIES_PER_SNIPPET = 2;
+
 function renderHistorySnippet(snippet: HistorySnippet): string {
   const lines = snippet.text
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .slice(0, 4);
-  return `- [${snippet.kind}] ${lines.join(" | ")}`;
+    .filter((line) => !line.startsWith("Repo: ") && !line.endsWith(":"));
+
+  const entries = lines
+    .slice(0, HISTORY_MAX_ENTRIES_PER_SNIPPET)
+    .map((line) =>
+      line.length > HISTORY_ENTRY_MAX_CHARS
+        ? line.slice(0, HISTORY_ENTRY_MAX_CHARS - 1).trimEnd() + "…"
+        : line,
+    );
+
+  const body = entries.length > 0 ? entries.join(" | ") : "";
+  return `- [${snippet.kind}] ${body}`;
 }
 
 // --- Path matching ---
