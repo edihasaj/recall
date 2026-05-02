@@ -293,6 +293,38 @@ const hookCmd = program
   .command("hook")
   .description("Run lifecycle hook handlers for agent integrations");
 
+// Self-healing wrapper: lifecycle hooks must never break the host agent.
+// Failures are appended to ~/.recall/logs/hook-errors.log and the process
+// exits 0 silently so Claude Code / Codex don't surface a non-blocking error
+// during transient daemon restarts, schema upgrades, or first-run init.
+function safeHookAction<Args extends unknown[], R>(
+  event: string,
+  action: (...args: Args) => Promise<R>,
+): (...args: Args) => Promise<R | void> {
+  return async (...args: Args) => {
+    try {
+      return await action(...args);
+    } catch (error) {
+      try {
+        const { appendFileSync, mkdirSync } = await import("node:fs");
+        const { homedir } = await import("node:os");
+        const dir = join(homedir(), ".recall", "logs");
+        mkdirSync(dir, { recursive: true });
+        const message = error instanceof Error
+          ? error.stack ?? error.message
+          : String(error);
+        appendFileSync(
+          join(dir, "hook-errors.log"),
+          `${new Date().toISOString()} ${event} ${message}\n`,
+        );
+      } catch {
+        // Logging best-effort only — never throw from the safety net.
+      }
+      process.exit(0);
+    }
+  };
+}
+
 hookCmd
   .command("prompt")
   .description("Record a submitted prompt")
@@ -306,7 +338,7 @@ hookCmd
   .option("--recent-tools <json>", "Recent tool calls as a JSON array")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
   .option("--codex-stdin", "Read Codex hook JSON from stdin")
-  .action(async (opts) => {
+  .action(safeHookAction("prompt", async (opts) => {
     const stdinAgent = opts.claudeCodeStdin ? "claude-code" : opts.codexStdin ? "codex" : null;
     const input = stdinAgent === "claude-code"
       ? await readClaudeCodePromptInputFromStdin()
@@ -332,7 +364,7 @@ hookCmd
       };
       process.stdout.write(`${JSON.stringify(output)}\n`);
     }
-  });
+  }));
 
 hookCmd
   .command("tool")
@@ -347,7 +379,7 @@ hookCmd
   .option("--input-summary <text>", "Tool input summary")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
   .option("--codex-stdin", "Read Codex hook JSON from stdin")
-  .action(async (opts) => {
+  .action(safeHookAction("tool", async (opts) => {
     const input = opts.claudeCodeStdin
       ? await readClaudeCodeToolInputFromStdin()
       : opts.codexStdin
@@ -363,7 +395,7 @@ hookCmd
             input_summary: opts.inputSummary,
           };
     await executeToolHook(input);
-  });
+  }));
 
 hookCmd
   .command("session-start")
@@ -375,7 +407,7 @@ hookCmd
   .option("--path <path>", "File path context")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
   .option("--codex-stdin", "Read Codex hook JSON from stdin")
-  .action(async (opts) => {
+  .action(safeHookAction("session-start", async (opts) => {
     const stdinAgent = opts.claudeCodeStdin ? "claude-code" : opts.codexStdin ? "codex" : null;
     const input = stdinAgent === "claude-code"
       ? await readClaudeCodeSessionStartInputFromStdin()
@@ -405,7 +437,7 @@ hookCmd
         process.stdout.write(`${JSON.stringify(output)}\n`);
       }
     }
-  });
+  }));
 
 hookCmd
   .command("session-end")
@@ -418,7 +450,7 @@ hookCmd
   .option("--turn-count <count>", "Turn count")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
   .option("--codex-stdin", "Read Codex hook JSON from stdin")
-  .action(async (opts) => {
+  .action(safeHookAction("session-end", async (opts) => {
     const input = opts.claudeCodeStdin
       ? await readClaudeCodeSessionEndInputFromStdin()
       : opts.codexStdin
@@ -432,15 +464,15 @@ hookCmd
             turn_count: opts.turnCount ? parseInteger(opts.turnCount, "turn-count") : undefined,
           };
     await executeSessionEndHook(input);
-  });
+  }));
 
 hookCmd
   .command("codex-notify")
   .description("Bridge a Codex notify payload into Recall hook handlers")
   .argument("[payload]", "Codex notify payload JSON")
-  .action(async (payload?: string) => {
+  .action(safeHookAction("codex-notify", async (payload?: string) => {
     await dispatchCodexNotify(payload);
-  });
+  }));
 
 hookCmd
   .command("stats")
