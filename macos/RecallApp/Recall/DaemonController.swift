@@ -61,9 +61,12 @@ final class DaemonController: ObservableObject {
     }
 
     func installAndStart() {
-        runRecallInBackground(
-            status: "Installing daemon and rebuilding local memory store",
-            "daemon", "install", "--node-path", runtimeNodePath, "--daemon-script", runtimeDaemonPath
+        runRecallCommandsInBackground(
+            status: "Installing daemon and agent integrations",
+            [
+                ["daemon", "install", "--node-path", runtimeNodePath, "--daemon-script", runtimeDaemonPath],
+                ["setup", "--app-path", Bundle.main.bundlePath, "--yes"]
+            ]
         )
     }
 
@@ -88,6 +91,10 @@ final class DaemonController: ObservableObject {
     }
 
     private func runRecallInBackground(status: String, _ args: String...) {
+        runRecallCommandsInBackground(status: status, [args])
+    }
+
+    private func runRecallCommandsInBackground(status: String, _ commands: [[String]]) {
         setupRunning = true
         setupStatus = status
         lastError = nil
@@ -97,7 +104,9 @@ final class DaemonController: ObservableObject {
 
         Task.detached { [weak self] in
             do {
-                _ = try Self.runShell(nodePath, [cliPath] + args)
+                for args in commands {
+                    _ = try Self.runShell(nodePath, [cliPath] + args)
+                }
                 await MainActor.run {
                     self?.lastError = nil
                     self?.refresh()

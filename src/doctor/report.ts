@@ -419,7 +419,7 @@ export function formatDoctorReport(report: DoctorReport): string {
     for (const reason of report.upgrade.reasons) {
       lines.push(`- ${reason}`);
     }
-    lines.push("Run `recall doctor --fix` or `recall setup local` to apply.");
+    lines.push("Run `recall doctor --fix` or `recall setup --yes` to apply.");
   }
 
   return lines.join("\n");
