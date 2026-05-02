@@ -8,6 +8,7 @@ derived_data="$root_dir/build/DerivedData"
 project_path="$app_dir/RecallApp.xcodeproj"
 
 cd "$root_dir"
+rm -rf "$root_dir/dist"
 npm run build
 
 rm -rf "$runtime_dir"
@@ -31,6 +32,9 @@ xcodebuild \
   build
 
 app_path="$derived_data/Build/Products/Release/Recall.app"
+# --delete drops stale chunks/files left behind from prior incremental
+# xcodebuild runs (tsup chunk hashes change every build).
+rm -rf "$app_path/Contents/Resources/Runtime"
 mkdir -p "$app_path/Contents/Resources/Runtime"
-rsync -a "$runtime_dir/" "$app_path/Contents/Resources/Runtime/"
+rsync -a --delete "$runtime_dir/" "$app_path/Contents/Resources/Runtime/"
 echo "$app_path"
