@@ -305,21 +305,28 @@ function safeHookAction<Args extends unknown[], R>(
     try {
       return await action(...args);
     } catch (error) {
+      let logPath = "~/.recall/logs/hook-errors.log";
       try {
         const { appendFileSync, mkdirSync } = await import("node:fs");
         const { homedir } = await import("node:os");
         const dir = join(homedir(), ".recall", "logs");
         mkdirSync(dir, { recursive: true });
+        logPath = join(dir, "hook-errors.log");
         const message = error instanceof Error
           ? error.stack ?? error.message
           : String(error);
         appendFileSync(
-          join(dir, "hook-errors.log"),
+          logPath,
           `${new Date().toISOString()} ${event} ${message}\n`,
         );
       } catch {
         // Logging best-effort only — never throw from the safety net.
       }
+      // Single-line heads-up so the host TUI doesn't get flooded by stack
+      // traces if it surfaces stderr. Full detail lives in the log file.
+      process.stderr.write(
+        `Recall: ${event} hook hit a snag — see ${logPath}\n`,
+      );
       process.exit(0);
     }
   };
