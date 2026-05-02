@@ -73,6 +73,41 @@ describe("phase 3 Claude Code adapter", () => {
     expect(readdirSync(configDir).filter((name) => name.startsWith("settings.json.recall.bak."))).toHaveLength(1);
   });
 
+  it("writes RECALL_HOOK_INJECT_PROMPT=false inline when promptInjection: false", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "recall-claude-phase3-"));
+    const configDir = join(tempDir, ".claude");
+    const configPath = join(configDir, "settings.json");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(configPath, readFileSync(fixturePath, "utf-8"));
+
+    installClaudeCodeHooks({
+      configPath,
+      nodePath: "/opt/recall/node",
+      cliPath: "/opt/recall/dist/cli.js",
+      promptInjection: false,
+    });
+
+    const settings = JSON.parse(readFileSync(configPath, "utf-8")) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+    const promptHook = settings.hooks.UserPromptSubmit[0]!.hooks as Array<Record<string, unknown>>;
+    expect(promptHook[0]!.command).toMatch(/^RECALL_HOOK_INJECT_PROMPT=false /);
+    expect(promptHook[0]!.command).toContain("hook prompt --agent claude-code --claude-code-stdin");
+
+    // Default (no opt) does NOT prefix the env.
+    writeFileSync(configPath, readFileSync(fixturePath, "utf-8"));
+    installClaudeCodeHooks({
+      configPath,
+      nodePath: "/opt/recall/node",
+      cliPath: "/opt/recall/dist/cli.js",
+    });
+    const settingsDefault = JSON.parse(readFileSync(configPath, "utf-8")) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+    const defaultHook = settingsDefault.hooks.UserPromptSubmit[0]!.hooks as Array<Record<string, unknown>>;
+    expect(defaultHook[0]!.command).not.toMatch(/RECALL_HOOK_INJECT_PROMPT/);
+  });
+
   it("removes only Recall-managed Claude hooks on uninstall", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "recall-claude-phase3-"));
     const configDir = join(tempDir, ".claude");

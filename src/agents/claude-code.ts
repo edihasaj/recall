@@ -42,6 +42,8 @@ export interface ClaudeCodeHookInstallOptions {
   cliPath?: string;
   nodePath?: string;
   profile?: HookProfile;
+  /** When false, prepends RECALL_HOOK_INJECT_PROMPT=false to the prompt-hook command so per-prompt injection stays off without requiring a shell rc edit. */
+  promptInjection?: boolean;
 }
 
 const configPath = () => join(resolveUserHomeDir(), ...CLAUDE_CONFIG_RELATIVE_PATH);
@@ -102,6 +104,7 @@ export function installClaudeCodeHooks(
     cliPath: options.cliPath,
     nodePath: options.nodePath,
     profile: options.profile,
+    promptInjection: options.promptInjection,
   });
   const next = cloneSettings(current.settings);
   const hooks = ensureHooksObject(next);
@@ -212,9 +215,10 @@ function buildManagedGroups(
   ];
 
   if (installedEvents.size === 0 || installedEvents.has("prompt_submitted")) {
+    const envPrefix = options.promptInjection === false ? "RECALL_HOOK_INJECT_PROMPT=false " : "";
     groups.UserPromptSubmit = [
       {
-        hooks: [commandHook(`${commandPrefix} hook prompt --agent claude-code --claude-code-stdin`, "prompt")],
+        hooks: [commandHook(`${envPrefix}${commandPrefix} hook prompt --agent claude-code --claude-code-stdin`, "prompt")],
       },
     ];
   }

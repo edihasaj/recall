@@ -49,6 +49,8 @@ export interface CodexHookInstallOptions {
   forceHooks?: boolean;
   /** Skip hooks.json entirely and use the legacy notify bridge. */
   forceNotifyBridge?: boolean;
+  /** When false, prepends RECALL_HOOK_INJECT_PROMPT=false to the prompt-hook command so per-prompt injection stays off without requiring a shell rc edit. */
+  promptInjection?: boolean;
 }
 
 const configPath = () => join(resolveUserHomeDir(), ...CODEX_CONFIG_RELATIVE_PATH);
@@ -398,9 +400,10 @@ function buildCodexManagedGroups(
   ];
 
   if (installedEvents.size === 0 || installedEvents.has("prompt_submitted")) {
+    const envPrefix = options.promptInjection === false ? "RECALL_HOOK_INJECT_PROMPT=false " : "";
     groups.UserPromptSubmit = [
       {
-        hooks: [commandHook(`${commandPrefix} hook prompt --agent codex --codex-stdin`, "prompt")],
+        hooks: [commandHook(`${envPrefix}${commandPrefix} hook prompt --agent codex --codex-stdin`, "prompt")],
       },
     ];
   }

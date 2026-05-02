@@ -10,6 +10,7 @@ export interface LocalSetupOptions {
   appPath?: string;
   codex?: boolean;
   claude?: boolean;
+  promptInjection?: boolean;
 }
 
 export interface LocalSetupResult {
@@ -49,6 +50,7 @@ export interface RecallSetupOptions {
   scope?: SetupScope;
   uninstallHooks?: boolean;
   runner?: CommandRunner;
+  promptInjection?: boolean;
 }
 
 export interface RecallSetupResult {
@@ -89,6 +91,7 @@ export function runLocalSetup(opts: LocalSetupOptions = {}): LocalSetupResult {
     hooksOnly: false,
     mcpOnly: false,
     scope: "global",
+    promptInjection: opts.promptInjection,
   });
 
   const codex = result.agents.find((agent) => agent.agent === "codex");
@@ -140,6 +143,7 @@ export function runRecallSetup(opts: RecallSetupOptions = {}): RecallSetupResult
       runner,
       scope,
       uninstallHooks,
+      promptInjection: opts.promptInjection,
     }),
   );
 
@@ -165,6 +169,7 @@ function setupAgent(
     runner: CommandRunner;
     scope: SetupScope;
     uninstallHooks: boolean;
+    promptInjection?: boolean;
   },
 ): AgentSetupResult {
   const detected = detectAgent(agent);
@@ -180,6 +185,7 @@ function setupAgent(
         dryRun: options.dryRun,
         paths: options.paths,
         uninstallHooks: options.uninstallHooks,
+        promptInjection: options.promptInjection,
       });
 
   return {
@@ -230,13 +236,14 @@ function configureHooks(
     dryRun: boolean;
     paths: ReturnType<typeof resolveRuntimePaths>;
     uninstallHooks: boolean;
+    promptInjection?: boolean;
   },
 ): SetupStepResult {
   if (options.dryRun) {
     return ok(
       options.uninstallHooks
         ? `would remove hooks from ${options.configPath}`
-        : `would install hooks into ${options.configPath}`,
+        : `would install hooks into ${options.configPath}${options.promptInjection === false ? " (prompt injection opt-out)" : ""}`,
     );
   }
 
@@ -251,6 +258,7 @@ function configureHooks(
             configPath: options.configPath,
             cliPath: options.paths.runtimeCliPath,
             nodePath: options.paths.runtimeNodePath,
+            promptInjection: options.promptInjection,
           }))
     : (options.uninstallHooks
         ? uninstallCodexHooks({ configPath: options.configPath, hooksPath: codexHooksPath })
@@ -259,6 +267,7 @@ function configureHooks(
             hooksPath: codexHooksPath,
             cliPath: options.paths.runtimeCliPath,
             nodePath: options.paths.runtimeNodePath,
+            promptInjection: options.promptInjection,
           }));
 
   return {

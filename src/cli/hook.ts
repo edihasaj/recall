@@ -270,11 +270,11 @@ export async function handlePromptHook(
       }, source);
     }
 
-    // UserPromptSubmit stays silent by default to avoid re-injecting the same
-    // memory on every turn — SessionStart already dumped it. Set
-    // RECALL_HOOK_INJECT_PROMPT=true to opt back in (e.g. for agents that run
-    // long sessions and want per-prompt relevance injection).
-    const promptInjectionEnabled = process.env.RECALL_HOOK_INJECT_PROMPT === "true";
+    // UserPromptSubmit performs per-prompt relevance injection by default.
+    // Per-session dedup prevents re-emitting the same memory; the relevance
+    // floor keeps off-topic prompts silent. Set RECALL_HOOK_INJECT_PROMPT=false
+    // to opt out (SessionStart-only injection still applies).
+    const promptInjectionEnabled = process.env.RECALL_HOOK_INJECT_PROMPT !== "false";
     const injection = repo && promptInjectionEnabled
       ? await collectInjectionSurface(db, {
           repo,

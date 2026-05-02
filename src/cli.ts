@@ -221,6 +221,7 @@ setupCmd
   .option("--uninstall-hooks", "Remove Recall-managed hooks while leaving MCP configured")
   .option("--dry-run", "Show planned setup changes without writing")
   .option("--scope <scope>", "Hook config scope: global or project", "global")
+  .option("--no-prompt-injection", "Opt out of per-prompt memory injection (writes RECALL_HOOK_INJECT_PROMPT=false inline into the agent hook command)")
   .option("--yes", "Skip confirmation prompt")
   .action(async (opts) => {
     if (!opts.yes && !opts.dryRun) {
@@ -239,6 +240,7 @@ setupCmd
       mcpOnly: opts.mcpOnly,
       scope: opts.scope,
       uninstallHooks: opts.uninstallHooks,
+      promptInjection: opts.promptInjection,
     });
 
     console.log(`Recall app: ${result.appPath}`);
@@ -268,11 +270,13 @@ setupCmd
   .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
   .option("--codex-only", "Configure only Codex")
   .option("--claude-only", "Configure only Claude")
+  .option("--no-prompt-injection", "Opt out of per-prompt memory injection (writes RECALL_HOOK_INJECT_PROMPT=false inline into the agent hook command)")
   .action((opts) => {
     const result = runLocalSetup({
       appPath: opts.appPath,
       codex: opts.claudeOnly ? false : true,
       claude: opts.codexOnly ? false : true,
+      promptInjection: opts.promptInjection,
     });
 
     console.log(`Recall app: ${result.appPath}`);
