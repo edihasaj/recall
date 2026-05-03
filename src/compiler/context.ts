@@ -63,7 +63,7 @@ export function compileContext(
     status: "active",
     auto_inject: true,
   });
-  const allActive = [...repoActive, ...globalActive];
+  const allActive = dedupeById([...repoActive, ...globalActive]);
 
   // 2. Filter by path scope if provided
   const scoped = req.path
@@ -184,7 +184,7 @@ export async function compileContextHybrid(
 
   const repoMemories = queryMemories(db, { repo: req.repo });
   const globalMemories = queryMemories(db, { scope: "global" });
-  const allMemories = [...repoMemories, ...globalMemories].filter((memory) =>
+  const allMemories = dedupeById([...repoMemories, ...globalMemories]).filter((memory) =>
     memory.auto_inject &&
     (memory.status === "active" ||
       (config.include_candidates && memory.status === "candidate"))
@@ -513,4 +513,18 @@ function typeScore(type: MemoryItem["type"]): number {
     default:
       return 0.5;
   }
+}
+
+// A memory with scope='global' and a non-null repo (its origin) is returned by
+// both `queryMemories({ repo })` and `queryMemories({ scope: "global" })`.
+// Dedupe by id so it's rendered once per compile pass.
+function dedupeById(memories: MemoryItem[]): MemoryItem[] {
+  const seen = new Set<string>();
+  const out: MemoryItem[] = [];
+  for (const m of memories) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push(m);
+  }
+  return out;
 }

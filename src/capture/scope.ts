@@ -25,6 +25,9 @@ export interface ScopeInference {
 export interface ScopeContext {
   prev_assistant_turn?: string;
   recent_tool_calls?: readonly RecentToolCall[];
+  /** Raw user text before correction-shape rewriting, used so scope markers
+   * like "for me always" survive the EXPLICIT_RULE prefix strip. */
+  original_text?: string;
 }
 
 // --- Explicit scope markers ---
@@ -50,9 +53,14 @@ const SCOPE_MARKERS: Array<{
     reason: "explicit repo scope marker",
   },
   {
-    pattern: /\b(for all projects|everywhere|all repos|team-wide|company-wide|org-wide)\b/i,
+    pattern: /\b(team-wide|company-wide|org-wide|for the team|for the org|across the team)\b/i,
     scope: "team",
     reason: "explicit team/org scope marker",
+  },
+  {
+    pattern: /\b(for me always|always for me|agent-wide|regardless of project|across all my repos|in all my work|for all (?:my )?projects|everywhere|all repos)\b/i,
+    scope: "global",
+    reason: "explicit global/cross-repo scope marker",
   },
   {
     pattern: /\b(just for now|this time|for this task|temporarily)\b/i,
@@ -106,9 +114,12 @@ export function inferScope(
   repoPath?: string,
   context: ScopeContext = {},
 ): ScopeInference {
-  // 1. Check explicit scope markers (highest priority)
+  // 1. Check explicit scope markers (highest priority). Run against the raw
+  // user text first so prefix markers stripped during correction rewriting
+  // (e.g. "for me always X" → "always X") still inform scope.
+  const markerHaystack = `${context.original_text ?? ""} ${correctionText}`;
   for (const marker of SCOPE_MARKERS) {
-    if (marker.pattern.test(correctionText)) {
+    if (marker.pattern.test(markerHaystack)) {
       return {
         scope: marker.scope,
         path_scope: marker.scope === "path" && contextPath
@@ -242,13 +253,26 @@ function extractPathFromText(text: string): string | null {
   return null;
 }
 
+// Tools whose `path` field is a real source/config file the user is editing.
+// Bash paths are unreliable — they can be CLI binaries (e.g. /Applications/...
+// /node), absolute system paths, or arguments that just happen to look path-ish.
+const SOURCE_AWARE_TOOLS = new Set([
+  "Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "NotebookRead", "Grep", "Glob",
+]);
+
+function isPathInsideRepo(path: string): boolean {
+  if (path.startsWith("/")) return false;
+  if (/^(?:Applications|app|usr|opt|System|Library|private|var|tmp)\//.test(path)) return false;
+  return true;
+}
+
 function inferFromRecentTools(
   toolCalls?: readonly RecentToolCall[],
 ): ScopeInference | null {
   if (!toolCalls || toolCalls.length === 0) return null;
 
   for (const toolCall of toolCalls) {
-    if (toolCall.path) {
+    if (toolCall.path && SOURCE_AWARE_TOOLS.has(toolCall.name) && isPathInsideRepo(toolCall.path)) {
       return {
         scope: "path",
         path_scope: inferPathScope(toolCall.path),

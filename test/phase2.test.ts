@@ -228,10 +228,47 @@ describe("scope inference", () => {
     expect(result.reason).toContain("explicit repo scope");
   });
 
-  it("detects team scope", () => {
-    const result = inferScope("for all projects use conventional commits");
+  it("detects team scope from team-wide phrases", () => {
+    const result = inferScope("team-wide we use conventional commits");
     expect(result.scope).toBe("team");
     expect(result.reason).toContain("explicit team/org scope");
+  });
+
+  it("detects global scope from cross-repo phrases", () => {
+    const result = inferScope("for all projects use conventional commits");
+    expect(result.scope).toBe("global");
+    expect(result.reason).toContain("global");
+  });
+
+  it("detects global scope from agent-wide phrasing", () => {
+    const result = inferScope("for me always run a backup before commit");
+    expect(result.scope).toBe("global");
+  });
+
+  it("uses original_text so stripped scope prefixes still count", () => {
+    // detectCorrections rewrites "for me always X" to "always X"; the marker
+    // signal must survive via original_text in ScopeContext.
+    const result = inferScope("always use uv for python", undefined, undefined, {
+      original_text: "for me always use uv for python",
+    });
+    expect(result.scope).toBe("global");
+  });
+
+  it("ignores Bash tool paths to non-source binaries", () => {
+    const result = inferScope("always run a backup before commit", undefined, undefined, {
+      recent_tool_calls: [
+        { name: "Bash", path: "Applications/Recall.app/Contents/Resources/Runtime/dist/cli.js" },
+      ],
+    });
+    expect(result.scope).not.toBe("path");
+  });
+
+  it("still honors Read/Edit tool paths in repo", () => {
+    const result = inferScope("rename this helper", undefined, undefined, {
+      recent_tool_calls: [{ name: "Edit", path: "src/capture/scope.ts" }],
+    });
+    expect(result.scope).toBe("path");
+    expect(result.path_scope).toContain("src/capture");
   });
 
   it("detects session scope", () => {

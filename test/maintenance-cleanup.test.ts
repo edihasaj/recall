@@ -281,6 +281,13 @@ describe("capture-time fragment filter", () => {
     });
     expect(ids.length).toBeGreaterThan(0);
   });
+
+  it("rejects voice-transcript fragments seen in the wild", async () => {
+    const { qualityReasons } = await import("../src/maintenance/cleanup.js");
+    expect(qualityReasons("never use from settings..")).toContain("trailing_double_dot");
+    expect(qualityReasons("always style the")).toContain("dangling_connector");
+    expect(qualityReasons("must add to the")).toContain("dangling_connector");
+  });
 });
 
 describe("maintenance cleanup — suppressUnproductiveCommands", () => {

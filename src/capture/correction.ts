@@ -34,6 +34,12 @@ const NEGATION_REPLACEMENT =
 const EXPLICIT_RULE =
   /\b(always|never|must|required|forbidden|don't ever)\b\s+(.+)/i;
 
+// "whenever / each time / every time / when I (say|use|ask|mention) X, do Y"
+// captures meta-rules that don't start with always/never. The trigger (X) and
+// the action (Y) are stored together as a single rule sentence.
+const WHEN_DO_RULE =
+  /\b(?:whenever|each time|every time|when(?:ever)?)\s+(?:i|you|we)\s+(say|use|ask|mention|do|run)\s+(.+?)[,.]?\s+(?:we|you|i|please|always|just)?\s*(do|run|use|please|add|make|update|commit|push|backup|back up|sync|verify|check|ensure)\s+(.+)/i;
+
 const REVIEW_FEEDBACK =
   /\b(?:review|reviewer|PR feedback|code review)\s+(?:said|says|asked|wants|requires|flagged)\s+(.+)/i;
 
@@ -58,6 +64,20 @@ export function detectCorrections(text: string): CorrectionMatch[] {
   const segments = correctionCandidateSegments(normalizedText);
 
   for (const segment of segments) {
+    // Trigger → action: "whenever I say X, do Y"
+    const whenDo = segment.match(WHEN_DO_RULE);
+    if (whenDo) {
+      const trigger = stripTrailingPunctuation(whenDo[2]);
+      const action = stripTrailingPunctuation(`${whenDo[3]} ${whenDo[4]}`);
+      matches.push({
+        type: "rule",
+        text: `When user ${whenDo[1].toLowerCase()}s "${trigger}", ${action}.`,
+        confidence: 0.5,
+        original: segment,
+      });
+      continue;
+    }
+
     // Negation + replacement: "don't use X, use Y"
     const negMatch = segment.match(NEGATION_REPLACEMENT);
     if (negMatch) {
@@ -289,6 +309,7 @@ export async function processCorrection(
       {
         prev_assistant_turn: ctx.prev_assistant_turn,
         recent_tool_calls: ctx.recent_tool_calls,
+        original_text: text,
       },
     );
     const input: CreateMemoryInput = {
