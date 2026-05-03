@@ -396,6 +396,46 @@ ${"x".repeat(1_300)}
     expect(matches.length).toBeGreaterThan(0);
   });
 
+  it("phase D — does not re-capture text similar to a rejected exemplar", async () => {
+    const db = freshDb();
+    // Seed a rejected exemplar.
+    const rejId = createMemory(db, {
+      type: "rule",
+      text: "always style the consistently",
+      scope: "repo",
+      repo: "r",
+      source: "user_correction",
+      confidence: 0,
+    });
+    rejectMemory(db, rejId);
+
+    // Near-identical phrasing — Jaccard ≥ 0.7 — should be filtered out.
+    const ids = await processCorrection(db, "always style consistently the buttons", {
+      sessionId: "s1",
+      repo: "r",
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it("phase D — still captures unrelated rules with no exemplar overlap", async () => {
+    const db = freshDb();
+    const rejId = createMemory(db, {
+      type: "rule",
+      text: "always style the consistently",
+      scope: "repo",
+      repo: "r",
+      source: "user_correction",
+      confidence: 0,
+    });
+    rejectMemory(db, rejId);
+
+    const ids = await processCorrection(db, "always run pnpm lint before pushing", {
+      sessionId: "s1",
+      repo: "r",
+    });
+    expect(ids.length).toBeGreaterThan(0);
+  });
+
   it("isDestructiveRisky flags destructive verbs targeting user state", async () => {
     const { isDestructiveRisky } = await import("../src/capture/correction.js");
     expect(isDestructiveRisky("always remove plugins from settings")).toBe(true);

@@ -276,6 +276,10 @@ export async function processCorrection(
       if (reasons.length > 0) continue;
     }
 
+    // Phase D: skip captures that closely match something the user previously
+    // rejected. Don't make them re-reject the same noise twice.
+    if (isSimilarToRejectedFragment(db, correction.text)) continue;
+
     const evidence: EvidenceEntry = correction.type === "review_pattern"
       ? {
           type: "review_feedback",
@@ -520,6 +524,28 @@ function textSimilarity(a: string, b: string): number {
   const intersection = [...wordsA].filter((w) => wordsB.has(w));
   const union = new Set([...wordsA, ...wordsB]);
   return intersection.length / union.size; // Jaccard similarity
+}
+
+// Phase D MVP: rejection-feedback exemplar matching. Every memory the user
+// rejected becomes a "do not capture this kind of thing" exemplar. Before
+// creating a new candidate, lexical-Jaccard the candidate text against all
+// rejected user_corrections — skip when a similar one already exists. Cold
+// start is safe (empty exemplar pool → no blocks). Semantic-paraphrase
+// matching via embeddings is deferred until rejected memories carry
+// embeddings of their own.
+const REJECTED_EXEMPLAR_THRESHOLD = 0.7;
+
+export function isSimilarToRejectedFragment(
+  db: RecallDb,
+  text: string,
+  threshold = REJECTED_EXEMPLAR_THRESHOLD,
+): boolean {
+  const rejected = queryMemories(db, { status: "rejected" })
+    .filter((m) => m.source === "user_correction" || m.source === "user_reported_review");
+  for (const exemplar of rejected) {
+    if (textSimilarity(text, exemplar.text) >= threshold) return true;
+  }
+  return false;
 }
 
 async function findDuplicateMemory(
