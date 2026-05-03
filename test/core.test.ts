@@ -382,6 +382,13 @@ ${"x".repeat(1_300)}
     expect(matches[0].text.toLowerCase()).toContain("backup");
   });
 
+  it("captures soft preferences mentioning conventional/conventions", () => {
+    const matches = detectCorrections("we use conventional commits");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].type).toBe("decision");
+    expect(matches[0].text.toLowerCase()).toContain("conventional commits");
+  });
+
   it("captures each-time triggers", () => {
     const matches = detectCorrections(
       "each time I say deploy, we run the smoke tests first",

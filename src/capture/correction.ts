@@ -187,7 +187,7 @@ const TRANSCRIPT_MARKERS = [
 ];
 
 const DURABLE_DECISION_HINT =
-  /\b(repo|repository|project|default|defaults|convention|configured|config|editorconfig|prettier|eslint|tsconfig|package\.json|ci|workflow|style|pattern|architecture|runtime|database|sqlite|pnpm|yarn|npm|uv|pytest|vitest)\b/i;
+  /\b(repo|repository|project|default|defaults|convention(?:al|s)?|configured|config|editorconfig|prettier|eslint|tsconfig|package\.json|ci|workflow|style|pattern|architecture|runtime|database|sqlite|pnpm|yarn|npm|uv|pytest|vitest)\b/i;
 
 const TRANSCRIPT_LINE_RE =
   /^(?:[⏺⎿❯✻※]|(?:Bash|Edit|Write|Read|Grep|Glob|Task|TodoWrite)\(|\s*(?:│|├|┌|└|─)|\s*…|\s*={3,})/u;
