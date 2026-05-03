@@ -382,6 +382,20 @@ ${"x".repeat(1_300)}
     expect(matches[0].text.toLowerCase()).toContain("backup");
   });
 
+  it("ignores descriptive modal clauses (relative-clause narration)", () => {
+    // "remove those plugins I never use from settings" should not become a rule
+    // about "never use from settings". Same for "things we always do".
+    expect(detectCorrections("remove those plugins I never use from settings")).toHaveLength(0);
+    expect(detectCorrections("clean up the files we always copy from prod")).toHaveLength(0);
+    expect(detectCorrections("delete things you never look at again")).toHaveLength(0);
+  });
+
+  it("still captures direct imperatives even with adjacent pronouns elsewhere", () => {
+    // The pronoun-modal filter should not over-fire on legitimate rules.
+    const matches = detectCorrections("always run pnpm lint before you commit");
+    expect(matches.length).toBeGreaterThan(0);
+  });
+
   it("captures soft preferences mentioning conventional/conventions", () => {
     const matches = detectCorrections("we use conventional commits");
     expect(matches).toHaveLength(1);
