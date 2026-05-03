@@ -14,6 +14,7 @@ import {
 import type { CreateMemoryInput } from "../models/memory.js";
 import type { CaptureContext, MemoryItem, MemoryType, EvidenceEntry } from "../types.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
+import { enqueueVerifyCapture } from "../maintenance/tasks.js";
 import { inferScope } from "./scope.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
@@ -367,6 +368,17 @@ export async function processCorrection(
 
     const id = createMemory(db, input);
     maybePromoteGroupCandidate(db, id);
+    // Phase E1: enqueue an LLM verify pass. No-op when no provider credentials
+    // are configured — the task accumulates and surfaces via SessionStart for
+    // the live agent to claim, or runs from the daemon dispatcher.
+    enqueueVerifyCapture(db, {
+      id,
+      text: input.text,
+      scope: input.scope,
+      path_scope: input.path_scope ?? null,
+      repo: input.repo ?? null,
+      capture_context: captureContext ?? null,
+    });
     ids.push(id);
   }
 
