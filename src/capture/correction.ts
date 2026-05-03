@@ -55,6 +55,14 @@ const CONFIG_BACKED_DECISION =
 const QUESTION_ONLY =
   /^\s*(?:should|could|would|can|do)\b.*\?\s*$/i;
 
+// Modals preceded within 3 tokens by a pronoun/relative pronoun are
+// descriptive, not prescriptive: "things I never use", "stuff we always do",
+// "those plugins I never use from settings". The substring after the modal
+// looks rule-shaped to EXPLICIT_RULE but the surrounding clause makes it
+// narration. Skip the whole segment.
+const DESCRIPTIVE_MODAL_RE =
+  /\b(?:i|you|we|they|those|that|which|who)(?:\s+\w+){0,2}\s+(?:always|never|must|don't|do not|prefer|required|forbidden)\b/i;
+
 export function detectCorrections(text: string): CorrectionMatch[] {
   const normalizedText = text.trim();
   if (QUESTION_ONLY.test(normalizedText)) return [];
@@ -64,6 +72,14 @@ export function detectCorrections(text: string): CorrectionMatch[] {
   const segments = correctionCandidateSegments(normalizedText);
 
   for (const segment of segments) {
+    // Drop segments where the modal is part of a descriptive clause
+    // ("remove those plugins I never use") rather than an instruction
+    // ("we prefer X"). Heuristic: if the pronoun-modal pattern is preceded
+    // by other words in the segment, it's narration about an object; if it's
+    // at the start, it's a direct statement and we keep it.
+    const descriptive = DESCRIPTIVE_MODAL_RE.exec(segment);
+    if (descriptive && descriptive.index > 0) continue;
+
     // Trigger → action: "whenever I say X, do Y"
     const whenDo = segment.match(WHEN_DO_RULE);
     if (whenDo) {

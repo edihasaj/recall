@@ -309,6 +309,12 @@ describe("capture-time fragment filter", () => {
     expect(qualityReasons("never use from settings..")).toContain("trailing_double_dot");
     expect(qualityReasons("always style the")).toContain("dangling_connector");
     expect(qualityReasons("must add to the")).toContain("dangling_connector");
+    // Filler-prefix: "always just now …", "never uh …" — speech artifacts.
+    expect(qualityReasons("always just now remove if we can't fix")).toContain("filler_prefix");
+    expect(qualityReasons("never uh skip the linter")).toContain("filler_prefix");
+    // Length cap: voice-transcript rambles past 300 chars.
+    const ramble = "always " + "blah ".repeat(80);
+    expect(qualityReasons(ramble)).toContain("too_long");
   });
 });
 
