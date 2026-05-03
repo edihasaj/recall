@@ -396,6 +396,17 @@ ${"x".repeat(1_300)}
     expect(matches.length).toBeGreaterThan(0);
   });
 
+  it("isDestructiveRisky flags destructive verbs targeting user state", async () => {
+    const { isDestructiveRisky } = await import("../src/capture/correction.js");
+    expect(isDestructiveRisky("always remove plugins from settings")).toBe(true);
+    expect(isDestructiveRisky("never delete history without backup")).toBe(true);
+    expect(isDestructiveRisky("wipe stale credentials weekly")).toBe(true);
+    // Destructive verb without high-risk target — fine.
+    expect(isDestructiveRisky("always remove unused imports")).toBe(false);
+    // High-risk target without destructive verb — fine.
+    expect(isDestructiveRisky("always commit and push the config")).toBe(false);
+  });
+
   it("captures soft preferences mentioning conventional/conventions", () => {
     const matches = detectCorrections("we use conventional commits");
     expect(matches).toHaveLength(1);

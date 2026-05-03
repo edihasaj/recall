@@ -63,6 +63,20 @@ const QUESTION_ONLY =
 const DESCRIPTIVE_MODAL_RE =
   /\b(?:i|you|we|they|those|that|which|who)(?:\s+\w+){0,2}\s+(?:always|never|must|don't|do not|prefer|required|forbidden)\b/i;
 
+// A captured rule is "destructive-risky" when it pairs a destructive verb with
+// a high-risk target (settings, plugins, files, memories, secrets, history,
+// branches, etc.). Even with strong repetition signal, these rules require an
+// explicit `recall confirm` before they go active — otherwise an agent could
+// follow them and irreversibly damage user state.
+const DESTRUCTIVE_VERB_RE =
+  /\b(?:remove|delete|drop|wipe|clear|purge|erase|nuke|truncate|reset|destroy)\b/i;
+const HIGH_RISK_TARGET_RE =
+  /\b(?:plugin|plugins|setting|settings|config|configs|configuration|file|files|folder|folders|directory|directories|memor(?:y|ies)|database|db|repo|repos|repository|branch|branches|commit|commits|history|backup|backups|secret|secrets|credential|credentials|key|keys|token|tokens)\b/i;
+
+export function isDestructiveRisky(text: string): boolean {
+  return DESTRUCTIVE_VERB_RE.test(text) && HIGH_RISK_TARGET_RE.test(text);
+}
+
 export function detectCorrections(text: string): CorrectionMatch[] {
   const normalizedText = text.trim();
   if (QUESTION_ONLY.test(normalizedText)) return [];
@@ -298,6 +312,7 @@ export async function processCorrection(
       if (
         updated &&
         updated.status !== "active" &&
+        !isDestructiveRisky(updated.text) &&
         countDistinctCorrectionSessions(updated) >= profile.repeat_sessions_required
       ) {
         promoteMemory(db, duplicate.id, "repeat_correction");
@@ -360,6 +375,7 @@ function maybePromoteGroupCandidate(
 ) {
   const candidate = getMemory(db, candidateId);
   if (!candidate || candidate.status !== "candidate") return;
+  if (isDestructiveRisky(candidate.text)) return;
 
   const followedCount = queryMemories(db, {
     repo: candidate.repo ?? undefined,

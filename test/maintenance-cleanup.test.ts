@@ -181,6 +181,26 @@ describe("maintenance cleanup — promoteRepeatCorrections", () => {
     expect(getMemory(db, id)?.status).toBe("candidate");
   });
 
+  it("does not auto-promote destructive-risky candidates even with repetition", () => {
+    // Phase F gate: 'always remove plugins from settings' has the textbook
+    // verb+target pair that an agent could mis-execute. Even with
+    // repetition_count above threshold, it stays candidate.
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "always remove plugins from settings",
+      scope: "repo",
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    db.update(memories).set({ repetition_count: 5 }).where(eq(memories.id, id)).run();
+
+    expect(planPromoteRepeats(db)).toHaveLength(0);
+    runDeterministicCleanup(db, { dryRun: false, only: "promote_repeat_correction" });
+    expect(getMemory(db, id)?.status).toBe("candidate");
+  });
+
   it("promotes when repetition_count crosses threshold (≥2 distinct sessions)", () => {
     const db = freshDb();
     const id = createMemory(db, {
