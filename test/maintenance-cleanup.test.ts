@@ -162,7 +162,10 @@ describe("maintenance cleanup — rejectFragmentCandidates", () => {
 });
 
 describe("maintenance cleanup — promoteRepeatCorrections", () => {
-  it("promotes rule-shaped candidates with sufficient length", () => {
+  it("does not auto-promote rule-shaped candidates without repetition", () => {
+    // Phase B promotion gate: shape alone is not a signal. Voice-transcript
+    // fragments like "always just now remove if we can't fix" used to slip
+    // through this path; they no longer can.
     const db = freshDb();
     const id = createMemory(db, {
       type: "rule",
@@ -172,9 +175,27 @@ describe("maintenance cleanup — promoteRepeatCorrections", () => {
       source: "user_correction",
       confidence: 0.5,
     });
+    expect(planPromoteRepeats(db)).toHaveLength(0);
+
+    runDeterministicCleanup(db, { dryRun: false, only: "promote_repeat_correction" });
+    expect(getMemory(db, id)?.status).toBe("candidate");
+  });
+
+  it("promotes when repetition_count crosses threshold (≥2 distinct sessions)", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Always use .agent/config.json as the local main config file",
+      scope: "repo",
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    db.update(memories).set({ repetition_count: 2 }).where(eq(memories.id, id)).run();
+
     const plan = planPromoteRepeats(db);
     expect(plan).toHaveLength(1);
-    expect(plan[0].matched_pattern).toBe("rule_shape");
+    expect(plan[0].matched_pattern).toBe("repetition");
 
     runDeterministicCleanup(db, { dryRun: false, only: "promote_repeat_correction" });
     expect(getMemory(db, id)?.status).toBe("active");
@@ -221,6 +242,7 @@ describe("maintenance cleanup — revert", () => {
       source: "user_correction",
       confidence: 0.5,
     });
+    db.update(memories).set({ repetition_count: 2 }).where(eq(memories.id, id)).run();
 
     const report = runDeterministicCleanup(db, { dryRun: false });
     expect(getMemory(db, id)?.status).toBe("active");
