@@ -247,6 +247,8 @@ export interface Prompt {
 
 export function buildPrompt(task: MaintenanceTask): Prompt | null {
   switch (task.kind) {
+    case "verify_capture":
+      return buildVerifyCapturePrompt(task);
     case "refine_candidate":
       return buildRefineCandidatePrompt(task);
     case "summarize_history":
@@ -260,6 +262,36 @@ export function buildPrompt(task: MaintenanceTask): Prompt | null {
     default:
       return null;
   }
+}
+
+function buildVerifyCapturePrompt(task: MaintenanceTask): Prompt {
+  const payload = task.payload as {
+    memory_id?: string;
+    text?: string;
+    inferred_scope?: string;
+    inferred_path_scope?: string | null;
+    repo?: string | null;
+    capture_context?: unknown;
+  };
+  const system = [
+    "You verify a captured candidate rule for a coding-agent memory store.",
+    "Decide if it is a durable rule worth saving, salvageable but needs rewriting, or noise/narration.",
+    "Be strict — false positives produce wrong agent behavior. When unsure, prefer reject over save.",
+    "Reject voice transcripts, descriptive clauses about what the user does ('things I never use'), one-shot task chatter, and any text whose intent is unclear without surrounding context.",
+    "When rewriting, output a single canonical sentence in imperative mood. Keep scope as tight as the evidence supports.",
+    "Flag is_destructive_risky=true when the rule pairs a destructive verb (remove/delete/drop/wipe) with high-risk targets (settings/config/files/secrets/branches) — those need explicit user confirm regardless.",
+    JSON_ONLY,
+  ].join(" ");
+  const user = [
+    `Candidate text: ${JSON.stringify(payload.text ?? "")}`,
+    `Inferred scope: ${payload.inferred_scope ?? "repo"}`,
+    `Inferred path_scope: ${JSON.stringify(payload.inferred_path_scope ?? null)}`,
+    `Repo: ${JSON.stringify(payload.repo ?? null)}`,
+    `Capture context: ${JSON.stringify(payload.capture_context ?? null)}`,
+    "",
+    'Return JSON: {"verdict": "save"|"rewrite"|"reject", "cleaned_text"?: string, "scope"?: "session"|"path"|"repo"|"team"|"global", "path_scope"?: string|null, "is_destructive_risky"?: boolean, "reason"?: string}',
+  ].join("\n");
+  return { system, user };
 }
 
 const JSON_ONLY = "Respond with a single JSON object matching the required schema, no prose, no markdown fences.";
@@ -285,7 +317,7 @@ function buildRefineCandidatePrompt(task: MaintenanceTask): Prompt {
     `Repo: ${JSON.stringify(payload.repo ?? null)}`,
     `Repetition count: ${payload.repetition_count ?? 0}`,
     "",
-    'Return JSON: {"refined_text": string, "scope": "session"|"path"|"repo"|"team", "path_scope": string|null, "rationale": string}',
+    'Return JSON: {"refined_text": string, "scope": "session"|"path"|"repo"|"team"|"global", "path_scope": string|null, "rationale": string, "verdict"?: "rewrite"|"reject"}',
   ].join("\n");
   return { system, user };
 }

@@ -888,6 +888,7 @@ const maintenanceTaskKinds = [
   "refine_candidate",
   "summarize_session",
   "synthesize_repo",
+  "verify_capture",
 ] as const;
 
 tool(

@@ -396,6 +396,24 @@ ${"x".repeat(1_300)}
     expect(matches.length).toBeGreaterThan(0);
   });
 
+  it("phase E1 — every new candidate enqueues a verify_capture maintenance task", async () => {
+    const { memoryMaintenanceTasks } = await import("../src/db/schema.js");
+    const db = freshDb();
+    const ids = await processCorrection(db, "always run pnpm lint before pushing", {
+      sessionId: "s1",
+      repo: "r",
+    });
+    expect(ids).toHaveLength(1);
+    const tasks = db.select().from(memoryMaintenanceTasks).all()
+      .filter((t) => t.kind === "verify_capture");
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].status).toBe("pending");
+    const payload = tasks[0].payload as Record<string, unknown>;
+    expect(payload.memory_id).toBe(ids[0]);
+    expect(payload.text).toBe("always run pnpm lint before pushing");
+    expect(payload.inferred_scope).toBe("repo");
+  });
+
   it("phase D — does not re-capture text similar to a rejected exemplar", async () => {
     const db = freshDb();
     // Seed a rejected exemplar.

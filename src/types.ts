@@ -141,6 +141,7 @@ export const MaintenanceTaskKind = z.enum([
   "refine_candidate",
   "summarize_session",
   "synthesize_repo",
+  "verify_capture",
 ]);
 export type MaintenanceTaskKind = z.infer<typeof MaintenanceTaskKind>;
 

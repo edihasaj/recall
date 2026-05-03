@@ -119,6 +119,130 @@ describe("tier-2 maintenance tasks — phase 3 (effect appliers)", () => {
     expect(mem.path_scope).toBeNull();
   });
 
+  it("verify_capture applier rewrites text/scope when verdict is rewrite", () => {
+    const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "always uh use uv not pip",
+      scope: "repo",
+      path_scope: null,
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    const taskId = insertTaskIdempotent(db, {
+      kind: "verify_capture",
+      target: memId,
+      repo: "test/repo",
+      payload: { memory_id: memId, text: "always uh use uv not pip", inferred_scope: "repo" },
+    })!;
+    claimTask(db, taskId, "claude-code");
+    const outcome = submitTask(db, taskId, "claude-code", {
+      verdict: "rewrite",
+      cleaned_text: "Always use uv for Python dependencies, not pip.",
+      scope: "global",
+      reason: "speech filler removed; cross-language convention",
+    });
+
+    expect(outcome.status).toBe("applied");
+    const mem = getMemory(db, memId)!;
+    expect(mem.text).toBe("Always use uv for Python dependencies, not pip.");
+    expect(mem.scope).toBe("global");
+    expect(mem.status).toBe("candidate"); // never auto-promotes
+
+    const audit = getAuditTrail(db, memId);
+    expect(audit.find((e) => e.reason?.startsWith("verify:rewrite:"))).toBeTruthy();
+  });
+
+  it("verify_capture applier rejects fragment when verdict is reject", () => {
+    const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "always style the",
+      scope: "repo",
+      path_scope: null,
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    const taskId = insertTaskIdempotent(db, {
+      kind: "verify_capture",
+      target: memId,
+      repo: "test/repo",
+      payload: { memory_id: memId, text: "always style the", inferred_scope: "repo" },
+    })!;
+    claimTask(db, taskId, "claude-code");
+    const outcome = submitTask(db, taskId, "claude-code", {
+      verdict: "reject",
+      reason: "incomplete sentence; voice transcript fragment",
+    });
+
+    expect(outcome.status).toBe("applied");
+    const mem = getMemory(db, memId)!;
+    expect(mem.status).toBe("rejected");
+
+    const audit = getAuditTrail(db, memId);
+    const rejected = audit.find((e) => e.action === "rejected");
+    expect(rejected).toBeTruthy();
+    expect(rejected!.reason).toMatch(/verify_capture:reject/);
+  });
+
+  it("verify_capture applier no-ops when verdict is save", () => {
+    const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "Always run pnpm lint before pushing.",
+      scope: "repo",
+      path_scope: null,
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    const before = getMemory(db, memId)!;
+    const taskId = insertTaskIdempotent(db, {
+      kind: "verify_capture",
+      target: memId,
+      repo: "test/repo",
+      payload: { memory_id: memId, text: before.text, inferred_scope: "repo" },
+    })!;
+    claimTask(db, taskId, "claude-code");
+    const outcome = submitTask(db, taskId, "claude-code", { verdict: "save" });
+
+    expect(outcome.status).toBe("applied");
+    const after = getMemory(db, memId)!;
+    expect(after.text).toBe(before.text);
+    expect(after.scope).toBe(before.scope);
+    expect(after.status).toBe(before.status);
+  });
+
+  it("refine_candidate applier honors verdict=reject when LLM extends contract", () => {
+    const db = freshDb();
+    const memId = createMemory(db, {
+      type: "rule",
+      text: "noisy candidate that re-captured itself",
+      scope: "repo",
+      path_scope: null,
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    const taskId = insertTaskIdempotent(db, {
+      kind: "refine_candidate",
+      target: memId,
+      repo: "test/repo",
+      payload: { memory_id: memId, text: "noisy candidate", current_scope: "repo" },
+    })!;
+    claimTask(db, taskId, "claude-code");
+    const outcome = submitTask(db, taskId, "claude-code", {
+      refined_text: "noisy candidate",
+      scope: "repo",
+      verdict: "reject",
+      rationale: "still nonsense after re-eval",
+    });
+    expect(outcome.status).toBe("applied");
+    expect(getMemory(db, memId)!.status).toBe("rejected");
+  });
+
   it("refine_candidate applier abandons when memory is missing", () => {
     const db = freshDb();
     const missingId = randomUUID();

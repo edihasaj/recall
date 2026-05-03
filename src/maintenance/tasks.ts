@@ -25,6 +25,7 @@ const ACTIVE_STATUSES: MaintenanceTaskStatus[] = [...OPEN_STATUSES, "completed"]
 const DEFAULT_LEASE_SECONDS = 600;
 
 export const DEFAULT_PRIORITIES: Record<MaintenanceTaskKind, number> = {
+  verify_capture: 12,
   refine_candidate: 10,
   merge_duplicates: 8,
   summarize_history: 5,
@@ -166,7 +167,7 @@ export function getTaskStats(db: RecallDb): TaskStats {
   const rows = db.select().from(memoryMaintenanceTasks).all();
 
   const by_status = { pending: 0, claimed: 0, submitted: 0, completed: 0, abandoned: 0 } as Record<MaintenanceTaskStatus, number>;
-  const by_kind = { refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0 } as Record<MaintenanceTaskKind, number>;
+  const by_kind = { verify_capture: 0, refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0 } as Record<MaintenanceTaskKind, number>;
   const by_kind_status: Record<string, number> = {};
 
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
@@ -362,6 +363,28 @@ function dropLowestPriorityPending(
 }
 
 // --- Producers ---
+
+// Inline enqueue used by capture: every newly-created candidate gets a
+// verify_capture task so the LLM (when configured) can second-guess the
+// heuristics before the candidate accumulates evidence.
+export function enqueueVerifyCapture(
+  db: RecallDb,
+  memory: { id: string; text: string; scope: string; path_scope: string | null; repo: string | null; capture_context: unknown },
+): string | null {
+  return insertTaskIdempotent(db, {
+    kind: "verify_capture",
+    target: memory.id,
+    repo: memory.repo,
+    payload: {
+      memory_id: memory.id,
+      text: memory.text,
+      inferred_scope: memory.scope,
+      inferred_path_scope: memory.path_scope,
+      repo: memory.repo,
+      capture_context: memory.capture_context ?? null,
+    },
+  });
+}
 
 export function produceRefineCandidateTasks(
   db: RecallDb,
@@ -667,13 +690,26 @@ export { DEFAULT_LEASE_SECONDS };
 
 // --- Peek / Claim / Submit / Release ---
 
-const MemoryScope = z.enum(["session", "path", "repo", "team"]);
+const MemoryScope = z.enum(["session", "path", "repo", "team", "global"]);
 
 const RefineCandidateResult = z.object({
   refined_text: z.string().min(1).max(4000),
   scope: MemoryScope,
   path_scope: z.string().max(512).nullable().optional(),
   rationale: z.string().max(2000).optional(),
+  // Optional verdict — when present, the LLM may also reject a re-captured
+  // fragment instead of refining it. Backwards-compatible: omitted means
+  // "rewrite" (legacy refine behavior).
+  verdict: z.enum(["rewrite", "reject"]).optional(),
+});
+
+const VerifyCaptureResult = z.object({
+  verdict: z.enum(["save", "rewrite", "reject"]),
+  cleaned_text: z.string().min(1).max(4000).optional(),
+  scope: MemoryScope.optional(),
+  path_scope: z.string().max(512).nullable().optional(),
+  is_destructive_risky: z.boolean().optional(),
+  reason: z.string().max(2000).optional(),
 });
 
 const SummarizeHistoryResult = z.object({
@@ -698,6 +734,7 @@ const SynthesizeRepoResult = z.object({
 });
 
 const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
+  verify_capture: VerifyCaptureResult,
   refine_candidate: RefineCandidateResult,
   summarize_history: SummarizeHistoryResult,
   merge_duplicates: MergeDuplicatesResult,
@@ -706,6 +743,7 @@ const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
 };
 
 export type RefineCandidateResult = z.infer<typeof RefineCandidateResult>;
+export type VerifyCaptureResult = z.infer<typeof VerifyCaptureResult>;
 export type SummarizeHistoryResult = z.infer<typeof SummarizeHistoryResult>;
 export type MergeDuplicatesResult = z.infer<typeof MergeDuplicatesResult>;
 export type SummarizeSessionResult = z.infer<typeof SummarizeSessionResult>;

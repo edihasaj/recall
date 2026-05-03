@@ -12,6 +12,7 @@ import type {
   SummarizeHistoryResult,
   SummarizeSessionResult,
   SynthesizeRepoResult,
+  VerifyCaptureResult,
 } from "./tasks.js";
 
 export class ApplyError extends Error {
@@ -37,6 +38,12 @@ export function applyRefineCandidate(
 
   const before = getMemory(db, memoryId);
   if (!before) throw new ApplyError(`memory ${memoryId} not found`, "target-missing");
+
+  const actor = `maintenance:${task.claimed_by ?? "unknown"}`;
+
+  if (result.verdict === "reject") {
+    return rejectMemoryFromTask(db, task, memoryId, before, actor, result.rationale);
+  }
 
   const changed: string[] = [];
   if (before.text !== result.refined_text) changed.push("text");
@@ -70,13 +77,119 @@ export function applyRefineCandidate(
     db,
     memoryId,
     "edited",
-    `maintenance:${task.claimed_by ?? "unknown"}`,
+    actor,
     reason,
     before,
     after ?? null,
   );
 
   return { audit_entry_id: auditId, target_id: memoryId, changed_fields: changed };
+}
+
+// Phase E1 — verify_capture applier. Three verdicts:
+//   * save    — leave the candidate as-is (LLM agrees with heuristic capture)
+//   * rewrite — clean text/scope/path_scope, candidate stays candidate
+//   * reject  — flip to rejected with audit reason from the LLM
+// All paths are idempotent. The candidate's promotion path (B+F) is unaffected
+// — verify_capture refines or kills, it never promotes. Promotion still
+// requires repetition or explicit confirm.
+export function applyVerifyCapture(
+  db: RecallDb,
+  task: MaintenanceTask,
+  result: VerifyCaptureResult,
+): ApplyOutcome {
+  const memoryId = (task.payload as { memory_id?: string }).memory_id;
+  if (!memoryId) throw new ApplyError("payload missing memory_id", "invalid-state");
+
+  const before = getMemory(db, memoryId);
+  if (!before) throw new ApplyError(`memory ${memoryId} not found`, "target-missing");
+
+  const actor = `maintenance:${task.claimed_by ?? "unknown"}`;
+
+  if (result.verdict === "reject") {
+    return rejectMemoryFromTask(db, task, memoryId, before, actor, result.reason);
+  }
+
+  if (result.verdict === "save") {
+    return { audit_entry_id: null, target_id: memoryId, changed_fields: [] };
+  }
+
+  // verdict === "rewrite"
+  const newText = result.cleaned_text ?? before.text;
+  const newScope = result.scope ?? before.scope;
+  const newPathScope = result.path_scope ?? before.path_scope;
+
+  const changed: string[] = [];
+  if (before.text !== newText) changed.push("text");
+  if (before.scope !== newScope) changed.push("scope");
+  if (before.path_scope !== newPathScope) changed.push("path_scope");
+
+  if (changed.length === 0) {
+    return { audit_entry_id: null, target_id: memoryId, changed_fields: [] };
+  }
+
+  const now = new Date().toISOString();
+  db.update(memories)
+    .set({
+      text: newText,
+      scope: newScope,
+      path_scope: newPathScope,
+      updated_at: now,
+      last_validated_at: now,
+    })
+    .where(eq(memories.id, memoryId))
+    .run();
+
+  queueMemoryEmbeddingSync(db, memoryId);
+
+  const after = getMemory(db, memoryId);
+  const reason = result.reason
+    ? `verify:rewrite:${task.id}:${result.reason.slice(0, 200)}`
+    : `verify:rewrite:${task.id}`;
+  const auditId = recordAuditWithSnapshot(
+    db,
+    memoryId,
+    "edited",
+    actor,
+    reason,
+    before,
+    after ?? null,
+  );
+
+  return { audit_entry_id: auditId, target_id: memoryId, changed_fields: changed };
+}
+
+function rejectMemoryFromTask(
+  db: RecallDb,
+  task: MaintenanceTask,
+  memoryId: string,
+  before: NonNullable<ReturnType<typeof getMemory>>,
+  actor: string,
+  reasonText: string | undefined,
+): ApplyOutcome {
+  if (before.status === "rejected") {
+    return { audit_entry_id: null, target_id: memoryId, changed_fields: [] };
+  }
+  const now = new Date().toISOString();
+  db.update(memories)
+    .set({ status: "rejected", confidence: 0, dedupe_key: null, updated_at: now })
+    .where(eq(memories.id, memoryId))
+    .run();
+  queueMemoryEmbeddingSync(db, memoryId);
+  const after = getMemory(db, memoryId);
+  const reason = reasonText
+    ? `${task.kind}:reject:${task.id}:${reasonText.slice(0, 200)}`
+    : `${task.kind}:reject:${task.id}`;
+  const auditId = recordAuditWithSnapshot(
+    db,
+    memoryId,
+    "rejected",
+    actor,
+    reason,
+    before,
+    after ?? null,
+  );
+  return { audit_entry_id: auditId, target_id: memoryId, changed_fields: ["status"] };
 }
 
 export function applySummarizeHistory(
@@ -276,6 +389,8 @@ export function applyTaskResult(
   result: unknown,
 ): ApplyOutcome {
   switch (task.kind) {
+    case "verify_capture":
+      return applyVerifyCapture(db, task, result as VerifyCaptureResult);
     case "refine_candidate":
       return applyRefineCandidate(db, task, result as RefineCandidateResult);
     case "summarize_history":
