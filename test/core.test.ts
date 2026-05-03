@@ -372,6 +372,24 @@ ${"x".repeat(1_300)}
     expect(matches).toHaveLength(0);
   });
 
+  it("captures whenever-trigger meta-rules", () => {
+    const matches = detectCorrections(
+      "whenever I say add, please run a backup and update the readme",
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0].type).toBe("rule");
+    expect(matches[0].text).toContain("\"add\"");
+    expect(matches[0].text.toLowerCase()).toContain("backup");
+  });
+
+  it("captures each-time triggers", () => {
+    const matches = detectCorrections(
+      "each time I say deploy, we run the smoke tests first",
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0].text).toContain("\"deploy\"");
+  });
+
   it("processes correction into DB", async () => {
     const db = freshDb();
     const ids = await processCorrection(db, "never use any types in this repo", {
@@ -526,6 +544,22 @@ describe("compiler", () => {
     expect(result.history_included).toHaveLength(1);
     expect(result.text).toContain("## History");
     expect(result.text).toContain("do phase 3");
+  });
+
+  it("dedupes a global memory that also has its origin repo set", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "When user says \"add\", run a backup and update the readme.",
+      scope: "global",
+      repo: "r", // origin repo retained for audit
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    promoteMemory(db, id, "manual_confirm");
+
+    const result = compileContext(db, { repo: "r" });
+    expect(result.memories_included.filter((mid) => mid === id)).toHaveLength(1);
   });
 
   it("respects max_commands budget", () => {
