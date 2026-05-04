@@ -75,8 +75,8 @@ pre {
   justify-content: space-between;
   gap: 24px;
   width: min(1180px, calc(100% - 36px));
-  margin: 18px auto 0;
-  padding: 12px 14px;
+  margin: 0 auto;
+  padding: 30px 14px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 248, 239, 0.82);
@@ -617,7 +617,7 @@ footer {
   .site-head {
     position: static;
     flex-direction: column;
-    margin-top: 12px;
+    padding-top: 24px;
   }
 
   nav {
