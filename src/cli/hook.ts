@@ -7,7 +7,8 @@ import { tagActivitySource } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordHookCall } from "../hooks/calls.js";
 import { performance } from "node:perf_hooks";
-import { detectCorrections } from "../capture/correction.js";
+import { detectCorrections, isDestructiveRisky } from "../capture/correction.js";
+import { queryMemories } from "../models/memory.js";
 import { captureCorrectionFallback, signalOutcomeFallback } from "../mcp/fallback.js";
 import {
   listInjectedMemoryIdsForSession,
@@ -92,6 +93,7 @@ export interface HookResult {
   recent_tool_calls?: RecentToolCall[];
   maintenance_backlog?: MaintenanceBacklogSurface;
   injection?: InjectionSurface;
+  pending_confirmations?: PendingConfirmationsSurface;
 }
 
 export interface InjectionSurface {
@@ -105,6 +107,11 @@ export interface MaintenanceBacklogSurface {
   pending_total: number;
   by_kind: Record<string, number>;
   sample: Array<{ id: string; kind: string; repo: string | null }>;
+}
+
+export interface PendingConfirmationsSurface {
+  pending_total: number;
+  items: Array<{ id: string; text: string; scope: string; repo: string | null }>;
 }
 
 interface ClaudeCodeHookPayload {
@@ -381,6 +388,7 @@ export async function handleSessionStartHook(
     });
 
     const maintenance_backlog = collectMaintenanceBacklog(db, result.repo);
+    const pending_confirmations = collectPendingConfirmations(db, result.repo);
     const injection = result.repo
       ? await collectInjectionSurface(db, {
           repo: result.repo,
@@ -395,9 +403,54 @@ export async function handleSessionStartHook(
       repo: result.repo,
       transport: "direct",
       ...(maintenance_backlog ? { maintenance_backlog } : {}),
+      ...(pending_confirmations ? { pending_confirmations } : {}),
       ...(injection ? { injection } : {}),
     };
   });
+}
+
+const PENDING_CONFIRMATIONS_LIMIT = 5;
+
+function collectPendingConfirmations(
+  db: RecallDb,
+  repo: string | null,
+): PendingConfirmationsSurface | undefined {
+  // Destructive-risky candidates never auto-promote. Surface them so the live
+  // agent can ask the user for an explicit confirm/reject decision instead of
+  // letting the candidate sit forever as quiet noise.
+  const candidates = queryMemories(db, {
+    repo: repo ?? undefined,
+    status: "candidate",
+    limit: 50,
+  });
+  const risky = candidates.filter((m) => isDestructiveRisky(m.text));
+  if (risky.length === 0) return undefined;
+
+  return {
+    pending_total: risky.length,
+    items: risky.slice(0, PENDING_CONFIRMATIONS_LIMIT).map((m) => ({
+      id: m.id,
+      text: m.text,
+      scope: m.scope,
+      repo: m.repo,
+    })),
+  };
+}
+
+export function formatPendingConfirmationsContext(
+  surface: PendingConfirmationsSurface,
+): string {
+  const lines = surface.items.map(
+    (item) => `  - [${item.id.slice(0, 8)}] (${item.scope}) ${item.text}`,
+  );
+  const more = surface.pending_total > surface.items.length
+    ? ` (+${surface.pending_total - surface.items.length} more)`
+    : "";
+  return [
+    `Recall has ${surface.pending_total} destructive-risky candidate rule(s)${more} awaiting explicit user confirmation:`,
+    ...lines,
+    "Each one was blocked from auto-promotion because it pairs a destructive verb with a risky target. Before doing anything else this session, ask the user whether to keep or drop each one, then call recall.confirm(memory_id) to promote or recall.reject(memory_id) to discard. Do NOT silently follow these rules — they need an explicit OK.",
+  ].join("\n");
 }
 
 function collectMaintenanceBacklog(
