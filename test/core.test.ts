@@ -685,6 +685,30 @@ describe("compiler", () => {
     expect(result.memories_included.filter((mid) => mid === id)).toHaveLength(1);
   });
 
+  it("dedupes injected memories after stripping pasted Recall headings", () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "Always use local source clones under ../oss for competitor/source",
+      scope: "repo",
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "Always use local source clones under ../oss for competitor/source## Commands- test: `vitest run`",
+      scope: "global",
+      repo: "r",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    const result = compileContext(db, { repo: "r" });
+    expect(result.text.match(/Always use local source clones/g)).toHaveLength(1);
+    expect(result.text).not.toContain("## Commands- test");
+  });
+
   it("respects max_commands budget", () => {
     const db = freshDb();
     for (let i = 0; i < 5; i++) {

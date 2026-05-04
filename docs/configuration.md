@@ -4,7 +4,7 @@ Everything Recall reads at runtime from the environment, plus how to wire up LLM
 
 ## Hook injection
 
-Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects repo memory on `SessionStart` (once per session). `UserPromptSubmit` also runs per-prompt relevance injection by default — hybrid retrieval scores the prompt against repo memory and only emits matches above the relevance floor (with per-session dedup so already-delivered memories don't repeat). Set `RECALL_HOOK_INJECT_PROMPT=false` to opt out and keep prompts silent after SessionStart.
+Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects a compact repo memory pack on `SessionStart` (once per session). Startup injection is capped at three memory lines and does not emit history-only context, so stale session summaries do not flood new agent sessions. `UserPromptSubmit` also runs per-prompt relevance injection by default — hybrid retrieval scores the prompt against repo memory and only emits matches above the relevance floor (with per-session dedup so already-delivered memories don't repeat). Set `RECALL_HOOK_INJECT_PROMPT=false` to opt out and keep prompts silent after SessionStart.
 
 Routine app launch, daemon start, and daemon restart do not restore removed hooks or repo instruction files. Reinstalling agent integrations is explicit: run `recall setup --yes`, `recall doctor --fix`, or use the app's Install + Start action.
 

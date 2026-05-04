@@ -2,7 +2,7 @@ import { listActivityEvents, createActivityEvent } from "../models/activity.js";
 import { initDb } from "../db/client.js";
 import { inferRepoSlugFromPath } from "../repo/discovery.js";
 import type { RecallDb } from "../db/client.js";
-import type { ActivitySource, ActivityTransport } from "../types.js";
+import type { ActivitySource, ActivityTransport, CompilerConfig } from "../types.js";
 import { tagActivitySource } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordHookCall } from "../hooks/calls.js";
@@ -31,6 +31,13 @@ const MAX_PROMPT_TEXT_LENGTH = 8_192;
 const MAX_PREV_ASSISTANT_LENGTH = 2_048;
 const MAX_TOOL_INPUT_SUMMARY_LENGTH = 1_024;
 const MAX_RECENT_TOOL_CALLS = 3;
+const SESSION_START_INJECTION_CONFIG = {
+  max_lines: 3,
+  max_commands: 1,
+  max_gotchas: 1,
+  max_history_snippets: 0,
+  token_budget: 500,
+} satisfies Partial<CompilerConfig>;
 
 export interface PromptHookInput {
   text: string;
@@ -394,6 +401,7 @@ export async function handleSessionStartHook(
           repo: result.repo,
           path: input.path,
           session_id: result.session_id,
+          config: SESSION_START_INJECTION_CONFIG,
         })
       : undefined;
 
@@ -510,6 +518,7 @@ async function collectInjectionSurface(
     path: string | undefined;
     session_id: string;
     query_text?: string;
+    config?: Partial<CompilerConfig>;
   },
 ): Promise<InjectionSurface | undefined> {
   if (process.env.RECALL_HOOK_INJECT_CONTEXT === "false") return undefined;
@@ -549,7 +558,7 @@ async function collectInjectionSurface(
   } else {
     // SessionStart path: always return something when there's active memory,
     // since this is the first-touch dump.
-    compiled = compileContext(db, base);
+    compiled = compileContext(db, { ...base, config: req.config });
     if (!compiled.text) return undefined;
   }
 
