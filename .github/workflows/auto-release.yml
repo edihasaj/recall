@@ -1,0 +1,68 @@
+name: Auto Release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "CHANGELOG.md"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  tag:
+    name: Tag package version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect releasable version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::package.json version must be X.Y.Z for automatic releases; got $version"
+            exit 1
+          fi
+
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "$tag already exists; no release needed."
+            exit 0
+          fi
+
+          if ! grep -Eq "^## ${version}([[:space:]-]|$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md must include a '## $version' section before releasing."
+            exit 1
+          fi
+
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag
+        if: steps.version.outputs.release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$tag" -m "$tag"
+          git push origin "refs/tags/$tag"
+
+      - name: Dispatch release workflow
+        if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --field tag="${{ steps.version.outputs.tag }}"
