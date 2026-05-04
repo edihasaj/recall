@@ -9,6 +9,12 @@ Release artifacts are produced from tags named `vX.Y.Z`.
 - `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to `edihasaj/homebrew-tap` if Homebrew publishing should run.
 - XcodeGen available in CI through `brew install xcodegen` (handled by the release workflow).
 
+## Automatic Release
+
+On pushes to `main`, `.github/workflows/auto-release.yml` watches `CHANGELOG.md`, `package.json`, and `package-lock.json`.
+
+When the current `package.json` version has no matching `vX.Y.Z` tag and `CHANGELOG.md` contains a matching `## X.Y.Z` section, the workflow creates the tag and dispatches `.github/workflows/release.yml`.
+
 ## Checklist
 
 1. Update `package.json` version.
@@ -23,14 +29,7 @@ npm test
 npm run build
 ```
 
-4. Create and push a tag:
-
-```bash
-git tag v0.5.0
-git push origin v0.5.0
-```
-
-5. Watch `.github/workflows/release.yml`.
+4. Push to `main`; the auto-release workflow creates the tag and dispatches `.github/workflows/release.yml`.
 
 ## What CI Publishes
 
