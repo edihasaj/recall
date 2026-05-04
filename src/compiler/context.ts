@@ -105,6 +105,7 @@ export function compileContext(
       return b.score - a.score;
     })
     .map((s) => s.mem);
+  const deduped = dedupeMemoriesForInjection(sorted);
 
   // 5. Budget: pick memories that fit
   const selected: MemoryItem[] = [];
@@ -112,8 +113,8 @@ export function compileContext(
   let gotchaCount = 0;
   let lineCount = 0;
 
-  for (const mem of sorted) {
-    const memLines = mem.text.split("\n").length;
+  for (const mem of deduped) {
+    const memLines = renderMemoryText(mem).split("\n").length;
 
     if (lineCount + memLines > config.max_lines) continue;
     if (mem.type === "command" && commandCount >= config.max_commands) continue;
@@ -262,15 +263,16 @@ export async function compileContextHybrid(
       return { memory, score };
     })
     .sort((a, b) => b.score - a.score);
+  const dedupedRanked = dedupeRankedMemoriesForInjection(ranked);
 
   const selected: MemoryItem[] = [];
   let commandCount = 0;
   let gotchaCount = 0;
   let lineCount = 0;
 
-  for (const item of ranked) {
+  for (const item of dedupedRanked) {
     const memory = item.memory;
-    const memLines = memory.text.split("\n").length;
+    const memLines = renderMemoryText(memory).split("\n").length;
 
     if (lineCount + memLines > config.max_lines) continue;
     if (memory.type === "command" && commandCount >= config.max_commands) continue;
@@ -356,19 +358,19 @@ function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[]
 
   if (rules.length > 0) {
     sections.push(
-      "## Rules\n" + rules.map((r) => `- ${r.text}`).join("\n"),
+      "## Rules\n" + rules.map((r) => `- ${renderMemoryText(r)}`).join("\n"),
     );
   }
 
   if (commands.length > 0) {
     sections.push(
-      "## Commands\n" + commands.map((c) => `- ${c.text}`).join("\n"),
+      "## Commands\n" + commands.map((c) => `- ${renderMemoryText(c)}`).join("\n"),
     );
   }
 
   if (gotchas.length > 0) {
     sections.push(
-      "## Gotchas\n" + gotchas.map((g) => `- ${g.text}`).join("\n"),
+      "## Gotchas\n" + gotchas.map((g) => `- ${renderMemoryText(g)}`).join("\n"),
     );
   }
 
@@ -379,6 +381,43 @@ function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[]
   }
 
   return `# Recall: ${repo}\n\n${sections.join("\n\n")}\n`;
+}
+
+function renderMemoryText(memory: MemoryItem): string {
+  const text = memory.text.replace(/\r\n/g, "\n").trim();
+  const injectedHeading = text.search(/##\s+(Rules|Commands|Gotchas|History)\b/i);
+  const stripped = injectedHeading > 0 ? text.slice(0, injectedHeading).trim() : text;
+  return stripped.replace(/\s+/g, " ");
+}
+
+function dedupeMemoriesForInjection(memories: MemoryItem[]): MemoryItem[] {
+  const seen = new Set<string>();
+  return memories.filter((memory) => {
+    const key = canonicalInjectionText(memory);
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function dedupeRankedMemoriesForInjection<T extends { memory: MemoryItem }>(ranked: T[]): T[] {
+  const seen = new Set<string>();
+  return ranked.filter((item) => {
+    const key = canonicalInjectionText(item.memory);
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function canonicalInjectionText(memory: MemoryItem): string {
+  return renderMemoryText(memory)
+    .toLowerCase()
+    .replace(/[`*_]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 const HISTORY_KINDS = new Set([

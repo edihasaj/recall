@@ -194,7 +194,7 @@ describe("hook context injection", () => {
     expect(result.injection!.text).toContain("conventional commits");
   });
 
-  it("handleSessionStartHook can inject repo history even without active memories", async () => {
+  it("handleSessionStartHook skips history-only context to keep startup compact", async () => {
     const db = freshDb();
     createHistorySnippet(db, {
       repo: "edihasaj/recall",
@@ -211,10 +211,39 @@ describe("hook context injection", () => {
       { db },
     );
 
+    expect(result.injection).toBeUndefined();
+  });
+
+  it("handleSessionStartHook limits startup injection to three memory lines", async () => {
+    const db = freshDb();
+    for (const text of [
+      "rule one",
+      "rule two",
+      "rule three",
+      "rule four",
+      "test: `vitest run`",
+    ]) {
+      createMemory(db, {
+        type: text.includes("vitest") ? "command" : "rule",
+        text,
+        scope: "repo",
+        repo: "edihasaj/recall",
+        source: "user_correction",
+        confidence: 0.9,
+      });
+    }
+
+    const result = await handleSessionStartHook(
+      {
+        session_id: "sess-compact",
+        agent: "claude-code",
+        repo: "edihasaj/recall",
+      },
+      { db },
+    );
+
     expect(result.injection).toBeDefined();
-    expect(result.injection!.memories_included).toHaveLength(0);
-    expect(result.injection!.history_included).toHaveLength(1);
-    expect(result.injection!.text).toContain("do phase 3");
+    expect(result.injection!.text.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(3);
   });
 
   it("per-session dedup: SessionStart fires once, subsequent opt-in prompt hooks skip if all ids already injected", async () => {
