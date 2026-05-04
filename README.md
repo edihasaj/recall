@@ -274,14 +274,31 @@ cat .recall/context.md
 
 ## Claude Code MCP
 
-Add to Claude Code MCP config:
+Recall's MCP server uses stdio transport. Do not point Claude Code MCP at the
+daemon HTTP port; `http://localhost:7890` is for the REST API and session
+wrappers.
+
+For the packaged macOS app, add this to Claude Code MCP config:
+
+```json
+{
+  "mcpServers": {
+    "recall": {
+      "command": "/Applications/Recall.app/Contents/Resources/Runtime/bin/node",
+      "args": ["/Applications/Recall.app/Contents/Resources/Runtime/dist/mcp.js"]
+    }
+  }
+}
+```
+
+For a source checkout, build first and point at your local `dist/mcp.js`:
 
 ```json
 {
   "mcpServers": {
     "recall": {
       "command": "node",
-      "args": ["/Users/edi/Projects/recall/dist/mcp.js"]
+      "args": ["/path/to/recall/dist/mcp.js"]
     }
   }
 }
