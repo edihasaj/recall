@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const serverPath = join(process.cwd(), "src", "mcp", "server.ts");
+const serverPath = join(process.cwd(), "src", "mcp", "factory.ts");
 
 describe("MCP query tool description", () => {
   it("frames query as a fallback and discourages default invocation", () => {

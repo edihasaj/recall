@@ -35,6 +35,7 @@ import { computeQualityReport, listQualitySnapshots, recordQualitySnapshot } fro
 import { hasProviderConfigured } from "./credentials/keychain.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
+import { handleRecallMcpHttpRequest } from "./mcp/http.js";
 import {
   handlePromptHook,
   handleSessionEndHook,
@@ -247,9 +248,11 @@ const server = createServer(async (req, res) => {
 
   // CORS for browser extension
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, MCP-Protocol-Version, MCP-Session-Id, Last-Event-ID",
+  );
 
   if (method === "OPTIONS") {
     res.statusCode = 204;
@@ -258,6 +261,12 @@ const server = createServer(async (req, res) => {
   }
 
   try {
+    if (path === "/mcp") {
+      return await handleRecallMcpHttpRequest(req, res, db);
+    }
+
+    res.setHeader("Content-Type", "application/json");
+
     // Health
     if (path === "/health" && method === "GET") {
       return send(res, 200, {

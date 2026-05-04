@@ -274,11 +274,13 @@ cat .recall/context.md
 
 ## Claude Code MCP
 
-Recall's MCP server uses stdio transport. Do not point Claude Code MCP at the
-daemon HTTP port; `http://localhost:7890` is for the REST API and session
-wrappers.
+Recall supports both MCP transports:
 
-For the packaged macOS app, add this to Claude Code MCP config:
+- stdio: Claude Code spawns Recall directly. This is the most portable default.
+- HTTP: Claude Code connects to the daemon at `http://localhost:7890/mcp`.
+  This requires the Recall app/daemon to be running.
+
+Packaged macOS app, stdio config:
 
 ```json
 {
@@ -291,7 +293,7 @@ For the packaged macOS app, add this to Claude Code MCP config:
 }
 ```
 
-For a source checkout, build first and point at your local `dist/mcp.js`:
+Source checkout, stdio config after `npm run build`:
 
 ```json
 {
@@ -303,6 +305,28 @@ For a source checkout, build first and point at your local `dist/mcp.js`:
   }
 }
 ```
+
+Daemon HTTP config:
+
+```bash
+claude mcp add --transport http -s user recall http://localhost:7890/mcp
+```
+
+Equivalent JSON:
+
+```json
+{
+  "mcpServers": {
+    "recall": {
+      "type": "http",
+      "url": "http://localhost:7890/mcp"
+    }
+  }
+}
+```
+
+The rest of the daemon API remains available on the same port, for example
+`/health`, `/compile`, and `/session/start`.
 
 Useful MCP tools:
 
