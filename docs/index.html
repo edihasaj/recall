@@ -88,15 +88,25 @@
             <pre class="injection"><code><span class="lead">Recall (edihasaj/recall):</span>
 
 ## Rules
-- always run vitest before pushing
-- <span class="tag">[global]</span> use uv for python deps
-- prefer pnpm over npm in this repo
+- after bumping package.json, bump package-lock.json + add a CHANGELOG entry
+- if you touched docs/, run `npm run docs:check` before commit
+- <span class="tag">[global]</span> never bypass commit signing (-c commit.gpgsign=false)
+- prefer pnpm over npm in this repo; conventional commits required
 
 ## Commands
-- dev: tsup --watch</code></pre>
+- dev: tsup --watch
+- gate: typecheck &amp;&amp; test &amp;&amp; docs:check
+
+## Gotchas
+- ~/.recall/recall.db: snapshot before destructive migrations
+- macOS code-sign cert lives in 1Password, not the repo</code></pre>
             <div class="agent-action">
               <small>Claude</small>
-              <p>Got it — running <code>vitest</code> before I push, and using <code>pnpm</code> for installs.</p>
+              <p>
+                Touched <code>docs/site.css</code> and bumped <code>package.json</code> to <code>0.5.2</code> —
+                ran <code>docs:check</code>, synced <code>package-lock.json</code>, added a CHANGELOG entry,
+                and prepared a conventional commit. Signing on; ready to push when you say.
+              </p>
             </div>
           </div>
         </div>
