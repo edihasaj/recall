@@ -78,4 +78,4 @@ PR template body should mention:
 - Notability: **months**, organic.
 - PR review: usually a few days; reviewers may ask for tweaks (livecheck shape, description wording).
 
-Until all of that lands, `brew install --cask edihasaj/recall` (our own tap) is the right install.
+Until all of that lands, `brew install --cask edihasaj/tap/recall` (our own tap) is the right install. The shorter `edihasaj/recall` form (project-specific tap at `edihasaj/homebrew-recall`) also works.
