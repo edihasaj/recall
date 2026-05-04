@@ -11,7 +11,9 @@ import {
   rejectMemory,
   recordFeedback,
   listMemories,
+  demoteGlobalMemory,
 } from "../models/memory.js";
+import { recordAudit } from "../audit/trail.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { processCorrection, processReviewFeedback } from "../capture/correction.js";
 import { scanAndStore } from "../scanner/repo.js";
@@ -434,6 +436,32 @@ tool(
         { type: "text" as const, text: `Memory ${memory_id.slice(0, 8)} rejected.` },
       ],
     };
+  },
+);
+
+tool(
+  "demote_global",
+  "Demote a global-scoped memory. Pass `repo` to re-scope it to a single repo (the rule was real but over-scoped). Omit `repo` to reject it (the rule was junk for everywhere).",
+  {
+    memory_id: z.string().describe("Memory ID to demote"),
+    repo: z.string().optional().describe("Re-scope to this repo. If omitted, the memory is rejected instead."),
+    reason: z.string().optional().describe("Why this is being demoted (recorded in the audit trail)."),
+  },
+  async ({ memory_id, repo, reason }) => {
+    const result = demoteGlobalMemory(db, memory_id, { repo: repo ?? null });
+    if (!result.ok) {
+      const msg = result.reason === "not_found"
+        ? `Memory ${memory_id} not found.`
+        : `Memory ${memory_id.slice(0, 8)} is not global-scoped; nothing to demote.`;
+      return { content: [{ type: "text" as const, text: msg }] };
+    }
+    const auditReason = reason
+      ?? (result.outcome === "rescoped" ? `demoted from global to repo ${repo}` : "demoted from global; rejected");
+    recordAudit(db, memory_id, result.outcome === "rejected" ? "rejected" : "demoted", "mcp", auditReason);
+    const text = result.outcome === "rescoped"
+      ? `Memory ${memory_id.slice(0, 8)} re-scoped to repo ${repo}.`
+      : `Memory ${memory_id.slice(0, 8)} rejected (was global, no repo target).`;
+    return { content: [{ type: "text" as const, text }] };
   },
 );
 
