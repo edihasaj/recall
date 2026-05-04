@@ -5,7 +5,7 @@ cask "recall" do
   url "https://github.com/edihasaj/recall/releases/download/v#{version}/Recall.app.zip"
   name "Recall"
   desc "Local repo-memory compiler for coding agents"
-  homepage "https://edihasaj.github.io/recall/"
+  homepage "https://recallmemory.dev/"
 
   depends_on macos: ">= :sequoia"
 

@@ -3,7 +3,7 @@
   "version": "0.5.1",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
-  "homepage": "https://edihasaj.github.io/recall/",
+  "homepage": "https://recallmemory.dev/",
   "repository": {
     "type": "git",
     "url": "https://github.com/edihasaj/recall.git"
