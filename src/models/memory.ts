@@ -225,6 +225,56 @@ export function demoteMemory(
   return true;
 }
 
+export type DemoteGlobalResult =
+  | { ok: true; outcome: "rescoped" | "rejected"; memory: MemoryItem }
+  | { ok: false; reason: "not_found" | "not_global" };
+
+export function demoteGlobalMemory(
+  db: RecallDb,
+  id: string,
+  opts: { repo?: string | null } = {},
+): DemoteGlobalResult {
+  const mem = getMemory(db, id);
+  if (!mem) return { ok: false, reason: "not_found" };
+  if (mem.scope !== "global") return { ok: false, reason: "not_global" };
+
+  const targetRepo = opts.repo?.trim() || null;
+  const now = new Date().toISOString();
+
+  if (targetRepo) {
+    const newDedupe = memoryDedupeKey({
+      type: mem.type,
+      scope: "repo",
+      repo: targetRepo,
+      path_scope: mem.path_scope,
+      text: mem.text,
+    });
+    db.update(memories)
+      .set({
+        scope: "repo",
+        repo: targetRepo,
+        dedupe_key: newDedupe,
+        updated_at: now,
+      })
+      .where(eq(memories.id, id))
+      .run();
+  } else {
+    db.update(memories)
+      .set({
+        status: "rejected",
+        confidence: 0,
+        dedupe_key: null,
+        updated_at: now,
+      })
+      .where(eq(memories.id, id))
+      .run();
+  }
+
+  queueMemoryEmbeddingSync(db, id);
+  const updated = getMemory(db, id)!;
+  return { ok: true, outcome: targetRepo ? "rescoped" : "rejected", memory: updated };
+}
+
 export function rejectMemory(db: RecallDb, id: string): boolean {
   const mem = getMemory(db, id);
   if (!mem) return false;
