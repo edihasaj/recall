@@ -396,6 +396,39 @@ ${"x".repeat(1_300)}
     expect(matches.length).toBeGreaterThan(0);
   });
 
+  it("phase D.next — semantic match against rejected exemplars filters paraphrases", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+    // Bucket vectors so paraphrases of "delete plugins" map to the same vector
+    // as the rejected exemplar but lexical Jaccard would miss them.
+    installMockEmbeddingProvider((text) => {
+      const t = text.toLowerCase();
+      if (t.includes("delete") || t.includes("remove")) {
+        if (t.includes("plugin") || t.includes("extension") || t.includes("addon")) return [1, 0, 0];
+      }
+      return [0, 1, 0];
+    });
+
+    const seedIds = await processCorrection(db, "always remove plugins from settings", {
+      sessionId: "s0",
+      repo: "r",
+    });
+    expect(seedIds.length).toBe(1);
+    await flushEmbeddingJobs();
+    rejectMemory(db, seedIds[0]);
+    await flushEmbeddingJobs();
+
+    // Paraphrase: different words, same intent. Lexical Jaccard ~0 (no shared
+    // tokens beyond "from"/"the"); semantic vector matches.
+    const paraphraseIds = await processCorrection(db, "always delete extensions from the config", {
+      sessionId: "s1",
+      repo: "r",
+    });
+    expect(paraphraseIds).toEqual([]);
+  });
+
   it("phase E1 — every new candidate enqueues a verify_capture maintenance task", async () => {
     const { memoryMaintenanceTasks } = await import("../src/db/schema.js");
     const db = freshDb();

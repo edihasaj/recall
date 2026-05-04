@@ -128,8 +128,16 @@ function hashMemoryText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function shouldEmbedMemory(row: Pick<MemoryRow, "status" | "confidence">): boolean {
-  if (row.status === "rejected" || row.status === "transient") return false;
+function shouldEmbedMemory(row: Pick<MemoryRow, "status" | "confidence" | "source">): boolean {
+  if (row.status === "transient") return false;
+  // Phase D.next: rejected memories that came from a user correction stay
+  // embedded so capture can do semantic-paraphrase matching against the
+  // rejection corpus. Other rejected memories (e.g. from cleanup
+  // dedupe-merge) don't need embeddings — there's no value in matching
+  // against superseded duplicates.
+  if (row.status === "rejected") {
+    return row.source === "user_correction" || row.source === "user_reported_review";
+  }
   return row.confidence >= CONFIDENCE.TRANSIENT_MAX;
 }
 
@@ -599,6 +607,9 @@ export async function findSemanticDuplicates(
   for (const row of rows) {
     if (options.repo && row.repo !== options.repo) continue;
     if (options.type && row.type !== options.type) continue;
+    // Dedup is for live memories; rejected exemplars are intentionally not
+    // matched here so a new candidate doesn't get linked to a rejected row.
+    if (row.status === "rejected") continue;
     if (!shouldEmbedMemory(row)) continue;
 
     const embeddingRow = embeddingsById.get(row.id);
@@ -617,6 +628,45 @@ export async function findSemanticDuplicates(
   return duplicates
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, options.limit ?? 10);
+}
+
+// Phase D.next: paraphrase-aware lookup against the rejected exemplar corpus.
+// Returns the highest-similarity rejected user_correction whose embedding
+// exceeds the threshold, or null. Used by capture to skip new candidates that
+// are semantically equivalent to something the user already rejected.
+export async function findSimilarRejectedExemplar(
+  db: RecallDb,
+  text: string,
+  config: EmbeddingConfig,
+  threshold: number,
+): Promise<{ id: string; text: string; similarity: number } | null> {
+  const queryEmbedding = await generateEmbedding(text, config, "query");
+
+  const rejectedRows = db.select().from(memories)
+    .where(eq(memories.status, "rejected"))
+    .all()
+    .filter((row) => row.source === "user_correction" || row.source === "user_reported_review");
+
+  if (rejectedRows.length === 0) return null;
+
+  const embeddingsById = new Map(
+    db.select().from(memoryEmbeddings).all().map((row) => [row.memory_id, row]),
+  );
+
+  let best: { id: string; text: string; similarity: number } | null = null;
+  for (const row of rejectedRows) {
+    const embeddingRow = embeddingsById.get(row.id);
+    if (!embeddingRow?.embedding) continue;
+    const similarity = cosineSimilarity(
+      queryEmbedding,
+      deserializeEmbedding(embeddingRow.embedding as Buffer),
+    );
+    if (similarity >= threshold && (!best || similarity > best.similarity)) {
+      best = { id: row.id, text: row.text, similarity };
+    }
+  }
+
+  return best;
 }
 
 // --- Helpers ---

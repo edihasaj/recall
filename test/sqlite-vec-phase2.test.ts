@@ -105,12 +105,15 @@ describe("sqlite-vec phase 2 index sync", () => {
     process.env.RECALL_EMBEDDING_DIMS = "3";
     process.env.RECALL_EMBEDDING_VERSION = "test-v1";
 
+    // Use a non-user_correction source so the rejection actually frees the
+    // index row. user_correction-source rejected memories are now retained
+    // as paraphrase exemplars (Phase D.next) and stay embedded.
     const memoryId = createMemory(db, {
-      type: "rule",
+      type: "command",
       text: "Use pnpm",
       scope: "repo",
       repo: "test/repo",
-      source: "user_correction",
+      source: "config_parse",
       confidence: 0.8,
     });
 
