@@ -1,0 +1,19 @@
+cask "recall" do
+  version "0.5.0"
+  sha256 "REPLACE_WITH_RELEASE_SHA256"
+
+  url "https://github.com/edihasaj/recall/releases/download/v#{version}/Recall.app.zip"
+  name "Recall"
+  desc "Local repo-memory compiler for coding agents"
+  homepage "https://edihasaj.github.io/recall/"
+
+  depends_on macos: ">= :sequoia"
+
+  app "Recall.app"
+
+  zap trash: [
+    "~/.recall",
+    "~/Library/LaunchAgents/com.recall.daemon.plist",
+    "~/Library/Preferences/com.edihasaj.recall.plist",
+  ]
+end

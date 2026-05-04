@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible Recall problem.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, repo state, and relevant logs.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Recall version
+      placeholder: recall --version
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15.0, Node 22

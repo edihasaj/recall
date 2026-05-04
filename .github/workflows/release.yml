@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, for example v0.5.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  macos-app:
+    name: Build and publish macOS app
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      HOMEBREW_TAP_REPO: edihasaj/homebrew-tap
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out release tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout "$RELEASE_TAG"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build Recall.app
+        run: npm run build:app
+
+      - name: Package app
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="build/DerivedData/Build/Products/Release/Recall.app"
+          out_dir="dist/release"
+          mkdir -p "$out_dir"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$out_dir/Recall.app.zip"
+          shasum -a 256 "$out_dir/Recall.app.zip" | tee "$out_dir/Recall.app.zip.sha256"
+          sha="$(cut -d ' ' -f 1 "$out_dir/Recall.app.zip.sha256")"
+          echo "zip=$out_dir/Recall.app.zip" >> "$GITHUB_OUTPUT"
+          echo "sha_file=$out_dir/Recall.app.zip.sha256" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Create release if needed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            "${{ steps.package.outputs.zip }}" \
+            "${{ steps.package.outputs.sha_file }}" \
+            --clobber
+
+      - name: Check Homebrew tap access
+        id: homebrew
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOMEBREW_TAP_GITHUB_TOKEN:-}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN is missing; skipping Homebrew tap publish"
+            exit 0
+          fi
+          code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $HOMEBREW_TAP_GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HOMEBREW_TAP_REPO" || true)"
+          if [ "$code" != "200" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN cannot access $HOMEBREW_TAP_REPO (HTTP $code); skipping Homebrew tap publish"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Homebrew cask
+        if: steps.homebrew.outputs.skip != 'true'
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          RECALL_APP_ZIP_SHA256: ${{ steps.package.outputs.sha }}
+          RECALL_RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          tap_url="https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/${HOMEBREW_TAP_REPO}.git"
+          git clone "$tap_url" tap
+          mkdir -p tap/Casks
+          node scripts/render-homebrew-cask.mjs > tap/Casks/recall.rb
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Casks/recall.rb
+          if git -C tap diff --cached --quiet; then
+            echo "Homebrew cask already current"
+            exit 0
+          fi
+          git -C tap commit -m "Update recall ${RELEASE_TAG}"
+          git -C tap push

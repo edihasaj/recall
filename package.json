@@ -2,27 +2,50 @@
   "name": "recall",
   "version": "0.5.0",
   "description": "Cross-tool coding memory and instruction compiler",
+  "license": "MIT",
+  "homepage": "https://edihasaj.github.io/recall/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edihasaj/recall.git"
+  },
+  "bugs": {
+    "url": "https://github.com/edihasaj/recall/issues"
+  },
   "type": "module",
   "bin": {
     "recall": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "drizzle",
+    "scripts/recall-claude",
+    "scripts/recall-codex",
+    "scripts/recall-session",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup && node -e \"const f='dist/cli.js';const c=require('fs').readFileSync(f,'utf8');if(!c.startsWith('#!'))require('fs').writeFileSync(f,'#!/usr/bin/env node\\n'+c);require('fs').chmodSync(f,0o755)\"",
     "build:app": "bash scripts/build-app.sh",
     "install:app": "bash scripts/install-app.sh",
     "dev": "tsup --watch",
+    "docs:check": "node scripts/check-docs-site.mjs",
+    "homebrew:cask": "node scripts/render-homebrew-cask.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "@huggingface/transformers": "^4.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^11.8.1",
     "commander": "^13.1.0",
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.45.2",
     "sqlite-vec": "^0.1.9",
     "zod": "^3.24.4"
   },

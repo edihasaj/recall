@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recall - repo memory for coding agents</title>
+    <meta
+      name="description"
+      content="Recall is a local repo-memory compiler for coding agents. It learns corrections, scores memory quality, and injects trusted instructions through CLI, MCP, and hooks."
+    />
+    <meta name="theme-color" content="#2f211a" />
+    <link rel="canonical" href="https://edihasaj.github.io/recall/" />
+
+    <meta property="og:title" content="Recall" />
+    <meta
+      property="og:description"
+      content="Local repo memory for coding agents. Corrections, review feedback, quality scoring, MCP, hooks, and a macOS menu bar daemon."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://edihasaj.github.io/recall/" />
+    <meta property="og:image" content="https://edihasaj.github.io/recall/icon.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="./icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./site.css" />
+  </head>
+  <body>
+    <header class="site-head" data-reveal="1">
+      <a class="brand" href="#top" aria-label="Recall home">
+        <img src="./icon.png" alt="" width="36" height="36" />
+        <span>Recall</span>
+      </a>
+      <nav aria-label="Primary links">
+        <a href="#install">Install</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/edihasaj/recall">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy" data-reveal="2">
+          <p class="eyebrow">Local-first memory for coding agents</p>
+          <h1>Recall</h1>
+          <p class="lede">
+            A repo-memory compiler that learns from corrections, review feedback, and local project facts, then injects
+            only the trusted instructions your coding agents need.
+          </p>
+
+          <div class="hero-actions" id="install">
+            <a class="button primary" href="https://github.com/edihasaj/recall/releases/latest">Download latest</a>
+            <a class="button secondary" href="https://github.com/edihasaj/recall">View source</a>
+          </div>
+
+          <div class="install-strip" aria-label="Homebrew install command">
+            <code id="brew-command">brew install --cask edihasaj/tap/recall</code>
+            <button type="button" aria-label="Copy Homebrew command" title="Copy Homebrew command" data-copy="#brew-command">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+
+          <p class="requirements">
+            macOS 15+ app. Node CLI for local development. Free and open source.
+          </p>
+        </div>
+
+        <div class="hero-visual" data-reveal="3" aria-label="Recall product preview">
+          <div class="product-window">
+            <div class="window-top">
+              <span></span><span></span><span></span>
+              <strong>Recall.app</strong>
+            </div>
+            <div class="status-row">
+              <img src="./icon.png" alt="" width="56" height="56" />
+              <div>
+                <p class="status-kicker">Daemon running</p>
+                <p class="status-title">edihasaj/recall</p>
+              </div>
+              <em>local</em>
+            </div>
+            <div class="memory-feed">
+              <article>
+                <small>Correction</small>
+                <p>Use repo package manager and run full gate before handoff.</p>
+              </article>
+              <article>
+                <small>Quality</small>
+                <p>Promoted after repeated sessions, deduped against existing rules.</p>
+              </article>
+              <article>
+                <small>Injection</small>
+                <p>SessionStart pack: 6 trusted bullets, prompt pack: 2 relevant hints.</p>
+              </article>
+            </div>
+            <pre><code>$ recall compile -r edihasaj/recall
+memory: package manager, test gate, release flow
+confidence: high
+source: local sqlite + embeddings</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="proof" aria-label="Product highlights">
+        <div class="proof-item" data-reveal="4">
+          <strong>01</strong>
+          <h2>Not a transcript archive.</h2>
+          <p>Recall turns repeated corrections and operational feedback into compact repo instructions.</p>
+        </div>
+        <div class="proof-item" data-reveal="5">
+          <strong>02</strong>
+          <h2>Quality before injection.</h2>
+          <p>Health scores, maturity gates, dedupe, confirmations, and rejection keep noisy memories out.</p>
+        </div>
+        <div class="proof-item" data-reveal="6">
+          <strong>03</strong>
+          <h2>Native agent wiring.</h2>
+          <p>Use the CLI, daemon, MCP server, and lifecycle hooks for Codex, Claude Code, Gemini CLI, and Qwen.</p>
+        </div>
+      </section>
+
+      <section class="workflow" id="how" aria-label="How Recall works">
+        <div class="section-label" data-reveal="7">How it works</div>
+        <div class="flow-grid">
+          <article data-reveal="8">
+            <span>Scan</span>
+            <h3>Bootstrap local facts</h3>
+            <p>Recall reads repo docs, config, scripts, and history so cold-start context is useful immediately.</p>
+          </article>
+          <article data-reveal="9">
+            <span>Learn</span>
+            <h3>Capture corrections</h3>
+            <p>Report corrections, review feedback, and session outcomes through CLI, MCP, daemon endpoints, or hooks.</p>
+          </article>
+          <article data-reveal="10">
+            <span>Score</span>
+            <h3>Keep memory clean</h3>
+            <p>Quality profiles decide when memories graduate, merge, get demoted, or stay out of the prompt.</p>
+          </article>
+          <article data-reveal="11">
+            <span>Inject</span>
+            <h3>Send only what matters</h3>
+            <p>Agents receive concise, relevant instructions through lifecycle hooks and MCP without manual lookup.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="install-panel" aria-label="Install and developer setup">
+        <div data-reveal="12">
+          <p class="eyebrow">Install</p>
+          <h2>Run it as a macOS app, CLI, or daemon.</h2>
+          <p>
+            GitHub Releases ship the app bundle. Homebrew cask installs update with <code>brew upgrade</code>. Source
+            builds stay simple for contributors.
+          </p>
+        </div>
+        <div class="command-stack" data-reveal="13">
+          <pre><code>brew install --cask edihasaj/tap/recall
+recall setup --yes
+recall doctor</code></pre>
+          <pre><code>git clone https://github.com/edihasaj/recall.git
+cd recall
+npm ci
+npm run build
+npm test</code></pre>
+        </div>
+      </section>
+
+      <section class="links-band" aria-label="Project links">
+        <a href="https://github.com/edihasaj/recall/releases/latest" data-reveal="14">
+          <span>GitHub Releases</span>
+          <strong>Download the app</strong>
+        </a>
+        <a href="https://github.com/edihasaj/recall/blob/main/docs/RELEASING.md" data-reveal="15">
+          <span>Maintainers</span>
+          <strong>Release checklist</strong>
+        </a>
+        <a href="https://github.com/edihasaj/recall/blob/main/CONTRIBUTING.md" data-reveal="16">
+          <span>Contributors</span>
+          <strong>Open a PR</strong>
+        </a>
+      </section>
+    </main>
+
+    <footer>
+      <span>Recall is open source by Edi Hasaj.</span>
+      <a href="https://github.com/edihasaj/recall/blob/main/LICENSE">MIT License</a>
+    </footer>
+
+    <script>
+      const copyButton = document.querySelector("[data-copy]");
+      copyButton?.addEventListener("click", async () => {
+        const target = document.querySelector(copyButton.dataset.copy);
+        if (!target) return;
+        await navigator.clipboard.writeText(target.textContent.trim());
+        copyButton.classList.add("copied");
+        copyButton.querySelector("span").textContent = "Copied";
+        window.setTimeout(() => {
+          copyButton.classList.remove("copied");
+          copyButton.querySelector("span").textContent = "Copy";
+        }, 1400);
+      });
+    </script>
+  </body>
+</html>

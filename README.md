@@ -2,16 +2,46 @@
 
 Cross-tool coding memory + instruction compiler.
 
+[![CI](https://github.com/edihasaj/recall/actions/workflows/ci.yml/badge.svg)](https://github.com/edihasaj/recall/actions/workflows/ci.yml)
+[![Release](https://github.com/edihasaj/recall/actions/workflows/release.yml/badge.svg)](https://github.com/edihasaj/recall/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/edihasaj/recall?sort=semver)](https://github.com/edihasaj/recall/releases/latest)
+
+Recall is a local repo-memory compiler for coding agents. It learns from corrections, review feedback, repo scans, and session outcomes, then injects compact trusted instructions through CLI, MCP, daemon endpoints, and lifecycle hooks.
+
+- Website: <https://edihasaj.github.io/recall/>
+- Releases: <https://github.com/edihasaj/recall/releases>
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ## Install
 
+### Homebrew
+
 ```bash
-cd ~/Projects/recall
-npm install
+brew install --cask edihasaj/tap/recall
+recall setup --yes
+recall doctor
+```
+
+### GitHub Releases
+
+Download `Recall.app.zip` from [the latest release](https://github.com/edihasaj/recall/releases/latest), unzip it, move `Recall.app` into `/Applications`, then run setup:
+
+```bash
+recall setup --yes
+recall doctor
+```
+
+### Source
+
+```bash
+git clone https://github.com/edihasaj/recall.git
+cd recall
+npm ci
 npm run build
 npm link
 ```
 
-## Production App
+## Build macOS App From Source
 
 Build the macOS app bundle:
 
@@ -312,3 +342,15 @@ recall list -r owner/repo
 ```
 
 If you want repeated-session promotion testing, use the daemon `/correct` endpoint with different `session_id` values.
+
+## Development
+
+```bash
+npm ci
+npm run docs:check
+npm run typecheck
+npm test
+npm run build
+```
+
+Release and Homebrew publishing notes live in [docs/RELEASING.md](docs/RELEASING.md). The landing page is static HTML/CSS in [docs/](docs/) and deploys with GitHub Pages.

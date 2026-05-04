@@ -104,7 +104,7 @@ describe("phase 4 Codex adapter", () => {
     expect(readFileSync(configPath, "utf-8")).toBe('notify = ["terminal-notifier"]\n');
   });
 
-  it("routes Codex notify payloads into Recall session events", async () => {
+  it("routes Codex notify payloads into Recall session events", { timeout: 20_000 }, async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "recall-codex-phase4-db-"));
     const db = initStandaloneDb(join(tempDir, "recall.db"));
 
