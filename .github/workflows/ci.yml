@@ -32,6 +32,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Install Codex test stub
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/usr/bin/env bash\necho "codex-cli 0.122.0"\n' > "$RUNNER_TEMP/bin/codex"
+          chmod +x "$RUNNER_TEMP/bin/codex"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
       - name: Test
         run: npm test
 
