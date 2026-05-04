@@ -75,38 +75,29 @@
           </p>
         </div>
 
-        <div class="hero-visual" data-reveal="3" aria-label="Recall product preview">
+        <div class="hero-visual" data-reveal="3" aria-label="Recall context injection preview">
           <div class="product-window">
             <div class="window-top">
               <span></span><span></span><span></span>
-              <strong>Recall.app</strong>
+              <strong>claude-code · session start</strong>
             </div>
-            <div class="status-row">
-              <img src="./icon.png" alt="" width="56" height="56" />
-              <div>
-                <p class="status-kicker">Daemon running</p>
-                <p class="status-title">edihasaj/recall</p>
-              </div>
-              <em>local</em>
+            <div class="hook-trace">
+              <span class="hook-dot"></span>
+              <small>SessionStart hook fired · 14ms · injected into agent context</small>
             </div>
-            <div class="memory-feed">
-              <article>
-                <small>Correction</small>
-                <p>Use repo package manager and run full gate before handoff.</p>
-              </article>
-              <article>
-                <small>Quality</small>
-                <p>Promoted after repeated sessions, deduped against existing rules.</p>
-              </article>
-              <article>
-                <small>Injection</small>
-                <p>SessionStart pack: 6 trusted bullets, prompt pack: 2 relevant hints.</p>
-              </article>
+            <pre class="injection"><code><span class="lead">Recall (edihasaj/recall):</span>
+
+## Rules
+- always run vitest before pushing
+- <span class="tag">[global]</span> use uv for python deps
+- prefer pnpm over npm in this repo
+
+## Commands
+- dev: tsup --watch</code></pre>
+            <div class="agent-action">
+              <small>Claude</small>
+              <p>Got it — running <code>vitest</code> before I push, and using <code>pnpm</code> for installs.</p>
             </div>
-            <pre><code>$ recall compile -r edihasaj/recall
-memory: package manager, test gate, release flow
-confidence: high
-source: local sqlite + embeddings</code></pre>
           </div>
         </div>
       </section>
@@ -153,6 +144,23 @@ source: local sqlite + embeddings</code></pre>
             <p>Agents receive concise, relevant instructions through lifecycle hooks and MCP without manual lookup.</p>
           </article>
         </div>
+      </section>
+
+      <section class="app-shot" aria-label="The status app">
+        <div data-reveal="11">
+          <p class="eyebrow">What gets installed</p>
+          <h2>A small status surface. The work happens in hooks.</h2>
+          <p>
+            Recall.app is a quiet little window — daemon health, where memories live on disk,
+            and a couple of buttons. The actual capture and injection runs through MCP and the
+            SessionStart / UserPromptSubmit / SessionEnd hooks of your coding agent. There's no
+            UI to babysit.
+          </p>
+        </div>
+        <figure data-reveal="11">
+          <img src="./app-status.png" alt="Recall.app status panel showing daemon Running, Health OK, Setup Ready, paths to local data and logs, and controls for Install + Start, Start, Stop, Restart, Open Data Folder, Open Logs, Refresh." loading="lazy" width="639" height="423" />
+          <figcaption>Recall.app — daemon status and controls.</figcaption>
+        </figure>
       </section>
 
       <section class="install-panel" aria-label="Install and developer setup">
