@@ -311,6 +311,21 @@ export async function syncMemoryEmbedding(
   }
 
   const embedding = await generateEmbedding(memory.text, config, "document");
+
+  // Embedding generation is async; the parent memory may have been deleted
+  // (e.g. test cleanup, hard-delete of a candidate) while we awaited. Skip the
+  // insert in that case rather than tripping the FK on memory_embeddings.
+  const stillExists = db
+    .select({ id: memories.id })
+    .from(memories)
+    .where(eq(memories.id, memoryId))
+    .get();
+  if (!stillExists) {
+    removeStoredEmbedding(db, memoryId);
+    removeMemoryVecRow(db, memoryId, config);
+    return "removed";
+  }
+
   storeEmbedding(db, memory.id, memory.text, embedding, config);
   const refreshed = db
     .select()
