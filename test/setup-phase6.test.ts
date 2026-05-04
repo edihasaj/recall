@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -18,6 +19,15 @@ function makeApp(root: string) {
   writeFileSync(join(runtimeRoot, "dist", "mcp.js"), "");
 }
 
+function makeAgentStubs(): string {
+  const binDir = mkdtempSync(join(tmpdir(), "recall-agent-stub-"));
+  writeFileSync(join(binDir, "codex"), `#!/usr/bin/env bash\necho "codex-cli 0.122.0"\n`);
+  writeFileSync(join(binDir, "claude"), "#!/usr/bin/env bash\nexit 0\n");
+  chmodSync(join(binDir, "codex"), 0o755);
+  chmodSync(join(binDir, "claude"), 0o755);
+  return binDir;
+}
+
 describe("phase 6 setup orchestration", () => {
   it("supports dry-run planning for detected global agents", () => {
     const home = mkdtempSync(join(tmpdir(), "recall-setup-home-"));
@@ -29,7 +39,10 @@ describe("phase 6 setup orchestration", () => {
     writeFileSync(join(home, ".codex", "config.toml"), 'model = "gpt-5.4"\n');
 
     const previousHome = process.env.HOME;
+    const previousPath = process.env.PATH;
+    const stubDir = makeAgentStubs();
     process.env.HOME = home;
+    process.env.PATH = `${stubDir}:/usr/bin:/bin`;
     try {
       const result = runRecallSetup({
         appPath,
@@ -42,6 +55,8 @@ describe("phase 6 setup orchestration", () => {
       expect(result.agents.every((agent) => agent.hooks.message.includes("would install"))).toBe(true);
     } finally {
       process.env.HOME = previousHome;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
     }
   });
 
@@ -57,7 +72,10 @@ describe("phase 6 setup orchestration", () => {
     writeFileSync(join(home, ".codex", "config.toml"), 'model = "gpt-5.4"\n');
 
     const previousHome = process.env.HOME;
+    const previousPath = process.env.PATH;
+    const stubDir = makeAgentStubs();
     process.env.HOME = home;
+    process.env.PATH = `${stubDir}:/usr/bin:/bin`;
     try {
       const result = runRecallSetup({
         appPath,
@@ -95,6 +113,8 @@ describe("phase 6 setup orchestration", () => {
       expect(readFileSync(join(cwd, ".codex", "hooks.json"), "utf-8")).toContain("recall:managed:codex");
     } finally {
       process.env.HOME = previousHome;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
     }
   });
 
@@ -106,7 +126,10 @@ describe("phase 6 setup orchestration", () => {
     makeApp(appPath);
 
     const previousHome = process.env.HOME;
+    const previousPath = process.env.PATH;
+    const stubDir = makeAgentStubs();
     process.env.HOME = home;
+    process.env.PATH = `${stubDir}:/usr/bin:/bin`;
     try {
       runRecallSetup({
         appPath,
@@ -147,6 +170,8 @@ describe("phase 6 setup orchestration", () => {
       ]);
     } finally {
       process.env.HOME = previousHome;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
     }
   });
 });

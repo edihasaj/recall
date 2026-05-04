@@ -7,7 +7,8 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
@@ -27,6 +28,22 @@ afterEach(() => {
 beforeEach(() => {
   process.env.RECALL_EMBEDDINGS_DISABLED = "true";
 });
+
+function makeRepoPath(): string {
+  const repoPath = mkdtempSync(join(tmpdir(), "recall-codex-phase4-repo-"));
+  const repoName = basename(repoPath);
+  execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
+  execFileSync("git", ["remote", "add", "origin", `https://github.com/test/${repoName}.git`], {
+    cwd: repoPath,
+    stdio: "ignore",
+  });
+  writeFileSync(join(repoPath, "package.json"), JSON.stringify({
+    scripts: {
+      test: "vitest run",
+    },
+  }, null, 2));
+  return repoPath;
+}
 
 describe("phase 4 Codex adapter", () => {
   it("installs a Recall-managed notify bridge into config.toml", () => {
@@ -106,30 +123,31 @@ describe("phase 4 Codex adapter", () => {
 
   it("routes Codex notify payloads into Recall session events", { timeout: 20_000 }, async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "recall-codex-phase4-db-"));
+    const repoPath = makeRepoPath();
     const db = initStandaloneDb(join(tempDir, "recall.db"));
 
     await dispatchCodexNotify(JSON.stringify({
       event: "session_start",
       session_id: "sess-1",
-      cwd: "/Users/edi/Projects/recall",
+      cwd: repoPath,
     }), { db });
     await dispatchCodexNotify(JSON.stringify({
       event: "user_prompt_submit",
       session_id: "sess-1",
-      cwd: "/Users/edi/Projects/recall",
+      cwd: repoPath,
       prompt: "phase 4",
     }), { db });
     await dispatchCodexNotify(JSON.stringify({
       event: "post_tool_use",
       session_id: "sess-1",
-      cwd: "/Users/edi/Projects/recall",
+      cwd: repoPath,
       tool_name: "shell",
       tool_input: { command: "pnpm test" },
     }), { db });
     await dispatchCodexNotify(JSON.stringify({
       event: "stopped",
       session_id: "sess-1",
-      cwd: "/Users/edi/Projects/recall",
+      cwd: repoPath,
     }), { db });
 
     const events = listActivityEvents(db, { session_id: "sess-1" });

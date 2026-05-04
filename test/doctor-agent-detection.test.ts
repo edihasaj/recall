@@ -85,6 +85,7 @@ describe("doctor detects agent install state", () => {
       hooksPath: join(home, ".codex", "hooks.json"),
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     codex = inspectAgentInstalls(home).find((e) => e.agent === "codex")!;

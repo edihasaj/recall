@@ -44,6 +44,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     expect(result.ok).toBe(true);
@@ -68,6 +69,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     const config = readFileSync(configPath, "utf-8");
@@ -90,6 +92,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     const config = readFileSync(configPath, "utf-8");
@@ -103,6 +106,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     const second = installCodexHooks({
@@ -110,6 +114,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
     expect(second.changed).toBe(false);
   });
@@ -121,6 +126,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     const result = uninstallCodexHooks({ configPath, hooksPath });
@@ -149,6 +155,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     const config = readFileSync(configPath, "utf-8");
@@ -171,6 +178,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     const parsed = JSON.parse(readFileSync(hooksPath, "utf-8"));
@@ -195,6 +203,7 @@ describe("Codex hooks.json adapter", () => {
       hooksPath,
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
     });
 
     uninstallCodexHooks({ configPath, hooksPath });
