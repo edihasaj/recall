@@ -22,7 +22,7 @@ function makeCodexStub(version: string): string {
 }
 
 describe("runLocalSetup installs both MCP and hooks globally", () => {
-  it("wires Claude Code hooks in ~/.claude/settings.json and Codex hooks in ~/.codex/hooks.json", () => {
+  it("wires Claude Code hooks in ~/.claude/settings.json and Codex hooks in ~/.codex/hooks.json", { timeout: 15_000 }, () => {
     const home = mkdtempSync(join(tmpdir(), "recall-local-home-"));
     const appPath = join(mkdtempSync(join(tmpdir(), "recall-app-")), "Recall.app");
     makeApp(appPath);

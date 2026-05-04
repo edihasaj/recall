@@ -4,6 +4,10 @@
 
 ### Added
 
+- Static landing page in `docs/` for GitHub Pages.
+- CI, Pages, and release workflows for open-source distribution.
+- GitHub Release packaging for `Recall.app.zip` plus optional Homebrew cask publishing.
+- Open-source project docs and templates for contributors, security reports, issues, and PRs.
 - Local embeddings now ship default-on with `nomic` and optional `multilingual-e5`.
 - `recall embeddings setup` and `recall embeddings info` for model cache management.
 - Provider comparison in retrieval evals via `recall eval retrieval --provider ...`.
