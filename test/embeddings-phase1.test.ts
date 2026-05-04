@@ -126,14 +126,17 @@ describe("phase 1 embedding lifecycle", () => {
     delete process.env.RECALL_EMBEDDINGS_DISABLED;
     const count = await bootstrapEmbeddings(db, config, { repo: "test/repo" });
 
-    expect(count).toBe(2);
+    // Phase D.next: rejected user_corrections are kept embedded as
+    // rejection-paraphrase exemplars, so this test now expects 3 (active +
+    // candidate + rejected user_correction). Transient stays excluded.
+    expect(count).toBe(3);
     expect(loadEmbedding(db, activeId)).not.toBeNull();
     expect(loadEmbedding(db, candidateId)).not.toBeNull();
     expect(loadEmbedding(db, transientId)).toBeNull();
-    expect(loadEmbedding(db, rejectedId)).toBeNull();
+    expect(loadEmbedding(db, rejectedId)).not.toBeNull();
   });
 
-  it("removes stored embeddings when a memory is rejected", async () => {
+  it("retains embeddings when a user_correction memory is rejected (D.next exemplar)", async () => {
     const db = freshDb();
     installEmbeddingMock();
     process.env.RECALL_EMBEDDING_DIMS = "3";
@@ -154,6 +157,28 @@ describe("phase 1 embedding lifecycle", () => {
     rejectMemory(db, memoryId);
     await flushEmbeddingJobs();
 
+    expect(loadEmbedding(db, memoryId)).not.toBeNull();
+  });
+
+  it("removes stored embeddings when a non-user-correction memory is rejected", async () => {
+    const db = freshDb();
+    installEmbeddingMock();
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    const memoryId = createMemory(db, {
+      type: "command",
+      text: "config-parsed memory",
+      scope: "repo",
+      repo: "test/repo",
+      source: "config_parse",
+      confidence: 0.8,
+    });
+    await flushEmbeddingJobs();
+    expect(loadEmbedding(db, memoryId)).not.toBeNull();
+
+    rejectMemory(db, memoryId);
+    await flushEmbeddingJobs();
     expect(loadEmbedding(db, memoryId)).toBeNull();
   });
 });

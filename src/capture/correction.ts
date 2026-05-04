@@ -1,5 +1,5 @@
 import type { RecallDb } from "../db/client.js";
-import { findSemanticDuplicates, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { findSemanticDuplicates, findSimilarRejectedExemplar, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import {
   appendEvidence,
   countDistinctCorrectionSessions,
@@ -277,9 +277,10 @@ export async function processCorrection(
       if (reasons.length > 0) continue;
     }
 
-    // Phase D: skip captures that closely match something the user previously
-    // rejected. Don't make them re-reject the same noise twice.
-    if (isSimilarToRejectedFragment(db, correction.text)) continue;
+    // Phase D + D.next: skip captures that closely match something the user
+    // previously rejected. Lexical Jaccard is the fast pre-pass; semantic
+    // cosine via embeddings catches paraphrases when a provider is configured.
+    if (await isSimilarToRejectedFragmentSemantic(db, correction.text)) continue;
 
     const evidence: EvidenceEntry = correction.type === "review_pattern"
       ? {
@@ -546,6 +547,7 @@ function textSimilarity(a: string, b: string): number {
 // matching via embeddings is deferred until rejected memories carry
 // embeddings of their own.
 const REJECTED_EXEMPLAR_THRESHOLD = 0.7;
+const REJECTED_EXEMPLAR_SEMANTIC_THRESHOLD = 0.85;
 
 export function isSimilarToRejectedFragment(
   db: RecallDb,
@@ -558,6 +560,27 @@ export function isSimilarToRejectedFragment(
     if (textSimilarity(text, exemplar.text) >= threshold) return true;
   }
   return false;
+}
+
+// Phase D.next: semantic-paraphrase check. Async because it generates an
+// embedding for the candidate. Lexical Jaccard is the cheap pre-pass; if it
+// already matched, skip the embedding cost. When no embedding provider is
+// configured, returns false (no-op fallback to lexical-only).
+export async function isSimilarToRejectedFragmentSemantic(
+  db: RecallDb,
+  text: string,
+  options: { lexicalThreshold?: number; semanticThreshold?: number } = {},
+): Promise<boolean> {
+  const lexicalT = options.lexicalThreshold ?? REJECTED_EXEMPLAR_THRESHOLD;
+  const semanticT = options.semanticThreshold ?? REJECTED_EXEMPLAR_SEMANTIC_THRESHOLD;
+
+  if (isSimilarToRejectedFragment(db, text, lexicalT)) return true;
+
+  const config = loadEmbeddingConfigFromEnv();
+  if (!config) return false;
+
+  const match = await findSimilarRejectedExemplar(db, text, config, semanticT);
+  return match != null;
 }
 
 async function findDuplicateMemory(
