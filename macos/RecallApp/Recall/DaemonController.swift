@@ -104,22 +104,25 @@ final class DaemonController: ObservableObject {
         let nodePath = runtimeNodePath
         let cliPath = runtimeCliPath
 
-        Task.detached { [weak self] in
-            do {
-                for args in commands {
-                    _ = try Self.runShell(nodePath, [cliPath] + args)
+        Task { [weak self, commands, nodePath, cliPath] in
+            let errorText = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    for args in commands {
+                        _ = try Self.runShell(nodePath, [cliPath] + args)
+                    }
+                    return nil
+                } catch {
+                    return String(describing: error)
                 }
-                await MainActor.run {
-                    self?.lastError = nil
-                    self?.refresh()
-                }
-            } catch {
-                await MainActor.run {
-                    self?.setupRunning = false
-                    self?.lastError = String(describing: error)
-                    self?.refresh()
-                }
+            }.value
+
+            if let errorText {
+                self?.setupRunning = false
+                self?.lastError = errorText
+            } else {
+                self?.lastError = nil
             }
+            self?.refresh()
         }
     }
 
