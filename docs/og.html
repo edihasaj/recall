@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Recall — OG card</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #241611;
+        --ink-soft: #5b3a28;
+        --copper: #b9562b;
+        --copper-dark: #88361a;
+        --line: rgba(36, 22, 17, 0.18);
+        --display: "Newsreader", Georgia, serif;
+        --body: "IBM Plex Sans", -apple-system, system-ui, sans-serif;
+        --mono: "IBM Plex Mono", "JetBrains Mono", Menlo, monospace;
+      }
+
+      html, body { margin: 0; padding: 0; }
+
+      body {
+        width: 1200px;
+        height: 630px;
+        font-family: var(--body);
+        color: var(--ink);
+        background:
+          linear-gradient(115deg, rgba(185, 86, 43, 0.18), transparent 36%),
+          linear-gradient(245deg, rgba(46, 96, 69, 0.20), transparent 40%),
+          repeating-linear-gradient(90deg, rgba(36, 22, 17, 0.045) 0 1px, transparent 1px 72px),
+          linear-gradient(180deg, #fff8ef 0%, #f4e3cd 54%, #fffaf2 100%);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .frame {
+        display: grid;
+        grid-template-columns: 520px 1fr;
+        gap: 36px;
+        padding: 56px 64px;
+        height: 100%;
+        box-sizing: border-box;
+        align-items: center;
+      }
+
+      .brand {
+        display: grid;
+        gap: 20px;
+        align-content: center;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+
+      .brand-row img {
+        width: 96px;
+        height: 96px;
+        border-radius: 22px;
+        box-shadow: 0 18px 40px rgba(73, 38, 20, 0.22);
+      }
+
+      .brand-row h1 {
+        margin: 0;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 124px;
+        line-height: 0.92;
+        letter-spacing: -0.02em;
+      }
+
+      .tagline {
+        margin: 8px 0 0;
+        font-size: 30px;
+        font-weight: 500;
+        line-height: 1.2;
+        color: var(--ink);
+        max-width: 460px;
+      }
+
+      .tagline em {
+        font-style: normal;
+        color: var(--copper-dark);
+      }
+
+      .meta-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .domain {
+        font-family: var(--mono);
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--copper-dark);
+        letter-spacing: 0.01em;
+      }
+
+      .pill {
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(46, 96, 69, 0.16);
+        color: #2e6045;
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      /* Right column: stylized agent window with injected block */
+      .window {
+        position: relative;
+        border-radius: 14px;
+        overflow: hidden;
+        background: rgba(42, 29, 23, 0.96);
+        color: #fff6ea;
+        box-shadow: 0 36px 80px rgba(73, 38, 20, 0.28);
+        border: 1px solid rgba(36, 22, 17, 0.3);
+        font-family: var(--mono);
+        transform: rotate(-1.2deg);
+      }
+
+      .window::after {
+        /* subtle outer halo */
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 16px;
+        pointer-events: none;
+        box-shadow: inset 0 0 0 1px rgba(255, 246, 234, 0.05);
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 18px;
+        background: rgba(255, 246, 234, 0.06);
+        border-bottom: 1px solid rgba(255, 246, 234, 0.13);
+      }
+
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+
+      .dot.r { background: #e36647; }
+      .dot.y { background: #d9a441; }
+      .dot.g { background: #5aa874; }
+
+      .titlebar strong {
+        margin-left: auto;
+        color: rgba(255, 246, 234, 0.7);
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .hook {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 22px;
+        background: rgba(91, 168, 116, 0.08);
+        border-bottom: 1px solid rgba(255, 246, 234, 0.08);
+        color: rgba(255, 246, 234, 0.7);
+        font-size: 14px;
+      }
+
+      .hook .live {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #5aa874;
+        box-shadow: 0 0 0 5px rgba(90, 168, 116, 0.18);
+      }
+
+      .body-pre {
+        padding: 22px 24px 26px;
+        font-size: 18px;
+        line-height: 1.55;
+      }
+
+      .lead {
+        display: inline-block;
+        margin-bottom: 10px;
+        padding: 3px 10px;
+        border-radius: 5px;
+        background: rgba(242, 178, 134, 0.16);
+        color: #f2b286;
+        font-weight: 700;
+      }
+
+      .section-h {
+        color: #f2b286;
+        margin-top: 14px;
+        font-weight: 700;
+      }
+
+      .row { color: rgba(255, 246, 234, 0.92); }
+
+      .tag {
+        padding: 1px 7px;
+        border-radius: 4px;
+        background: rgba(91, 168, 116, 0.2);
+        color: #a5e4b8;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <div class="brand">
+        <div class="brand-row">
+          <img src="./icon.png" alt="" />
+          <h1>Recall</h1>
+        </div>
+        <p class="tagline">
+          Local-first <em>repo memory</em> for coding agents. Capture corrections, score quality,
+          inject only what matters.
+        </p>
+        <div class="meta-row">
+          <span class="pill">Open source · MIT</span>
+          <span class="domain">recallmemory.dev</span>
+        </div>
+      </div>
+
+      <div class="window">
+        <div class="titlebar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <strong>claude-code · session start</strong>
+        </div>
+        <div class="hook">
+          <span class="live"></span>
+          <span>SessionStart hook fired · injected into agent context</span>
+        </div>
+        <div class="body-pre">
+          <div class="lead">Recall (edihasaj/recall):</div>
+          <div class="section-h">## Rules</div>
+          <div class="row">- after bumping package.json, sync lock + CHANGELOG</div>
+          <div class="row">- if you touched docs/, run <span style="color:#ffd9a8">npm run docs:check</span></div>
+          <div class="row">- <span class="tag">[global]</span> never bypass commit signing</div>
+          <div class="section-h">## Gotchas</div>
+          <div class="row">- ~/.recall/recall.db: snapshot before destructive migrations</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

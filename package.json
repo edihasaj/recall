@@ -30,6 +30,7 @@
     "install:app": "bash scripts/install-app.sh",
     "dev": "tsup --watch",
     "docs:check": "node scripts/check-docs-site.mjs",
+    "docs:og": "npx -y playwright screenshot --viewport-size=1200,630 --wait-for-timeout 1800 file://$PWD/docs/og.html docs/og-image.png",
     "homebrew:cask": "node scripts/render-homebrew-cask.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit migrate",
