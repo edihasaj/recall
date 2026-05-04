@@ -99,7 +99,7 @@ Direct config grep:
 
 ```bash
 rg -n "mcp_servers.recall|Runtime/bin/node|dist/mcp.js" ~/.codex/config.toml
-rg -n '"mcpServers"|dist/mcp.js|Runtime/bin/node' ~/.claude/settings.json
+rg -n '"mcpServers"|dist/mcp.js|Runtime/bin/node|localhost:7890/mcp' ~/.claude/settings.json ~/.claude.json
 ```
 
 Inspect setup planning / uninstall:
@@ -187,6 +187,7 @@ So Recall memory improves only when the agent actually calls those MCP tools.
 1. Confirm `/Applications/Recall.app` exists.
 2. Confirm launchd points at the app-bundled runtime, not repo-local dev paths.
 3. Check `curl -s http://localhost:7890/health`.
-4. Check daemon logs in `~/.recall/logs/`.
-5. Check MCP config with `codex mcp get recall` / `claude mcp get recall`.
-6. Check crash reports in `~/Library/Logs/DiagnosticReports/Recall*`.
+4. If using HTTP MCP, check `http://localhost:7890/mcp` is configured as an MCP endpoint, not as a REST endpoint.
+5. Check daemon logs in `~/.recall/logs/`.
+6. Check MCP config with `codex mcp get recall` / `claude mcp get recall`.
+7. Check crash reports in `~/Library/Logs/DiagnosticReports/Recall*`.
