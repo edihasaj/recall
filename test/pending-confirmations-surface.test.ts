@@ -16,7 +16,7 @@ function freshDb() {
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));
 }
 
-describe("pending destructive-risky confirmations surface", () => {
+describe("pending high-risk confirmations surface", () => {
   it("omits surface when no risky candidates exist", async () => {
     const db = freshDb();
     createMemory(db, {
@@ -35,7 +35,7 @@ describe("pending destructive-risky confirmations surface", () => {
     expect(result.pending_confirmations).toBeUndefined();
   });
 
-  it("surfaces destructive-risky candidates for the session repo", async () => {
+  it("surfaces high-risk candidates (destructive + trigger-template) for the session repo", async () => {
     const db = freshDb();
     const riskyId = createMemory(db, {
       type: "rule",
@@ -48,6 +48,14 @@ describe("pending destructive-risky confirmations surface", () => {
     createMemory(db, {
       type: "rule",
       text: "wipe all secrets",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.4,
+    });
+    const triggerId = createMemory(db, {
+      type: "rule",
+      text: "When user says \"add\", run a backup and update the readme.",
       scope: "repo",
       repo: "test/repo",
       source: "user_correction",
@@ -78,8 +86,9 @@ describe("pending destructive-risky confirmations surface", () => {
     );
     const surface = result.pending_confirmations!;
     expect(surface).toBeDefined();
-    expect(surface.pending_total).toBe(2);
+    expect(surface.pending_total).toBe(3);
     expect(surface.items.map((i) => i.id)).toContain(riskyId);
+    expect(surface.items.map((i) => i.id)).toContain(triggerId);
     expect(surface.items.every((i) => i.repo === "test/repo")).toBe(true);
   });
 
@@ -106,14 +115,17 @@ describe("pending destructive-risky confirmations surface", () => {
     const text = formatPendingConfirmationsContext({
       pending_total: 7,
       items: [
-        { id: "abcdef12-aaaa-bbbb-cccc-000000000001", text: "remove plugins", scope: "repo", repo: "test/repo" },
-        { id: "abcdef34-aaaa-bbbb-cccc-000000000002", text: "wipe secrets", scope: "repo", repo: "test/repo" },
+        { id: "abcdef12-aaaa-bbbb-cccc-000000000001", text: "remove plugins from settings", scope: "repo", repo: "test/repo" },
+        { id: "abcdef34-aaaa-bbbb-cccc-000000000002", text: "When user says \"add\", run a backup", scope: "global", repo: "test/repo" },
       ],
     });
-    expect(text).toMatch(/7 destructive-risky/);
+    expect(text).toMatch(/7 high-risk/);
     expect(text).toMatch(/\+5 more/);
     expect(text).toMatch(/recall\.confirm/);
     expect(text).toMatch(/recall\.reject/);
     expect(text).toMatch(/abcdef12/);
+    // Each item is tagged with its risk reason so the agent knows why.
+    expect(text).toMatch(/destructive\)/);
+    expect(text).toMatch(/trigger-template\)/);
   });
 });

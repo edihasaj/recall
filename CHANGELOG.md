@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 - 2026-05-04
+
+### Fixed
+
+- Capture pipeline now blocks auto-promotion of trigger-template rules ("when user says X, do Y") in addition to destructive-risky ones; both shapes surface in the SessionStart pending-confirmations queue with a per-item reason tag.
+- SessionStart injection (minimal style) emits a compact `Recall (<repo>):` lead-in instead of stripping all attribution, so foreign agents can identify Recall-sourced context.
+- Global-scope memories render with a `[global]` marker in `## Rules` / `## Commands` / `## Gotchas`, making cross-repo provenance unambiguous.
+
 ## 0.5.0 - 2026-05-04
 
 ### Added

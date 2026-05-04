@@ -78,6 +78,23 @@ export function isDestructiveRisky(text: string): boolean {
   return DESTRUCTIVE_VERB_RE.test(text) && HIGH_RISK_TARGET_RE.test(text);
 }
 
+// A captured rule is "trigger-template-shaped" when it conditions an action on
+// a literal user phrase ("When user says X, do Y"). This shape is structurally
+// indistinguishable from a prompt-injection template, and when promoted to
+// global scope it gets injected into unrelated sessions where the receiving
+// agent cannot tell our memory apart from an attack. Block auto-promotion and
+// require explicit user confirmation, same as destructive-risky rules.
+const TRIGGER_TEMPLATE_RE =
+  /^\s*when(?:ever)?\s+(?:the\s+)?user\s+(?:says|asks|writes|types|mentions|uses|requests)\b/i;
+
+export function isTriggerTemplateRule(text: string): boolean {
+  return TRIGGER_TEMPLATE_RE.test(text);
+}
+
+export function isHighRiskRule(text: string): boolean {
+  return isDestructiveRisky(text) || isTriggerTemplateRule(text);
+}
+
 export function detectCorrections(text: string): CorrectionMatch[] {
   const normalizedText = text.trim();
   if (QUESTION_ONLY.test(normalizedText)) return [];
@@ -318,7 +335,7 @@ export async function processCorrection(
       if (
         updated &&
         updated.status !== "active" &&
-        !isDestructiveRisky(updated.text) &&
+        !isHighRiskRule(updated.text) &&
         countDistinctCorrectionSessions(updated) >= profile.repeat_sessions_required
       ) {
         promoteMemory(db, duplicate.id, "repeat_correction");
@@ -392,7 +409,7 @@ function maybePromoteGroupCandidate(
 ) {
   const candidate = getMemory(db, candidateId);
   if (!candidate || candidate.status !== "candidate") return;
-  if (isDestructiveRisky(candidate.text)) return;
+  if (isHighRiskRule(candidate.text)) return;
 
   const followedCount = queryMemories(db, {
     repo: candidate.repo ?? undefined,

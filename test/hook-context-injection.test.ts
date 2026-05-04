@@ -290,10 +290,13 @@ describe("formatInjectionContext", () => {
     token_estimate: 10,
   };
 
-  it("defaults to minimal style — strips the repo header and boilerplate prefix", () => {
+  it("defaults to minimal style — replaces the verbose repo header with a compact attribution", () => {
     const line = formatInjectionContext(surface);
     expect(line).not.toMatch(/Recall memory for this repo/);
     expect(line).not.toMatch(/# Recall:/);
+    // Compact attribution still present so foreign agents can identify the
+    // injection as Recall-sourced, not prompt injection content.
+    expect(line.startsWith("Recall (edihasaj/recall):")).toBe(true);
     expect(line).toContain("## Commands");
     expect(line).toContain("dev: tsup --watch");
     expect(line.endsWith("\n")).toBe(false);
