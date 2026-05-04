@@ -65,6 +65,7 @@ import {
   executeToolHook,
   formatInjectionContext,
   formatMaintenanceBacklogContext,
+  formatPendingConfirmationsContext,
   parseInteger,
   parseRecentToolCallsOption,
   readClaudeCodePromptInputFromStdin,
@@ -436,6 +437,9 @@ hookCmd
       if (result.injection) parts.push(formatInjectionContext(result.injection));
       if (result.maintenance_backlog) {
         parts.push(formatMaintenanceBacklogContext(result.maintenance_backlog));
+      }
+      if (result.pending_confirmations) {
+        parts.push(formatPendingConfirmationsContext(result.pending_confirmations));
       }
       if (parts.length > 0) {
         const output = {
