@@ -5,8 +5,8 @@ Release artifacts are produced from tags named `vX.Y.Z`.
 ## Prerequisites
 
 - GitHub Pages enabled for the repository.
-- `edihasaj/homebrew-recall` created before the first Homebrew publish.
-- `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to `edihasaj/homebrew-recall` if Homebrew publishing should run.
+- `edihasaj/homebrew-tap` and `edihasaj/homebrew-recall` taps created before the first Homebrew publish (the workflow keeps both in sync).
+- `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to both taps if Homebrew publishing should run.
 - XcodeGen available in CI through `brew install xcodegen` (handled by the release workflow).
 
 ## Automatic Release
@@ -35,7 +35,7 @@ npm run build
 
 The release workflow builds `Recall.app`, packages it as `Recall.app.zip`, writes `Recall.app.zip.sha256`, creates a GitHub Release if needed, and uploads both files.
 
-If `HOMEBREW_TAP_GITHUB_TOKEN` is configured and can access `edihasaj/homebrew-recall`, the workflow renders `Casks/recall.rb` with the real release SHA and pushes it to the tap. The cask source template lives in [packaging/homebrew/Casks/recall.rb.template](../packaging/homebrew/Casks/recall.rb.template), and the renderer is [scripts/render-homebrew-cask.mjs](../scripts/render-homebrew-cask.mjs).
+If `HOMEBREW_TAP_GITHUB_TOKEN` is configured, the workflow renders `Casks/recall.rb` with the real release SHA and pushes it to every tap listed in the workflow's `HOMEBREW_TAP_REPOS` env var (currently `edihasaj/homebrew-tap` and `edihasaj/homebrew-recall`). Inaccessible taps are skipped with a warning so a missing repo never fails the release. The cask source template lives in [packaging/homebrew/Casks/recall.rb.template](../packaging/homebrew/Casks/recall.rb.template), and the renderer is [scripts/render-homebrew-cask.mjs](../scripts/render-homebrew-cask.mjs).
 
 ## Website
 

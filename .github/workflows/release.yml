@@ -21,7 +21,11 @@ jobs:
     timeout-minutes: 35
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-      HOMEBREW_TAP_REPO: edihasaj/homebrew-recall
+      # Both taps stay in sync. `homebrew-tap` is the canonical multi-cask tap
+      # used in install instructions (`brew install --cask edihasaj/tap/recall`).
+      # `homebrew-recall` is the project-specific mirror so the shorter
+      # `edihasaj/recall` form keeps working too.
+      HOMEBREW_TAP_REPOS: "edihasaj/homebrew-tap edihasaj/homebrew-recall"
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -88,46 +92,46 @@ jobs:
             "${{ steps.package.outputs.sha_file }}" \
             --clobber
 
-      - name: Check Homebrew tap access
-        id: homebrew
-        env:
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${HOMEBREW_TAP_GITHUB_TOKEN:-}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN is missing; skipping Homebrew tap publish"
-            exit 0
-          fi
-          code="$(curl -sS -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer $HOMEBREW_TAP_GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$HOMEBREW_TAP_REPO" || true)"
-          if [ "$code" != "200" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN cannot access $HOMEBREW_TAP_REPO (HTTP $code); skipping Homebrew tap publish"
-            exit 0
-          fi
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-      - name: Publish Homebrew cask
-        if: steps.homebrew.outputs.skip != 'true'
+      - name: Publish Homebrew cask to all taps
         env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           RECALL_APP_ZIP_SHA256: ${{ steps.package.outputs.sha }}
           RECALL_RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
-          tap_url="https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/${HOMEBREW_TAP_REPO}.git"
-          git clone "$tap_url" tap
-          mkdir -p tap/Casks
-          node scripts/render-homebrew-cask.mjs > tap/Casks/recall.rb
-          git -C tap config user.name "github-actions[bot]"
-          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C tap add Casks/recall.rb
-          if git -C tap diff --cached --quiet; then
-            echo "Homebrew cask already current"
+          if [ -z "${HOMEBREW_TAP_GITHUB_TOKEN:-}" ]; then
+            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN is missing; skipping Homebrew tap publish"
             exit 0
           fi
-          git -C tap commit -m "Update recall ${RELEASE_TAG}"
-          git -C tap push
+
+          node scripts/render-homebrew-cask.mjs > /tmp/recall.rb
+
+          for tap_repo in $HOMEBREW_TAP_REPOS; do
+            echo "::group::publish $tap_repo"
+            code="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $HOMEBREW_TAP_GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$tap_repo" || true)"
+            if [ "$code" != "200" ]; then
+              echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN cannot access $tap_repo (HTTP $code); skipping"
+              echo "::endgroup::"
+              continue
+            fi
+
+            workdir="$(mktemp -d)"
+            tap_url="https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/${tap_repo}.git"
+            git clone "$tap_url" "$workdir/tap"
+            mkdir -p "$workdir/tap/Casks"
+            cp /tmp/recall.rb "$workdir/tap/Casks/recall.rb"
+            git -C "$workdir/tap" config user.name "github-actions[bot]"
+            git -C "$workdir/tap" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git -C "$workdir/tap" add Casks/recall.rb
+            if git -C "$workdir/tap" diff --cached --quiet; then
+              echo "$tap_repo: cask already current"
+            else
+              git -C "$workdir/tap" commit -m "Update recall ${RELEASE_TAG}"
+              git -C "$workdir/tap" push
+              echo "$tap_repo: pushed"
+            fi
+            echo "::endgroup::"
+          done

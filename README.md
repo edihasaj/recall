@@ -17,7 +17,7 @@ Recall is a local repo-memory compiler for coding agents. It learns from correct
 ### Homebrew
 
 ```bash
-brew install --cask edihasaj/recall
+brew install --cask edihasaj/tap/recall
 recall setup --yes
 recall doctor
 ```
