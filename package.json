@@ -1,6 +1,6 @@
 {
   "name": "recall",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
   "homepage": "https://edihasaj.github.io/recall/",

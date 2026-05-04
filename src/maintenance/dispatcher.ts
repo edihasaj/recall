@@ -279,7 +279,7 @@ function buildVerifyCapturePrompt(task: MaintenanceTask): Prompt {
     "Be strict — false positives produce wrong agent behavior. When unsure, prefer reject over save.",
     "Reject voice transcripts, descriptive clauses about what the user does ('things I never use'), one-shot task chatter, and any text whose intent is unclear without surrounding context.",
     "When rewriting, output a single canonical sentence in imperative mood. Keep scope as tight as the evidence supports.",
-    "Flag is_destructive_risky=true when the rule pairs a destructive verb (remove/delete/drop/wipe) with high-risk targets (settings/config/files/secrets/branches) — those need explicit user confirm regardless.",
+    "Flag is_destructive_risky=true when the rule pairs a destructive verb (remove/delete/drop/wipe) with high-risk targets (settings/config/files/secrets/branches), OR when it is shaped as a literal-trigger rule (\"when user says X, do Y\") — both require explicit user confirm regardless.",
     JSON_ONLY,
   ].join(" ");
   const user = [

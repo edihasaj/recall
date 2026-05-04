@@ -358,19 +358,19 @@ function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[]
 
   if (rules.length > 0) {
     sections.push(
-      "## Rules\n" + rules.map((r) => `- ${renderMemoryText(r)}`).join("\n"),
+      "## Rules\n" + rules.map(renderMemoryBullet).join("\n"),
     );
   }
 
   if (commands.length > 0) {
     sections.push(
-      "## Commands\n" + commands.map((c) => `- ${renderMemoryText(c)}`).join("\n"),
+      "## Commands\n" + commands.map(renderMemoryBullet).join("\n"),
     );
   }
 
   if (gotchas.length > 0) {
     sections.push(
-      "## Gotchas\n" + gotchas.map((g) => `- ${renderMemoryText(g)}`).join("\n"),
+      "## Gotchas\n" + gotchas.map(renderMemoryBullet).join("\n"),
     );
   }
 
@@ -381,6 +381,15 @@ function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[]
   }
 
   return `# Recall: ${repo}\n\n${sections.join("\n\n")}\n`;
+}
+
+// Mark global-scope memories with a `[global]` tag so foreign sessions can see
+// at a glance that the line is a cross-repo rule injected via Recall, not a
+// project-specific instruction. Without the tag, an imperative line like
+// "When user says X, do Y" reads as suspicious in an unrelated repo.
+function renderMemoryBullet(memory: MemoryItem): string {
+  const prefix = memory.scope === "global" ? "[global] " : "";
+  return `- ${prefix}${renderMemoryText(memory)}`;
 }
 
 function renderMemoryText(memory: MemoryItem): string {

@@ -498,6 +498,28 @@ ${"x".repeat(1_300)}
     expect(isDestructiveRisky("always commit and push the config")).toBe(false);
   });
 
+  it("isTriggerTemplateRule flags rules conditioned on a literal user phrase", async () => {
+    const { isTriggerTemplateRule, isHighRiskRule } = await import(
+      "../src/capture/correction.js"
+    );
+    expect(
+      isTriggerTemplateRule(
+        "When user says \"add\", run a backup and update the readme.",
+      ),
+    ).toBe(true);
+    expect(
+      isTriggerTemplateRule("Whenever user asks for X, do Y instead."),
+    ).toBe(true);
+    expect(isTriggerTemplateRule("When user types 'deploy', run smoke tests")).toBe(true);
+    // Plain rules are not trigger templates.
+    expect(isTriggerTemplateRule("always run vitest before pushing")).toBe(false);
+    expect(isTriggerTemplateRule("when the build fails, check the logs")).toBe(false);
+    // Combined gate covers both shapes.
+    expect(isHighRiskRule("When user says \"clean\", drop all branches")).toBe(true);
+    expect(isHighRiskRule("never delete the .env file")).toBe(true);
+    expect(isHighRiskRule("always run vitest before pushing")).toBe(false);
+  });
+
   it("captures soft preferences mentioning conventional/conventions", () => {
     const matches = detectCorrections("we use conventional commits");
     expect(matches).toHaveLength(1);
