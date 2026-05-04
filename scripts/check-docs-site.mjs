@@ -18,7 +18,7 @@ const html = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, "utf8") : "";
 const required = [
   "Recall",
   "repo-memory compiler",
-  "brew install --cask edihasaj/tap/recall",
+  "brew install --cask edihasaj/recall",
   "recall setup --yes",
   "GitHub Releases",
   "CONTRIBUTING.md",

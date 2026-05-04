@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 35
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-      HOMEBREW_TAP_REPO: edihasaj/homebrew-tap
+      HOMEBREW_TAP_REPO: edihasaj/homebrew-recall
     steps:
       - name: Check out
         uses: actions/checkout@v6
