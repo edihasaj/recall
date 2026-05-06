@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.8 - 2026-05-06
+
+### Fixed
+
+- The cask renderer (`scripts/render-homebrew-cask.mjs`) hardcoded the cask body and ignored the template file, so the quarantine-strip postflight added in 0.5.7 never reached the published cask. The renderer now emits the postflight directly so fresh `brew install --cask recall` no longer hits Gatekeeper relocating `/Applications/Recall.app`.
+
 ## 0.5.7 - 2026-05-06
 
 ### Fixed
