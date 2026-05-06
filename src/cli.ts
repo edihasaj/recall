@@ -50,13 +50,13 @@ import { formatDoctorReport, getDoctorReport } from "./doctor/report.js";
 import { ensureDailyBackup, listBackups, restoreBackup } from "./backups/snapshot.js";
 import { getHookCallStats } from "./hooks/calls.js";
 import {
-  getLaunchAgentInfo,
-  getLaunchAgentStatus,
-  installLaunchAgent,
-  startLaunchAgent,
-  stopLaunchAgent,
-  uninstallLaunchAgent,
-} from "./daemon/launchd.js";
+  defaultServiceLabel,
+  getServiceInfo,
+  installService,
+  startService,
+  stopService,
+  uninstallService,
+} from "./daemon/service.js";
 import {
   dispatchCodexNotify,
   executePromptHook,
@@ -1664,73 +1664,73 @@ program
 
 // --- daemon ---
 
+const defaultLabel = defaultServiceLabel();
 const daemonCmd = program
   .command("daemon")
-  .description("Manage the local Recall HTTP daemon with launchd");
+  .description("Manage the local Recall HTTP daemon (launchd on macOS, systemd --user on Linux)");
 
 daemonCmd
   .command("install")
-  .description("Install and start a user LaunchAgent")
+  .description("Install and start the user service")
   .option("--port <port>", "Daemon port", "7890")
   .option("--data-dir <dir>", "Recall data dir")
-  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .option("--label <label>", "Service label", defaultLabel)
   .option("--node-path <path>", "Node executable path override")
   .option("--daemon-script <path>", "Daemon script path override")
   .action((opts) => {
-    const status = installLaunchAgent({
+    const status = installService({
       label: opts.label,
       port: parseInt(opts.port, 10),
       dataDir: opts.dataDir,
       nodePath: opts.nodePath,
       daemonScript: opts.daemonScript,
     });
-    console.log(getLaunchAgentInfo(status.label));
+    console.log(getServiceInfo(status.label));
   });
 
 daemonCmd
   .command("start")
-  .description("Start the installed LaunchAgent")
-  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .description("Start the installed service")
+  .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
-    const status = startLaunchAgent(opts.label);
-    console.log(getLaunchAgentInfo(status.label));
+    const status = startService(opts.label);
+    console.log(getServiceInfo(status.label));
   });
 
 daemonCmd
   .command("stop")
-  .description("Stop the LaunchAgent")
-  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .description("Stop the service")
+  .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
-    const status = stopLaunchAgent(opts.label);
-    console.log(getLaunchAgentInfo(status.label));
+    const status = stopService(opts.label);
+    console.log(getServiceInfo(status.label));
   });
 
 daemonCmd
   .command("restart")
-  .description("Restart the LaunchAgent")
-  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .description("Restart the service")
+  .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
-    stopLaunchAgent(opts.label);
-    const status = startLaunchAgent(opts.label);
-    console.log(getLaunchAgentInfo(status.label));
+    stopService(opts.label);
+    const status = startService(opts.label);
+    console.log(getServiceInfo(status.label));
   });
 
 daemonCmd
   .command("status")
-  .description("Show LaunchAgent status")
-  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .description("Show service status")
+  .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
-    const status = getLaunchAgentStatus(opts.label);
-    console.log(getLaunchAgentInfo(status.label));
+    console.log(getServiceInfo(opts.label));
   });
 
 daemonCmd
   .command("uninstall")
-  .description("Remove the LaunchAgent")
-  .option("--label <label>", "LaunchAgent label", "com.recall.daemon")
+  .description("Remove the service")
+  .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
-    const status = uninstallLaunchAgent(opts.label);
-    console.log(getLaunchAgentInfo(status.label));
+    const status = uninstallService(opts.label);
+    console.log(getServiceInfo(status.label));
   });
 
 // --- Tier-2 maintenance tasks ---

@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { getDbPath, getDbUserVersion, RECALL_DB_USER_VERSION } from "../db/client.js";
 import { getEmbeddingModelInfo } from "../embeddings/embeddings.js";
 import { getLaunchAgentStatus } from "../daemon/launchd.js";
+import { getSystemdStatus } from "../daemon/systemd.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
 
 export interface AgentDoctorEntry {
@@ -49,6 +50,11 @@ export interface DoctorReport {
     loaded: boolean;
     state?: string;
   } | null;
+  systemd: {
+    installed: boolean;
+    loaded: boolean;
+    state?: string;
+  } | null;
   agents: AgentDoctorEntry[];
   upgrade: UpgradeSignal;
   cleanup: CleanupHealth | null;
@@ -72,6 +78,21 @@ export function getDoctorReport(): DoctorReport {
       })()
     : null;
 
+  const systemd = process.platform === "linux"
+    ? (() => {
+        try {
+          const status = getSystemdStatus();
+          return {
+            installed: status.installed,
+            loaded: status.loaded,
+            state: status.state,
+          };
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
   const agents = inspectAgentInstalls();
   return {
     db_path: dbPath,
@@ -79,6 +100,7 @@ export function getDoctorReport(): DoctorReport {
     db_target_version: RECALL_DB_USER_VERSION,
     embeddings: getEmbeddingModelInfo(),
     launchd,
+    systemd,
     agents,
     upgrade: computeUpgradeSignal(agents),
     cleanup: readCleanupHealth(dbPath),
@@ -354,6 +376,9 @@ export function formatDoctorReport(report: DoctorReport): string {
 
   if (report.launchd) {
     lines.push(`Launchd:   ${report.launchd.installed ? "installed" : "missing"} / ${report.launchd.loaded ? "loaded" : "not loaded"}${report.launchd.state ? ` (${report.launchd.state})` : ""}`);
+  }
+  if (report.systemd) {
+    lines.push(`Systemd:   ${report.systemd.installed ? "installed" : "missing"} / ${report.systemd.loaded ? "loaded" : "not loaded"}${report.systemd.state ? ` (${report.systemd.state})` : ""}`);
   }
 
   lines.push("", "## Agents");

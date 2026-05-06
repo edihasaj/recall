@@ -14,13 +14,25 @@ Recall is a local repo-memory compiler for coding agents. It learns from correct
 
 ## Install
 
-### Homebrew
+### Homebrew (macOS)
 
 ```bash
 brew install --cask edihasaj/tap/recall
 recall setup --yes
 recall doctor
 ```
+
+### npm (macOS, Linux)
+
+```bash
+npm i -g recall
+recall setup --yes
+recall doctor
+# Optional: run as a background service
+recall daemon install            # launchd on macOS, systemd --user on Linux
+```
+
+On Linux, `recall daemon install` writes `~/.config/systemd/user/recall-daemon.service` and enables it. Logs: `journalctl --user -u recall-daemon`.
 
 ### GitHub Releases
 
@@ -211,7 +223,7 @@ Start HTTP daemon:
 node dist/daemon.js
 ```
 
-Install as a macOS user service with `launchd`:
+Install as a user service (launchd on macOS, `systemd --user` on Linux):
 
 ```bash
 recall daemon install

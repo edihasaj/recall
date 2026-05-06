@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { installClaudeCodeHooks, uninstallClaudeCodeHooks } from "../agents/claude-code.js";
 import { installCodexHooks, uninstallCodexHooks } from "../agents/codex.js";
 import type { AgentName } from "../agents/types.js";
@@ -69,13 +70,25 @@ export interface RecallSetupResult {
 type CommandRunner = (command: string, args: string[]) => void;
 
 export function resolveRuntimePaths(appPath?: string) {
-  const resolvedAppPath = appPath ?? "/Applications/Recall.app";
-  const runtimeRoot = join(resolvedAppPath, "Contents", "Resources", "Runtime");
+  // macOS bundled-app layout: /Applications/Recall.app/Contents/Resources/Runtime
+  if (appPath || (process.platform === "darwin" && existsSync("/Applications/Recall.app"))) {
+    const resolvedAppPath = appPath ?? "/Applications/Recall.app";
+    const runtimeRoot = join(resolvedAppPath, "Contents", "Resources", "Runtime");
+    return {
+      appPath: resolvedAppPath,
+      runtimeNodePath: join(runtimeRoot, "bin", "node"),
+      runtimeCliPath: join(runtimeRoot, "dist", "cli.js"),
+      runtimeMcpPath: join(runtimeRoot, "dist", "mcp.js"),
+    };
+  }
+
+  // Plain npm/global install: use system node + dist next to this module.
+  const distDir = dirname(fileURLToPath(import.meta.url));
   return {
-    appPath: resolvedAppPath,
-    runtimeNodePath: join(runtimeRoot, "bin", "node"),
-    runtimeCliPath: join(runtimeRoot, "dist", "cli.js"),
-    runtimeMcpPath: join(runtimeRoot, "dist", "mcp.js"),
+    appPath: distDir,
+    runtimeNodePath: process.execPath,
+    runtimeCliPath: join(distDir, "cli.js"),
+    runtimeMcpPath: join(distDir, "mcp.js"),
   };
 }
 
@@ -118,17 +131,14 @@ export function runRecallSetup(opts: RecallSetupOptions = {}): RecallSetupResult
   const runner = opts.runner ?? defaultRunner;
   const paths = resolveRuntimePaths(opts.appPath);
 
-  if (!existsSync(paths.appPath)) {
-    throw new Error(`Recall.app not found at ${paths.appPath}`);
-  }
   if (!existsSync(paths.runtimeNodePath)) {
-    throw new Error(`Bundled node runtime not found at ${paths.runtimeNodePath}`);
+    throw new Error(`Node runtime not found at ${paths.runtimeNodePath}`);
   }
   if (!existsSync(paths.runtimeCliPath)) {
-    throw new Error(`Bundled CLI entry not found at ${paths.runtimeCliPath}`);
+    throw new Error(`Recall CLI entry not found at ${paths.runtimeCliPath}`);
   }
   if (!existsSync(paths.runtimeMcpPath)) {
-    throw new Error(`Bundled MCP entry not found at ${paths.runtimeMcpPath}`);
+    throw new Error(`Recall MCP entry not found at ${paths.runtimeMcpPath}`);
   }
 
   const targetAgents = resolveTargetAgents(opts.agent);
