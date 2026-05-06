@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recall - usage, commands, env keys</title>
+    <meta
+      name="description"
+      content="Quick reference for the Recall CLI: setup, teaching, daemon, MCP wiring, plus the env vars that tune hook injection and LLM-assisted maintenance."
+    />
+    <meta name="theme-color" content="#2f211a" />
+    <link rel="canonical" href="https://recallmemory.dev/usage.html" />
+
+    <link rel="icon" href="./icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./site.css" />
+    <style>
+      .zero-config {
+        margin: 22px 0 0;
+        padding: 18px 22px;
+        border: 1px solid rgba(46, 96, 69, 0.4);
+        border-left: 4px solid var(--fern);
+        border-radius: 8px;
+        background: rgba(219, 232, 210, 0.55);
+        max-width: 760px;
+      }
+      .zero-config strong {
+        display: block;
+        margin-bottom: 4px;
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--fern);
+      }
+      .zero-config p {
+        margin: 0;
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      .usage-head {
+        padding: clamp(48px, 7vw, 84px) 0 28px;
+      }
+      .usage-head h1 {
+        font-size: clamp(56px, 9vw, 116px);
+      }
+      .usage-head p {
+        max-width: 640px;
+        color: var(--ink-soft);
+        font-size: clamp(18px, 2vw, 22px);
+      }
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        margin: 18px 0 0;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 250, 242, 0.66);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .toc a {
+        color: var(--copper-dark);
+        font-weight: 600;
+      }
+      .doc-section {
+        margin: 42px 0;
+      }
+      .doc-section h2 {
+        margin: 0 0 6px;
+        font-family: var(--display);
+        font-size: clamp(28px, 3.4vw, 40px);
+        line-height: 1.05;
+      }
+      .doc-section p {
+        max-width: 760px;
+        margin-bottom: 14px;
+        color: var(--ink-soft);
+      }
+      .doc-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .doc-grid > article {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 250, 242, 0.6);
+        box-shadow: 0 14px 32px rgba(73, 38, 20, 0.07);
+      }
+      .doc-grid h3 {
+        margin: 0 0 10px;
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--copper-dark);
+      }
+      .doc-grid pre {
+        border-radius: 8px;
+        border: 1px solid rgba(36, 22, 17, 0.16);
+        color: #fff6ea;
+        background: #2f211a;
+        font-size: 12px;
+      }
+      .env-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 4px;
+        background: rgba(255, 250, 242, 0.6);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 14px;
+      }
+      .env-table th,
+      .env-table td {
+        padding: 10px 14px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+      .env-table th {
+        background: rgba(46, 96, 69, 0.08);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--fern);
+      }
+      .env-table tr:last-child td {
+        border-bottom: 0;
+      }
+      .env-table code {
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: rgba(36, 22, 17, 0.07);
+        font-size: 12.5px;
+      }
+      .read-more {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 12px 0 0;
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .read-more a {
+        padding: 6px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--blue);
+        background: rgba(255, 250, 242, 0.7);
+        font-weight: 600;
+      }
+      .read-more a:hover {
+        text-decoration: none;
+        background: rgba(219, 232, 210, 0.7);
+      }
+      @media (max-width: 720px) {
+        .doc-grid {
+          grid-template-columns: 1fr;
+        }
+        .env-table th:nth-child(2),
+        .env-table td:nth-child(2) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-head" data-reveal="1">
+      <a class="brand" href="./" aria-label="Recall home">
+        <img src="./icon.png" alt="" width="36" height="36" />
+        <span>Recall</span>
+      </a>
+      <nav aria-label="Primary links">
+        <a href="./#install">Install</a>
+        <a href="./#how">How it works</a>
+        <a href="./usage.html" aria-current="page">Usage</a>
+        <a href="https://github.com/edihasaj/recall">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="usage-head" data-reveal="2">
+        <p class="eyebrow">Usage</p>
+        <h1>Mostly nothing.</h1>
+        <p>
+          Recall is zero-config by design. Install the cask, open the app, click
+          <strong>Install + Start</strong>. The daemon detects your coding agents, wires MCP and
+          lifecycle hooks, and from the next session onward injects memory automatically.
+        </p>
+        <aside class="zero-config" role="note">
+          <strong>You don't need this page</strong>
+          <p>
+            Everything below is for inspecting, overriding, or debugging. If you just installed
+            Recall and the daemon is green in the app — you're done. Open your coding agent and
+            keep working. Recall learns from corrections in the background.
+          </p>
+        </aside>
+        <nav class="toc" aria-label="On this page">
+          <a href="#setup">Setup</a>
+          <a href="#teach">Teach</a>
+          <a href="#inspect">Inspect</a>
+          <a href="#daemon">Daemon</a>
+          <a href="#maintenance">Maintenance</a>
+          <a href="#env">Env vars</a>
+          <a href="#more">More docs</a>
+        </nav>
+      </section>
+
+      <section class="doc-section" id="setup" data-reveal="3">
+        <p class="eyebrow">01 · Setup</p>
+        <h2>The happy path is one command.</h2>
+        <p>
+          Install the cask, open the app, click <strong>Install + Start</strong>. The CLI calls
+          below are the same thing the app does for you under the hood — useful only if you want
+          per-project scopes, an uninstall, or to opt out of per-prompt injection.
+        </p>
+        <div class="doc-grid">
+          <article>
+            <h3>What you actually do</h3>
+            <pre><code>brew install --cask edihasaj/tap/recall
+# open Recall.app → click Install + Start
+# (optional) verify
+recall doctor</code></pre>
+          </article>
+          <article>
+            <h3>Power-user overrides</h3>
+            <pre><code>recall setup --scope project --yes
+recall setup --uninstall-hooks --yes
+recall setup --no-prompt-injection --yes</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="doc-section" id="teach" data-reveal="4">
+        <p class="eyebrow">02 · Teach</p>
+        <h2>Capture corrections, review feedback, confirmations.</h2>
+        <p>
+          The agent reports corrections through MCP automatically, but the CLI is there for direct
+          edits and review notes. Phrase corrections as "always X" / "don't Y, use Z".
+        </p>
+        <div class="doc-grid">
+          <article>
+            <h3>Corrections &amp; reviews</h3>
+            <pre><code>recall correct -r owner/repo "don't use npm, use pnpm"
+recall review  -r owner/repo "review said use error boundaries"
+recall confirm &lt;memory-id&gt;
+recall reject  &lt;memory-id&gt;</code></pre>
+          </article>
+          <article>
+            <h3>Bootstrap from a repo</h3>
+            <pre><code>recall init
+recall scan ~/Projects/some-repo
+recall publish ~/Projects/some-repo</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="doc-section" id="inspect" data-reveal="5">
+        <p class="eyebrow">03 · Inspect</p>
+        <h2>See what the agent will get.</h2>
+        <div class="doc-grid">
+          <article>
+            <h3>Memory &amp; quality</h3>
+            <pre><code>recall list    -r owner/repo
+recall quality -r owner/repo
+recall health  -r owner/repo
+recall compile -r owner/repo
+recall compile -r owner/repo --query "pytest -q" --include-candidates</code></pre>
+          </article>
+          <article>
+            <h3>Search &amp; history</h3>
+            <pre><code>recall search       -r owner/repo "pnpm"
+recall history list -r owner/repo
+recall history search -r owner/repo "pnpm"
+recall hook stats
+recall hook stats --agent codex --json</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="doc-section" id="daemon" data-reveal="6">
+        <p class="eyebrow">04 · Daemon</p>
+        <h2>The thing that actually runs.</h2>
+        <p>
+          Recall.app is a status surface. The capture/injection runs through a small daemon and
+          the SessionStart / UserPromptSubmit / SessionEnd hooks of your coding agent.
+        </p>
+        <div class="doc-grid">
+          <article>
+            <h3>Lifecycle</h3>
+            <pre><code>recall daemon install
+recall daemon status
+recall daemon start
+recall daemon stop
+recall daemon uninstall</code></pre>
+          </article>
+          <article>
+            <h3>Embeddings</h3>
+            <pre><code>recall embeddings setup
+recall embeddings info
+recall embeddings bootstrap
+recall embeddings verify
+recall embeddings rebuild-index</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="doc-section" id="maintenance" data-reveal="7">
+        <p class="eyebrow">05 · Maintenance</p>
+        <h2>Memory rethinking, with or without an API key.</h2>
+        <p>
+          Give Recall a key and the daemon refines/merges/summarizes on a daily schedule. Skip the
+          key and the backlog surfaces in the next agent's SessionStart so the live agent can pick
+          tasks up against its own LLM.
+        </p>
+        <div class="doc-grid">
+          <article>
+            <h3>Credentials</h3>
+            <pre><code>recall maintenance credentials set openai     sk-...
+recall maintenance credentials set anthropic  sk-ant-...
+recall maintenance credentials set azure \
+  --endpoint https://x.openai.azure.com \
+  --deployment gpt-4o-mini \
+  --api-version 2024-10-21 az-...
+recall maintenance credentials clear openai</code></pre>
+          </article>
+          <article>
+            <h3>Run &amp; observe</h3>
+            <pre><code>recall maintenance dispatch --dry-run
+recall maintenance dispatch --max 3
+recall maintenance cleanup --apply
+recall maintenance usage --since 2026-04-01
+recall maintenance stats
+recall maintenance list</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="doc-section" id="env" data-reveal="8">
+        <p class="eyebrow">06 · Env vars</p>
+        <h2>The knobs you'll actually flip.</h2>
+        <p>
+          Hook env vars are read fresh on each invocation — no daemon restart needed. Daemon-wide
+          vars go into <code>~/Library/LaunchAgents/com.recall.daemon.plist</code> under
+          <code>EnvironmentVariables</code>, then <code>recall daemon restart</code>.
+        </p>
+
+        <h3 style="margin: 18px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">Hook injection</h3>
+        <table class="env-table">
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>RECALL_HOOK_INJECT_CONTEXT</code></td>
+              <td><code>true</code></td>
+              <td>Set <code>false</code> to disable all hook-driven memory injection. Hooks still fire for telemetry and correction capture.</td>
+            </tr>
+            <tr>
+              <td><code>RECALL_HOOK_INJECT_PROMPT</code></td>
+              <td><code>true</code></td>
+              <td>Per-prompt injection on <code>UserPromptSubmit</code>. <code>false</code> opts out (SessionStart still fires).</td>
+            </tr>
+            <tr>
+              <td><code>RECALL_HOOK_INJECT_STYLE</code></td>
+              <td><code>minimal</code></td>
+              <td><code>verbose</code> restores the historical <code>Recall memory for this repo:</code> prefix and repo header.</td>
+            </tr>
+            <tr>
+              <td><code>RECALL_CODEX_HOOKS_MIN_VERSION</code></td>
+              <td><code>0.115.0</code></td>
+              <td>Min Codex CLI version eligible for the <code>hooks.json</code> install path. Below this, falls back to the legacy <code>notify</code> bridge.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">Daemon &amp; storage</h3>
+        <table class="env-table">
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>RECALL_PORT</code></td><td><code>7890</code></td><td>HTTP port the daemon listens on.</td></tr>
+            <tr><td><code>RECALL_DATA_DIR</code></td><td><code>~/.recall</code></td><td>Where the SQLite DB, models cache, and logs live.</td></tr>
+            <tr><td><code>RECALL_MAINTENANCE_ENABLED</code></td><td><code>true</code></td><td>Stops the non-LLM maintenance loop when <code>false</code>.</td></tr>
+            <tr><td><code>RECALL_MAINTENANCE_INTERVAL_SECONDS</code></td><td><code>300</code></td><td>Interval for the non-LLM loop.</td></tr>
+            <tr><td><code>RECALL_EMBEDDINGS_DISABLED</code></td><td><code>false</code></td><td><code>true</code> skips embedding generation; FTS-only ranking still works.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">LLM dispatcher</h3>
+        <table class="env-table">
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>RECALL_DISPATCHER_ENABLED</code></td><td><code>true</code></td><td>Disable the daemon-owned dispatcher (delegated SessionStart path still works).</td></tr>
+            <tr><td><code>RECALL_DISPATCHER_INTERVAL_SECONDS</code></td><td><code>86400</code></td><td>Seconds between dispatcher ticks. Daily by default.</td></tr>
+            <tr><td><code>RECALL_DISPATCHER_MAX_TASKS_PER_RUN</code></td><td><code>5</code></td><td>Max tasks per tick.</td></tr>
+            <tr><td><code>OPENAI_API_KEY</code> · <code>ANTHROPIC_API_KEY</code></td><td>—</td><td>Fallback when Keychain has no entry. Azure uses the four <code>AZURE_OPENAI_*</code> vars together.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="doc-section" id="more" data-reveal="9">
+        <p class="eyebrow">07 · More</p>
+        <h2>Deep ends &amp; source of truth.</h2>
+        <p>
+          This page intentionally skips the long tail. The repo has the rest — every env var,
+          every quality knob, every release step.
+        </p>
+        <div class="read-more">
+          <a href="https://github.com/edihasaj/recall/blob/main/README.md">README</a>
+          <a href="https://github.com/edihasaj/recall/blob/main/docs/configuration.md">configuration.md</a>
+          <a href="https://github.com/edihasaj/recall/blob/main/docs/inspecting-recall.md">Inspecting Recall</a>
+          <a href="https://github.com/edihasaj/recall/blob/main/ARCHITECTURE.md">Architecture</a>
+          <a href="https://github.com/edihasaj/recall/blob/main/CONTRIBUTING.md">Contributing</a>
+          <a href="https://github.com/edihasaj/recall/blob/main/docs/RELEASING.md">Releasing</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Recall is open source by <a href="https://edihasaj.com" rel="author">Edi Hasaj</a>.</span>
+      <a href="https://github.com/edihasaj/recall/blob/main/LICENSE">MIT License</a>
+    </footer>
+  </body>
+</html>
