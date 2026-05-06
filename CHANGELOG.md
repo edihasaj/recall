@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.7 - 2026-05-06
+
+### Fixed
+
+- `scripts/build-app.sh` now passes `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` to `xcodebuild`, so the bundled `Info.plist` actually contains a `CFBundleShortVersionString` and the in-app version label introduced in 0.5.5 displays the right value (previously empty).
+- Homebrew cask postflight strips the `com.apple.quarantine` xattr after install. The bundle is ad-hoc signed, and Gatekeeper was relocating `/Applications/Recall.app` to `~/Library/Application Support/com.apple.mobile.installation.removed` on first launch after `brew install --cask recall`. Manual installs of prior releases still need a one-time `xattr -dr com.apple.quarantine /Applications/Recall.app`.
+
 ## 0.5.6 - 2026-05-06
 
 ### Fixed
