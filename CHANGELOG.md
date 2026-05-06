@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 - 2026-05-06
+
+### Fixed
+
+- Recall.app now launches as a true menu-bar agent (`LSUIElement=YES`) instead of switching from `.regular` to `.accessory` after the dashboard view appears. This eliminates the regression where closing the dashboard window would also remove the menu bar status item on newer macOS versions.
+
 ## 0.5.3 - 2026-05-06
 
 ### Fixed
