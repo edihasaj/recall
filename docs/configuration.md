@@ -139,6 +139,9 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `RECALL_MAINTENANCE_INTERVAL_SECONDS` | `300` | Interval for the non-LLM maintenance loop. |
 | `RECALL_MAINTENANCE_LLM_DISABLED` | `false` | Set to `true` to stop enqueuing LLM-needing tasks. |
 | `RECALL_EMBEDDINGS_DISABLED` | `false` | Set to `true` to skip embedding generation entirely (hybrid retrieval still works with FTS-only ranking). |
+| `RECALL_SQLITE_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | WAL size at which the maintenance loop escalates `wal_checkpoint(PASSIVE)` to `TRUNCATE` to keep `recall.db-wal` from growing unbounded under concurrent writers. Set `0` to never truncate. |
+| `RECALL_SQLITE_STARTUP_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | If the WAL file exceeds this size when the DB is opened, run `wal_checkpoint(TRUNCATE)` once during startup. Heals existing installs after upgrade. Set `0` to disable. |
+| `RECALL_HOOK_LOG_MAX_BYTES` | `1048576` (1 MiB) | Rotates `~/.recall/logs/hook-errors.log` to `hook-errors.log.1` once it reaches this size. Set `0` to keep appending forever. |
 
 ## Verification
 

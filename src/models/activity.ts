@@ -28,11 +28,17 @@ export function createActivityEvent(
   input: CreateActivityEventInput,
 ): string {
   const dedupeKey = activityEventDedupeKey(input);
-  const duplicateId = findDuplicateActivityEvent(db, input, dedupeKey);
-  if (duplicateId) return duplicateId;
+
+  if (dedupeKey) {
+    const existingId = findActivityEventByDedupeKey(db, dedupeKey);
+    if (existingId) return existingId;
+  } else {
+    const fuzzyId = findRecentDuplicateActivityEvent(db, input);
+    if (fuzzyId) return fuzzyId;
+  }
 
   const id = randomUUID();
-  db.insert(activityEvents)
+  const result = db.insert(activityEvents)
     .values({
       id,
       session_id: input.session_id ?? null,
@@ -46,23 +52,33 @@ export function createActivityEvent(
       result: input.result ?? {},
       created_at: new Date().toISOString(),
     })
+    .onConflictDoNothing({ target: activityEvents.dedupe_key })
     .run();
+
+  if (Number(result.changes ?? 0) === 0 && dedupeKey) {
+    const existingId = findActivityEventByDedupeKey(db, dedupeKey);
+    if (existingId) return existingId;
+  }
   return id;
 }
 
-function findDuplicateActivityEvent(
+function findActivityEventByDedupeKey(
+  db: RecallDb,
+  dedupeKey: string,
+): string | null {
+  const row = db
+    .select({ id: activityEvents.id })
+    .from(activityEvents)
+    .where(eq(activityEvents.dedupe_key, dedupeKey))
+    .get();
+  return row?.id ?? null;
+}
+
+function findRecentDuplicateActivityEvent(
   db: RecallDb,
   input: CreateActivityEventInput,
-  dedupeKey: string | null,
 ): string | null {
   if (!input.session_id) return null;
-
-  if (dedupeKey) {
-    const existing = db.select().from(activityEvents)
-      .where(eq(activityEvents.dedupe_key, dedupeKey))
-      .get();
-    if (existing) return existing.id;
-  }
 
   const since = new Date(Date.now() - 2_000).toISOString();
   const rows = db.select().from(activityEvents)

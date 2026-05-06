@@ -141,6 +141,7 @@ describe("phase 5 maintenance lifecycle", () => {
       sqlite_analyze_enabled: true,
       sqlite_optimize_enabled: true,
       sqlite_wal_checkpoint_enabled: true,
+      sqlite_wal_truncate_bytes: 32 * 1024 * 1024,
       sqlite_vacuum_enabled: true,
       sqlite_vacuum_min_free_pages: 1,
       sqlite_vacuum_min_free_ratio: 0,

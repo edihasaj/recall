@@ -17,17 +17,12 @@ export function recordHookCall(
   },
 ): string {
   if (input.dedupe_key) {
-    const existing = db
-      .select({ id: hookCalls.id })
-      .from(hookCalls)
-      .where(eq(hookCalls.dedupe_key, input.dedupe_key))
-      .limit(1)
-      .get();
-    if (existing?.id) return existing.id;
+    const existingId = findHookCallByDedupeKey(db, input.dedupe_key);
+    if (existingId) return existingId;
   }
 
   const id = randomUUID();
-  db.insert(hookCalls)
+  const result = db.insert(hookCalls)
     .values({
       id,
       event: input.event,
@@ -37,8 +32,24 @@ export function recordHookCall(
       ok: input.ok,
       created_at: new Date().toISOString(),
     })
+    .onConflictDoNothing({ target: hookCalls.dedupe_key })
     .run();
+
+  if (Number(result.changes ?? 0) === 0 && input.dedupe_key) {
+    const existingId = findHookCallByDedupeKey(db, input.dedupe_key);
+    if (existingId) return existingId;
+  }
   return id;
+}
+
+function findHookCallByDedupeKey(db: RecallDb, dedupeKey: string): string | null {
+  const row = db
+    .select({ id: hookCalls.id })
+    .from(hookCalls)
+    .where(eq(hookCalls.dedupe_key, dedupeKey))
+    .limit(1)
+    .get();
+  return row?.id ?? null;
 }
 
 export function listHookCalls(

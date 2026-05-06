@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.js";
 import { join, dirname } from "node:path";
-import { mkdirSync, existsSync, rmSync } from "node:fs";
+import { mkdirSync, existsSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { getEmbeddingCacheRoot } from "../embeddings/cache.js";
 
@@ -43,9 +43,28 @@ function makeDb(sqlite: Database.Database) {
   return drizzle(sqlite, { schema });
 }
 
+const STARTUP_WAL_TRUNCATE_BYTES = (() => {
+  const raw = process.env.RECALL_SQLITE_STARTUP_WAL_TRUNCATE_BYTES;
+  const parsed = raw ? parseInt(raw, 10) : 32 * 1024 * 1024;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+})();
+
 function applyPragmas(sqlite: Database.Database) {
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
+  truncateWalIfLarge(sqlite);
+}
+
+function truncateWalIfLarge(sqlite: Database.Database) {
+  if (STARTUP_WAL_TRUNCATE_BYTES <= 0) return;
+  try {
+    const walPath = `${sqlite.name}-wal`;
+    if (!existsSync(walPath)) return;
+    if (statSync(walPath).size < STARTUP_WAL_TRUNCATE_BYTES) return;
+    sqlite.pragma("wal_checkpoint(TRUNCATE)");
+  } catch {
+    // best-effort: never block db open
+  }
 }
 
 function setDbUserVersion(sqlite: Database.Database, version = RECALL_DB_USER_VERSION) {
