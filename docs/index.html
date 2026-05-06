@@ -64,9 +64,26 @@
             <a class="button secondary" href="https://github.com/edihasaj/recall">View source</a>
           </div>
 
-          <div class="install-strip" aria-label="Homebrew install command">
-            <code id="brew-command">brew install --cask edihasaj/tap/recall</code>
-            <button type="button" aria-label="Copy Homebrew command" title="Copy Homebrew command" data-copy="#brew-command">
+          <div class="os-tabs" role="tablist" aria-label="Choose your platform">
+            <button type="button" role="tab" class="os-tab is-active" data-os="macos" aria-selected="true" aria-controls="install-macos">macOS</button>
+            <button type="button" role="tab" class="os-tab" data-os="linux" aria-selected="false" aria-controls="install-linux">Linux</button>
+            <button type="button" role="tab" class="os-tab is-disabled" aria-selected="false" aria-disabled="true" disabled>Windows · soon</button>
+          </div>
+
+          <div class="install-strip" id="install-macos" role="tabpanel" aria-label="macOS install command">
+            <code data-install-cmd>brew install --cask edihasaj/tap/recall</code>
+            <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+
+          <div class="install-strip" id="install-linux" role="tabpanel" aria-label="Linux install command" hidden>
+            <code data-install-cmd>npm i -g @edihasaj/recall</code>
+            <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="9" y="9" width="10" height="10" rx="2"></rect>
                 <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
@@ -76,7 +93,7 @@
           </div>
 
           <p class="requirements">
-            macOS 15+ app. Node CLI for local development. Free and open source.
+            macOS 15+ app or Linux CLI via npm. Windows support is on the roadmap. Free and open source.
           </p>
         </div>
 
@@ -183,20 +200,24 @@
           <p class="eyebrow">Install</p>
           <h2>Install. Open. That's it.</h2>
           <p>
-            One Homebrew command, then click <strong>Install + Start</strong> in Recall.app.
-            The daemon auto-detects supported coding agents and wires MCP + lifecycle hooks for
-            you — no config, no flags, no CLI for the common path.
+            On macOS: one Homebrew command, then click <strong>Install + Start</strong> in Recall.app.
+            On Linux: one npm command, then <code>recall setup --yes</code>. Either path auto-detects
+            supported coding agents and wires MCP + lifecycle hooks for you.
           </p>
           <p>
             From the next session onward, Recall injects rules and gotchas into your agent's
-            context automatically. Under the hood the app runs <code>recall setup --yes</code> for
-            you — the CLI is there if you want to inspect or override, you don't need it.
+            context automatically. The CLI is there if you want to inspect or override —
+            you don't need it for the common path.
           </p>
         </div>
         <div class="command-stack" data-reveal="13">
-          <pre><code># everyone — install &amp; done
+          <pre><code># macOS — install &amp; done
 brew install --cask edihasaj/tap/recall
 # open Recall.app → Install + Start → magic</code></pre>
+          <pre><code># Linux — npm install
+npm i -g @edihasaj/recall
+recall setup --yes
+recall daemon install   # optional: systemd --user service</code></pre>
           <pre><code># contributors only — build from source
 git clone https://github.com/edihasaj/recall.git
 cd recall
@@ -228,17 +249,39 @@ npm test</code></pre>
     </footer>
 
     <script>
-      const copyButton = document.querySelector("[data-copy]");
-      copyButton?.addEventListener("click", async () => {
-        const target = document.querySelector(copyButton.dataset.copy);
-        if (!target) return;
-        await navigator.clipboard.writeText(target.textContent.trim());
-        copyButton.classList.add("copied");
-        copyButton.querySelector("span").textContent = "Copied";
-        window.setTimeout(() => {
-          copyButton.classList.remove("copied");
-          copyButton.querySelector("span").textContent = "Copy";
-        }, 1400);
+      // Copy buttons inside install-strip — read sibling [data-install-cmd] or the explicit selector.
+      document.querySelectorAll("[data-copy]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const selector = btn.dataset.copy;
+          const target = selector
+            ? document.querySelector(selector)
+            : btn.closest(".install-strip")?.querySelector("[data-install-cmd]");
+          if (!target) return;
+          await navigator.clipboard.writeText(target.textContent.trim());
+          btn.classList.add("copied");
+          const label = btn.querySelector("span");
+          if (label) label.textContent = "Copied";
+          window.setTimeout(() => {
+            btn.classList.remove("copied");
+            if (label) label.textContent = "Copy";
+          }, 1400);
+        });
+      });
+
+      // OS tabs in the hero
+      const osTabs = document.querySelectorAll(".os-tab[data-os]");
+      osTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const os = tab.dataset.os;
+          osTabs.forEach((t) => {
+            const active = t === tab;
+            t.classList.toggle("is-active", active);
+            t.setAttribute("aria-selected", active ? "true" : "false");
+          });
+          document.querySelectorAll("[id^='install-']").forEach((panel) => {
+            panel.hidden = panel.id !== `install-${os}`;
+          });
+        });
       });
     </script>
   </body>
