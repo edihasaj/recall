@@ -37,3 +37,8 @@ jobs:
 
       - name: Build CLI
         run: npm run build
+
+      - name: Linux CLI smoke
+        run: |
+          node dist/cli.js --version
+          node dist/cli.js doctor || true

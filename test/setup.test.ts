@@ -9,13 +9,13 @@ describe("local setup helper", () => {
     expect(paths.runtimeMcpPath).toBe("/Applications/Recall.app/Contents/Resources/Runtime/dist/mcp.js");
   });
 
-  it("fails fast when the app is missing", () => {
+  it("fails fast when the bundled runtime is missing", () => {
     expect(() =>
       runLocalSetup({
         appPath: "/tmp/DefinitelyMissingRecall.app",
         codex: false,
         claude: false,
       })
-    ).toThrow(/Recall\.app not found/);
+    ).toThrow(/Node runtime not found/);
   });
 });
