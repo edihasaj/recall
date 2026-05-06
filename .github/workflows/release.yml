@@ -15,6 +15,56 @@ permissions:
   contents: write
 
 jobs:
+  npm:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out release tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout "$RELEASE_TAG"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN missing; skipping npm publish"
+            exit 0
+          fi
+          pkg_version="$(node -p "require('./package.json').version")"
+          tag_version="${RELEASE_TAG#v}"
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "::error::package.json version ($pkg_version) does not match tag ($tag_version)"
+            exit 1
+          fi
+          if npm view "@edihasaj/recall@$pkg_version" version >/dev/null 2>&1; then
+            echo "@edihasaj/recall@$pkg_version already published; skipping"
+            exit 0
+          fi
+          npm publish
+
   macos-app:
     name: Build and publish macOS app
     runs-on: macos-15

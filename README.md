@@ -25,7 +25,7 @@ recall doctor
 ### npm (macOS, Linux)
 
 ```bash
-npm i -g recall
+npm i -g @edihasaj/recall
 recall setup --yes
 recall doctor
 # Optional: run as a background service
