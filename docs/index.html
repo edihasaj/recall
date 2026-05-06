@@ -211,14 +211,14 @@
           </p>
         </div>
         <div class="command-stack" data-reveal="13">
-          <pre><code># macOS — install &amp; done
+          <pre data-os="macos"><code># macOS — install &amp; done
 brew install --cask edihasaj/tap/recall
 # open Recall.app → Install + Start → magic</code></pre>
-          <pre><code># Linux — npm install
+          <pre data-os="linux" hidden><code># Linux — npm install
 npm i -g @edihasaj/recall
 recall setup --yes
 recall daemon install   # optional: systemd --user service</code></pre>
-          <pre><code># contributors only — build from source
+          <pre data-os="all"><code># contributors only — build from source
 git clone https://github.com/edihasaj/recall.git
 cd recall
 npm ci
@@ -280,6 +280,10 @@ npm test</code></pre>
           });
           document.querySelectorAll("[id^='install-']").forEach((panel) => {
             panel.hidden = panel.id !== `install-${os}`;
+          });
+          document.querySelectorAll(".command-stack [data-os]").forEach((block) => {
+            const target = block.dataset.os;
+            block.hidden = target !== "all" && target !== os;
           });
         });
       });
