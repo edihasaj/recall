@@ -214,7 +214,7 @@ h1 {
 .os-tabs {
   display: inline-flex;
   gap: 4px;
-  margin-top: 18px;
+  margin-top: 32px;
   padding: 4px;
   border: 1px solid rgba(36, 22, 17, 0.16);
   border-radius: 999px;
