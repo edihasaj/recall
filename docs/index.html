@@ -44,6 +44,7 @@
       <nav aria-label="Primary links">
         <a href="#install">Install</a>
         <a href="#how">How it works</a>
+        <a href="./usage.html">Usage</a>
         <a href="https://github.com/edihasaj/recall">GitHub</a>
       </nav>
     </header>
@@ -180,17 +181,24 @@
       <section class="install-panel" aria-label="Install and developer setup">
         <div data-reveal="12">
           <p class="eyebrow">Install</p>
-          <h2>Run it as a macOS app, CLI, or daemon.</h2>
+          <h2>Install. Open. That's it.</h2>
           <p>
-            GitHub Releases ship the app bundle. Homebrew cask installs update with <code>brew upgrade</code>. Source
-            builds stay simple for contributors.
+            One Homebrew command, then click <strong>Install + Start</strong> in Recall.app.
+            The daemon auto-detects supported coding agents and wires MCP + lifecycle hooks for
+            you — no config, no flags, no CLI for the common path.
+          </p>
+          <p>
+            From the next session onward, Recall injects rules and gotchas into your agent's
+            context automatically. Under the hood the app runs <code>recall setup --yes</code> for
+            you — the CLI is there if you want to inspect or override, you don't need it.
           </p>
         </div>
         <div class="command-stack" data-reveal="13">
-          <pre><code>brew install --cask edihasaj/tap/recall
-recall setup --yes
-recall doctor</code></pre>
-          <pre><code>git clone https://github.com/edihasaj/recall.git
+          <pre><code># everyone — install &amp; done
+brew install --cask edihasaj/tap/recall
+# open Recall.app → Install + Start → magic</code></pre>
+          <pre><code># contributors only — build from source
+git clone https://github.com/edihasaj/recall.git
 cd recall
 npm ci
 npm run build
