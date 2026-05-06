@@ -6,6 +6,18 @@ extension Notification.Name {
     static let recallRefreshStatus = Notification.Name("RecallRefreshStatus")
 }
 
+enum AppVersion {
+    static let display: String = {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let build = info?["CFBundleVersion"] as? String
+        if let build, build != short, !build.isEmpty {
+            return "v\(short) (\(build))"
+        }
+        return "v\(short)"
+    }()
+}
+
 @main
 struct RecallApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -93,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.autoenablesItems = false
 
         let header = NSMenuItem()
-        header.title = "Recall"
+        header.title = "Recall \(AppVersion.display)"
         header.isEnabled = false
         menu.addItem(header)
 
@@ -219,8 +231,20 @@ struct DashboardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Recall")
-                        .font(.system(size: 28, weight: .semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Recall")
+                            .font(.system(size: 28, weight: .semibold))
+                        Text(AppVersion.display)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.secondary.opacity(0.12))
+                            )
+                            .textSelection(.enabled)
+                    }
                     Text(controller.summary)
                         .foregroundStyle(.secondary)
                 }

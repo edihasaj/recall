@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 - 2026-05-06
+
+### Added
+
+- Recall.app now displays its version next to the dashboard title and in the menu bar dropdown header, so it's obvious which build is running after a Homebrew upgrade.
+
 ## 0.5.4 - 2026-05-06
 
 ### Fixed
