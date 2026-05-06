@@ -23,12 +23,18 @@ rsync -a "$root_dir/node_modules/" "$runtime_dir/node_modules/"
 cp "$root_dir/package.json" "$runtime_dir/package.json"
 
 xcodegen generate --spec "$app_dir/project.yml"
+
+pkg_version="$(node -p "require('$root_dir/package.json').version")"
+build_number="${RECALL_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
+
 xcodebuild \
   -project "$project_path" \
   -scheme Recall \
   -configuration Release \
   -derivedDataPath "$derived_data" \
   CODE_SIGNING_ALLOWED=NO \
+  MARKETING_VERSION="$pkg_version" \
+  CURRENT_PROJECT_VERSION="$build_number" \
   build
 
 app_path="$derived_data/Build/Products/Release/Recall.app"
