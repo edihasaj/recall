@@ -23,6 +23,12 @@ console.log(`cask "recall" do
 
   app "Recall.app"
 
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Recall.app"],
+                   sudo: false
+  end
+
   zap trash: [
     "~/.recall",
     "~/Library/LaunchAgents/com.recall.daemon.plist",
