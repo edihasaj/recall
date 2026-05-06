@@ -176,6 +176,10 @@ h1 {
   display: none;
 }
 
+#install-macos .install-strip + .install-strip {
+  margin-top: 8px;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

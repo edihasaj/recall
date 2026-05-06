@@ -70,15 +70,27 @@
             <button type="button" role="tab" class="os-tab is-disabled" aria-selected="false" aria-disabled="true" disabled>Windows · soon</button>
           </div>
 
-          <div class="install-strip" id="install-macos" role="tabpanel" aria-label="macOS install command">
-            <code data-install-cmd>brew install --cask edihasaj/tap/recall</code>
-            <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-              </svg>
-              <span>Copy</span>
-            </button>
+          <div id="install-macos" role="tabpanel" aria-label="macOS install commands">
+            <div class="install-strip">
+              <code data-install-cmd>brew install --cask edihasaj/tap/recall</code>
+              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="install-strip">
+              <code data-install-cmd>npm i -g @edihasaj/recall</code>
+              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
           </div>
 
           <div class="install-strip" id="install-linux" role="tabpanel" aria-label="Linux install command" hidden>
@@ -214,10 +226,10 @@
           <pre data-os="macos"><code># macOS — install &amp; done
 brew install --cask edihasaj/tap/recall
 # open Recall.app → Install + Start → magic</code></pre>
-          <pre data-os="linux" hidden><code># Linux — npm install
+          <pre data-os="all"><code># macOS or Linux — npm install
 npm i -g @edihasaj/recall
 recall setup --yes
-recall daemon install   # optional: systemd --user service</code></pre>
+recall daemon install   # optional: launchd / systemd --user service</code></pre>
           <pre data-os="all"><code># contributors only — build from source
 git clone https://github.com/edihasaj/recall.git
 cd recall
