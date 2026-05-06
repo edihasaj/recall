@@ -1,5 +1,5 @@
 {
-  "name": "recall",
+  "name": "@edihasaj/recall",
   "version": "0.5.1",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
@@ -12,6 +12,9 @@
     "url": "https://github.com/edihasaj/recall/issues"
   },
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "recall": "./dist/cli.js"
   },
