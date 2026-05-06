@@ -72,12 +72,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var healthStatusItem: NSMenuItem?
     private var setupStatusItem: NSMenuItem?
     private var dataStatusItem: NSMenuItem?
+    private var userInitiatedQuit = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Menu bar is the persistent surface. Closing the dashboard window should
         // leave the status item + daemon bridge alive regardless of the dock
         // icon preference; quit only happens via the menu's "Quit Recall" item.
         return false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // SwiftUI's Settings scene (and AppKit in some accessory-app paths)
+        // calls NSApp.terminate when its window closes, bypassing
+        // applicationShouldTerminateAfterLastWindowClosed. Cancel here unless
+        // the user explicitly clicked "Quit Recall" from the menu bar.
+        return userInitiatedQuit ? .terminateNow : .terminateCancel
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -213,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func quit() {
+        userInitiatedQuit = true
         NSApp.terminate(nil)
     }
 }

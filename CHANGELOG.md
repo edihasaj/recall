@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6 - 2026-05-06
+
+### Fixed
+
+- Closing the Settings window with its red close button no longer terminates Recall.app and removes the menu bar icon. `applicationShouldTerminate` now cancels termination unless the user explicitly invoked "Quit Recall" from the menu bar dropdown, working around SwiftUI's Settings scene calling `NSApp.terminate` directly.
+
 ## 0.5.5 - 2026-05-06
 
 ### Added
