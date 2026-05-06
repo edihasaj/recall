@@ -311,11 +311,21 @@ function safeHookAction<Args extends unknown[], R>(
     } catch (error) {
       let logPath = "~/.recall/logs/hook-errors.log";
       try {
-        const { appendFileSync, mkdirSync } = await import("node:fs");
+        const { appendFileSync, mkdirSync, statSync, renameSync, rmSync } = await import("node:fs");
         const { homedir } = await import("node:os");
         const dir = join(homedir(), ".recall", "logs");
         mkdirSync(dir, { recursive: true });
         logPath = join(dir, "hook-errors.log");
+        try {
+          const maxBytes = parseInt(process.env.RECALL_HOOK_LOG_MAX_BYTES ?? String(1024 * 1024), 10);
+          if (maxBytes > 0 && statSync(logPath).size >= maxBytes) {
+            const rotated = `${logPath}.1`;
+            try { rmSync(rotated, { force: true }); } catch {}
+            renameSync(logPath, rotated);
+          }
+        } catch {
+          // file missing is fine
+        }
         const message = error instanceof Error
           ? error.stack ?? error.message
           : String(error);

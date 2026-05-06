@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { eq, lt } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { activityEvents, feedbackEvents, historySnippets, implicitSignals, memories } from "../db/schema.js";
@@ -43,6 +44,7 @@ export interface MaintenanceConfig {
   sqlite_analyze_enabled: boolean;
   sqlite_optimize_enabled: boolean;
   sqlite_wal_checkpoint_enabled: boolean;
+  sqlite_wal_truncate_bytes: number;
   sqlite_vacuum_enabled: boolean;
   sqlite_vacuum_min_free_pages: number;
   sqlite_vacuum_min_free_ratio: number;
@@ -102,6 +104,10 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     sqlite_analyze_enabled: process.env.RECALL_SQLITE_ANALYZE_ENABLED !== "false",
     sqlite_optimize_enabled: process.env.RECALL_SQLITE_OPTIMIZE_ENABLED !== "false",
     sqlite_wal_checkpoint_enabled: process.env.RECALL_SQLITE_CHECKPOINT_ENABLED !== "false",
+    sqlite_wal_truncate_bytes: parseInt(
+      process.env.RECALL_SQLITE_WAL_TRUNCATE_BYTES ?? String(32 * 1024 * 1024),
+      10,
+    ),
     sqlite_vacuum_enabled: process.env.RECALL_SQLITE_VACUUM_ENABLED === "true",
     sqlite_vacuum_min_free_pages: parseInt(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_PAGES ?? "100", 10),
     sqlite_vacuum_min_free_ratio: parseFloat(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_RATIO ?? "0.1"),
@@ -317,6 +323,7 @@ export function runSqliteMaintenance(
     | "sqlite_analyze_enabled"
     | "sqlite_optimize_enabled"
     | "sqlite_wal_checkpoint_enabled"
+    | "sqlite_wal_truncate_bytes"
     | "sqlite_vacuum_enabled"
     | "sqlite_vacuum_min_free_pages"
     | "sqlite_vacuum_min_free_ratio"
@@ -339,7 +346,10 @@ export function runSqliteMaintenance(
   }
 
   if (config.sqlite_wal_checkpoint_enabled) {
-    sqlite.pragma("wal_checkpoint(PASSIVE)");
+    const mode = shouldTruncateWal(sqlite, config.sqlite_wal_truncate_bytes)
+      ? "TRUNCATE"
+      : "PASSIVE";
+    sqlite.pragma(`wal_checkpoint(${mode})`);
     checkpointRan = true;
   }
 
@@ -365,6 +375,18 @@ export function runSqliteMaintenance(
     page_count: pageCount,
     freelist_count: freelistCount,
   };
+}
+
+function shouldTruncateWal(
+  sqlite: { name: string },
+  thresholdBytes: number,
+): boolean {
+  if (!Number.isFinite(thresholdBytes) || thresholdBytes <= 0) return false;
+  try {
+    return statSync(`${sqlite.name}-wal`).size >= thresholdBytes;
+  } catch {
+    return false;
+  }
 }
 
 export function pruneOldActivityEvents(
