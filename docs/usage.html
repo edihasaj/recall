@@ -405,6 +405,19 @@ recall maintenance list</code></pre>
           </tbody>
         </table>
 
+        <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">Capture path</h3>
+        <p style="margin: 4px 0 10px; color: var(--ink-soft);">
+          Default flow on every prompt: a cheap multi-language pre-screen (en/es/fr/de/it/pt/ru/zh/ja/sq/tr) decides whether the prompt is worth showing the LLM. Pure code-request prompts are skipped. Rule-shaped prompts go through an <code>extract_rules_from_prompt</code> task; the LLM extracts zero or more durable rules and the applier creates candidate memories. The hook also calls <code>POST /dispatch/wake</code> so the dispatcher fires within seconds rather than on its timer. If no LLM provider is configured, the legacy regex extractor takes over (English-only, deterministic).
+        </p>
+        <table class="env-table">
+          <thead>
+            <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>RECALL_LLM_CAPTURE_DISABLED</code></td><td><code>false</code></td><td>Set <code>true</code> to force the regex-fallback path even when an LLM key is configured.</td></tr>
+          </tbody>
+        </table>
+
         <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">LLM dispatcher</h3>
         <table class="env-table">
           <thead>
@@ -412,7 +425,7 @@ recall maintenance list</code></pre>
           </thead>
           <tbody>
             <tr><td><code>RECALL_DISPATCHER_ENABLED</code></td><td><code>true</code></td><td>Disable the daemon-owned dispatcher (delegated SessionStart path still works).</td></tr>
-            <tr><td><code>RECALL_DISPATCHER_INTERVAL_SECONDS</code></td><td><code>86400</code></td><td>Seconds between dispatcher ticks. Daily by default.</td></tr>
+            <tr><td><code>RECALL_DISPATCHER_INTERVAL_SECONDS</code></td><td><code>86400</code></td><td>Seconds between timer-driven ticks. <code>POST /dispatch/wake</code> (called by the capture hook, debounced 3 s) bypasses the timer — captures land within seconds regardless.</td></tr>
             <tr><td><code>RECALL_DISPATCHER_MAX_TASKS_PER_RUN</code></td><td><code>5</code></td><td>Max tasks per tick.</td></tr>
             <tr><td><code>OPENAI_API_KEY</code> · <code>ANTHROPIC_API_KEY</code></td><td>—</td><td>Fallback when Keychain has no entry. Azure uses the four <code>AZURE_OPENAI_*</code> vars together.</td></tr>
           </tbody>

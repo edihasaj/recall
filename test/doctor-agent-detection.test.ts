@@ -3,7 +3,10 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { inspectAgentInstalls } from "../src/doctor/report.js";
-import { installClaudeCodeHooks } from "../src/agents/claude-code.js";
+import {
+  installClaudeCodeHooks,
+  installClaudeCodeMemoryOverride,
+} from "../src/agents/claude-code.js";
 import { installCodexHooks, installCodexNotifyBridge } from "../src/agents/codex.js";
 
 function freshHome() {
@@ -38,11 +41,17 @@ describe("doctor detects agent install state", () => {
       nodePath: "/opt/recall/node",
       cliPath: "/opt/recall/dist/cli.js",
     });
+    // Memory-override block is now part of a full Claude Code install; mirror
+    // that here so the doctor reports a clean state.
+    installClaudeCodeMemoryOverride({
+      configPath: join(home, ".claude", "CLAUDE.md"),
+    });
 
     const claude = inspectAgentInstalls(home).find((e) => e.agent === "claude-code")!;
     expect(claude.detected).toBe(true);
     expect(claude.mcp).toBe(true);
     expect(claude.hooks).toBe(true);
+    expect(claude.claude_md).toBe("current");
     expect(claude.notes).toHaveLength(0);
   });
 

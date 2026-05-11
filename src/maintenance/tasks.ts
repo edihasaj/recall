@@ -25,6 +25,11 @@ const ACTIVE_STATUSES: MaintenanceTaskStatus[] = [...OPEN_STATUSES, "completed"]
 const DEFAULT_LEASE_SECONDS = 600;
 
 export const DEFAULT_PRIORITIES: Record<MaintenanceTaskKind, number> = {
+  // extract_rules_from_prompt runs at higher priority than verify_capture
+  // because it is the primary capture path when an LLM provider is
+  // configured — its output IS the candidate creation. Without it, real
+  // rules never enter the queue at all.
+  extract_rules_from_prompt: 14,
   verify_capture: 12,
   refine_candidate: 10,
   merge_duplicates: 8,
@@ -167,7 +172,7 @@ export function getTaskStats(db: RecallDb): TaskStats {
   const rows = db.select().from(memoryMaintenanceTasks).all();
 
   const by_status = { pending: 0, claimed: 0, submitted: 0, completed: 0, abandoned: 0 } as Record<MaintenanceTaskStatus, number>;
-  const by_kind = { verify_capture: 0, refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0 } as Record<MaintenanceTaskKind, number>;
+  const by_kind = { verify_capture: 0, refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0, extract_rules_from_prompt: 0 } as Record<MaintenanceTaskKind, number>;
   const by_kind_status: Record<string, number> = {};
 
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
@@ -363,6 +368,41 @@ function dropLowestPriorityPending(
 }
 
 // --- Producers ---
+
+// LLM-primary capture enqueue: when a provider is configured, the prompt
+// hook hands the raw user prompt to the LLM for extraction instead of the
+// regex extractor. The LLM returns zero or more rules; the applier creates
+// candidate memories from them. Idempotent on (kind, target_key) so a
+// retried hook doesn't double-enqueue.
+export function enqueueExtractRulesFromPrompt(
+  db: RecallDb,
+  payload: {
+    prompt_id: string;
+    raw_prompt: string;
+    repo: string | null;
+    path: string | null;
+    agent: string | null;
+    session_id: string;
+    prev_assistant_turn?: string | null;
+    recent_tool_calls?: unknown;
+  },
+): string | null {
+  return insertTaskIdempotent(db, {
+    kind: "extract_rules_from_prompt",
+    target: payload.prompt_id,
+    repo: payload.repo,
+    payload: {
+      prompt_id: payload.prompt_id,
+      raw_prompt: payload.raw_prompt,
+      repo: payload.repo,
+      path: payload.path,
+      agent: payload.agent,
+      session_id: payload.session_id,
+      prev_assistant_turn: payload.prev_assistant_turn ?? null,
+      recent_tool_calls: payload.recent_tool_calls ?? null,
+    },
+  });
+}
 
 // Inline enqueue used by capture: every newly-created candidate gets a
 // verify_capture task so the LLM (when configured) can second-guess the
@@ -733,6 +773,24 @@ const SynthesizeRepoResult = z.object({
   summary_text: z.string().min(1).max(8000),
 });
 
+// LLM-primary capture: extract zero or more durable rules from a raw user
+// prompt. Empty list = "no rule worth saving here." This is the schema the
+// LLM commits to when it judges the prompt instead of the regex extractor.
+const ExtractedRule = z.object({
+  text: z.string().min(1).max(2000),
+  type: z.enum(["rule", "decision", "review_pattern", "command", "gotcha"]),
+  scope: MemoryScope,
+  path_scope: z.string().max(512).nullable().optional(),
+  confidence: z.number().min(0).max(1),
+  is_destructive_risky: z.boolean().optional(),
+  rationale: z.string().max(500).optional(),
+});
+
+const ExtractRulesFromPromptResult = z.object({
+  rules: z.array(ExtractedRule).max(10),
+  dropped_reason: z.string().max(500).optional(),
+});
+
 const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
   verify_capture: VerifyCaptureResult,
   refine_candidate: RefineCandidateResult,
@@ -740,6 +798,7 @@ const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
   merge_duplicates: MergeDuplicatesResult,
   summarize_session: SummarizeSessionResult,
   synthesize_repo: SynthesizeRepoResult,
+  extract_rules_from_prompt: ExtractRulesFromPromptResult,
 };
 
 export type RefineCandidateResult = z.infer<typeof RefineCandidateResult>;
@@ -748,6 +807,8 @@ export type SummarizeHistoryResult = z.infer<typeof SummarizeHistoryResult>;
 export type MergeDuplicatesResult = z.infer<typeof MergeDuplicatesResult>;
 export type SummarizeSessionResult = z.infer<typeof SummarizeSessionResult>;
 export type SynthesizeRepoResult = z.infer<typeof SynthesizeRepoResult>;
+export type ExtractedRule = z.infer<typeof ExtractedRule>;
+export type ExtractRulesFromPromptResult = z.infer<typeof ExtractRulesFromPromptResult>;
 
 export interface PeekOptions {
   repo?: string;

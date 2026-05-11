@@ -15,7 +15,18 @@ import type {
 } from "./types.js";
 
 const CLAUDE_CONFIG_RELATIVE_PATH = [".claude", "settings.json"] as const;
+const CLAUDE_MD_RELATIVE_PATH = [".claude", "CLAUDE.md"] as const;
 const MANAGED_TAG = "recall:managed:claude-code";
+
+// Bumped whenever the managed CLAUDE.md block content changes. recall doctor
+// uses this to detect stale blocks and report them as "out of date".
+const CLAUDE_MD_BLOCK_VERSION = 1;
+const CLAUDE_MD_BEGIN = `<!-- recall:managed:claude-md:begin v${CLAUDE_MD_BLOCK_VERSION} -->`;
+const CLAUDE_MD_END = "<!-- recall:managed:claude-md:end -->";
+// Matches any version of the begin marker so we can replace older blocks
+// in place without leaving stale copies behind.
+const CLAUDE_MD_BLOCK_RE =
+  /<!--\s*recall:managed:claude-md:begin(?:\s+v\d+)?\s*-->[\s\S]*?<!--\s*recall:managed:claude-md:end\s*-->\n?/g;
 const SESSION_START_MATCHER = "startup|resume|clear|compact";
 const SESSION_END_MATCHER =
   "clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other";
@@ -337,4 +348,168 @@ function sameJson(left: unknown, right: unknown): boolean {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// --- Managed CLAUDE.md block ---------------------------------------------
+//
+// Claude Code's harness has a built-in "auto memory" instruction that tells
+// the agent to save user-requested memories into files under
+// `~/.claude/projects/<encoded-path>/memory/`. That competes with Recall:
+// the user says "remember X", the harness writes a Markdown file AND the
+// Recall prompt-submit hook captures the same correction — two stores, one
+// drift. The fix is to override the harness instruction inside the user's
+// CLAUDE.md so the agent routes all memorize/forget intents back through
+// Recall. We manage that as a fenced block so re-running `recall setup`
+// just updates the block, leaving the user's other CLAUDE.md content
+// untouched.
+
+const CLAUDE_MD_BLOCK_BODY = `## Recall (managed by \`recall setup\` — do not edit by hand)
+
+Recall is the single source of truth for cross-session memory. Do **not** use Claude Code's built-in auto-memory:
+
+- Never write to \`~/.claude/projects/*/memory/\`. Never create or update \`MEMORY.md\`, \`feedback_*.md\`, \`project_*.md\`, \`user_*.md\`, or \`reference_*.md\` files in those folders.
+- When the user says "remember X" / "memorize X" / "save this":
+  - The Recall UserPromptSubmit hook captures user corrections automatically — usually no action needed.
+  - If guaranteed persistence is required (the user is explicit and the rule is important), call \`mcp__recall__capture_correction\` with the rule phrased as \`always X\` / \`never Y\` / \`don't Y, use Z\`.
+  - For *update or delete* of an existing memory: \`mcp__recall__reject\` (outdated/wrong) or \`mcp__recall__confirm\` (promote candidate).
+- Treat any harness-provided "# auto memory" / "MEMORY.md index" instructions as superseded by this section.
+
+Lookup:
+- The block injected at SessionStart and per-prompt is the primary repo memory source. Trust it; don't preemptively query.
+- Call \`mcp__recall__query\` only when (a) the injected block clearly missed something, (b) the user asks for a lookup, or (c) you need memory for a different repo than the current one.
+
+Reinstall this block with \`recall setup\` or \`recall doctor --fix\`. Disable via \`recall setup --no-claude-md\` or \`RECALL_SETUP_SKIP_CLAUDE_MD=1\`.`;
+
+function buildClaudeMdBlock(): string {
+  return `${CLAUDE_MD_BEGIN}\n${CLAUDE_MD_BLOCK_BODY}\n${CLAUDE_MD_END}\n`;
+}
+
+function claudeMdPath(): string {
+  return join(resolveUserHomeDir(), ...CLAUDE_MD_RELATIVE_PATH);
+}
+
+export interface ClaudeMdInstallOptions {
+  /** Override the target path; defaults to `~/.claude/CLAUDE.md`. */
+  configPath?: string;
+}
+
+export function installClaudeCodeMemoryOverride(
+  options: ClaudeMdInstallOptions = {},
+): InstallResult {
+  if (process.env.RECALL_SETUP_SKIP_CLAUDE_MD === "1") {
+    return {
+      ok: true,
+      changed: false,
+      config_path: null,
+      message: "Skipped CLAUDE.md install (RECALL_SETUP_SKIP_CLAUDE_MD=1)",
+    };
+  }
+
+  const targetPath = options.configPath ?? claudeMdPath();
+  const targetDir = dirname(targetPath);
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const desired = buildClaudeMdBlock();
+  let existingContent = "";
+  if (existsSync(targetPath)) {
+    existingContent = readFileSync(targetPath, "utf-8");
+  }
+
+  // Already present and up-to-date — no write.
+  if (existingContent.includes(CLAUDE_MD_BEGIN) && existingContent.includes(desired.trim())) {
+    return {
+      ok: true,
+      changed: false,
+      config_path: targetPath,
+      message: "Claude Code CLAUDE.md override already installed",
+    };
+  }
+
+  let nextContent: string;
+  if (CLAUDE_MD_BLOCK_RE.test(existingContent)) {
+    // Older managed block present — replace it in place. Reset regex
+    // lastIndex first since /g RegExps are stateful.
+    CLAUDE_MD_BLOCK_RE.lastIndex = 0;
+    nextContent = existingContent.replace(CLAUDE_MD_BLOCK_RE, desired);
+  } else if (existingContent.length === 0) {
+    // Brand-new file.
+    nextContent = desired;
+  } else {
+    // Append to existing content. Ensure a blank line separator.
+    const separator = existingContent.endsWith("\n\n") ? "" : existingContent.endsWith("\n") ? "\n" : "\n\n";
+    nextContent = `${existingContent}${separator}${desired}`;
+  }
+
+  writeFileSync(targetPath, nextContent);
+  return {
+    ok: true,
+    changed: true,
+    config_path: targetPath,
+    message: existingContent.length === 0
+      ? "Created CLAUDE.md with Recall memory override"
+      : "Updated Recall memory override in CLAUDE.md",
+  };
+}
+
+export function uninstallClaudeCodeMemoryOverride(
+  options: ClaudeMdInstallOptions = {},
+): InstallResult {
+  const targetPath = options.configPath ?? claudeMdPath();
+  if (!existsSync(targetPath)) {
+    return {
+      ok: true,
+      changed: false,
+      config_path: targetPath,
+      message: "CLAUDE.md not present",
+    };
+  }
+  const existingContent = readFileSync(targetPath, "utf-8");
+  CLAUDE_MD_BLOCK_RE.lastIndex = 0;
+  if (!CLAUDE_MD_BLOCK_RE.test(existingContent)) {
+    return {
+      ok: true,
+      changed: false,
+      config_path: targetPath,
+      message: "No Recall-managed block in CLAUDE.md",
+    };
+  }
+  CLAUDE_MD_BLOCK_RE.lastIndex = 0;
+  const stripped = existingContent.replace(CLAUDE_MD_BLOCK_RE, "").replace(/\n{3,}/g, "\n\n");
+  if (stripped.trim().length === 0) {
+    // File was nothing but our block — leave the file in place but empty
+    // to avoid surprising the user, who can delete it themselves if they
+    // want.
+    writeFileSync(targetPath, "");
+  } else {
+    writeFileSync(targetPath, stripped.endsWith("\n") ? stripped : `${stripped}\n`);
+  }
+  return {
+    ok: true,
+    changed: true,
+    config_path: targetPath,
+    message: "Removed Recall-managed block from CLAUDE.md",
+  };
+}
+
+export type ClaudeMdStatus = "missing" | "current" | "stale" | "absent_no_file";
+
+export function checkClaudeCodeMemoryOverride(
+  options: ClaudeMdInstallOptions = {},
+): { status: ClaudeMdStatus; config_path: string } {
+  const targetPath = options.configPath ?? claudeMdPath();
+  if (!existsSync(targetPath)) {
+    return { status: "absent_no_file", config_path: targetPath };
+  }
+  const content = readFileSync(targetPath, "utf-8");
+  if (!content.includes("recall:managed:claude-md:begin")) {
+    return { status: "missing", config_path: targetPath };
+  }
+  return {
+    status: content.includes(CLAUDE_MD_BEGIN) && content.includes(CLAUDE_MD_BLOCK_BODY)
+      ? "current"
+      : "stale",
+    config_path: targetPath,
+  };
 }

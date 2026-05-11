@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { installClaudeCodeHooks, uninstallClaudeCodeHooks } from "../agents/claude-code.js";
+import {
+  installClaudeCodeHooks,
+  installClaudeCodeMemoryOverride,
+  uninstallClaudeCodeHooks,
+  uninstallClaudeCodeMemoryOverride,
+} from "../agents/claude-code.js";
 import { installCodexHooks, uninstallCodexHooks } from "../agents/codex.js";
 import type { AgentName } from "../agents/types.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
@@ -12,6 +17,8 @@ export interface LocalSetupOptions {
   codex?: boolean;
   claude?: boolean;
   promptInjection?: boolean;
+  /** Install the managed CLAUDE.md memory-override block. Default true; opt out with --no-claude-md / RECALL_SETUP_SKIP_CLAUDE_MD=1. */
+  claudeMd?: boolean;
 }
 
 export interface LocalSetupResult {
@@ -23,6 +30,7 @@ export interface LocalSetupResult {
   claude: SetupStepResult;
   codex_hooks: SetupStepResult;
   claude_hooks: SetupStepResult;
+  claude_md: SetupStepResult;
 }
 
 export interface SetupStepResult {
@@ -39,6 +47,9 @@ export interface AgentSetupResult {
   mcp: SetupStepResult;
   hooks: SetupStepResult;
   hook_config_path: string | null;
+  /** Only set for Claude Code — managed CLAUDE.md override status. */
+  claude_md?: SetupStepResult;
+  claude_md_path?: string | null;
 }
 
 export interface RecallSetupOptions {
@@ -52,6 +63,8 @@ export interface RecallSetupOptions {
   uninstallHooks?: boolean;
   runner?: CommandRunner;
   promptInjection?: boolean;
+  /** Install the managed CLAUDE.md memory-override block. Default true. */
+  claudeMd?: boolean;
 }
 
 export interface RecallSetupResult {
@@ -105,6 +118,7 @@ export function runLocalSetup(opts: LocalSetupOptions = {}): LocalSetupResult {
     mcpOnly: false,
     scope: "global",
     promptInjection: opts.promptInjection,
+    claudeMd: opts.claudeMd,
   });
 
   const codex = result.agents.find((agent) => agent.agent === "codex");
@@ -119,6 +133,7 @@ export function runLocalSetup(opts: LocalSetupOptions = {}): LocalSetupResult {
     claude: claude?.mcp ?? skipped("skipped"),
     codex_hooks: codex?.hooks ?? skipped("skipped"),
     claude_hooks: claude?.hooks ?? skipped("skipped"),
+    claude_md: claude?.claude_md ?? skipped("skipped"),
   };
 }
 
@@ -143,6 +158,7 @@ export function runRecallSetup(opts: RecallSetupOptions = {}): RecallSetupResult
 
   const targetAgents = resolveTargetAgents(opts.agent);
   const cwd = resolve(opts.cwd ?? process.cwd());
+  const claudeMdEnabled = opts.claudeMd ?? true;
   const agents = targetAgents.map((agent) =>
     setupAgent(agent, {
       cwd,
@@ -154,6 +170,7 @@ export function runRecallSetup(opts: RecallSetupOptions = {}): RecallSetupResult
       scope,
       uninstallHooks,
       promptInjection: opts.promptInjection,
+      claudeMd: claudeMdEnabled,
     }),
   );
 
@@ -180,6 +197,7 @@ function setupAgent(
     scope: SetupScope;
     uninstallHooks: boolean;
     promptInjection?: boolean;
+    claudeMd?: boolean;
   },
 ): AgentSetupResult {
   const detected = detectAgent(agent);
@@ -198,12 +216,37 @@ function setupAgent(
         promptInjection: options.promptInjection,
       });
 
+  // Claude Code only: install the managed CLAUDE.md memory-override block.
+  // Skipped on mcp-only (it's a memory-routing concern, not an MCP concern),
+  // and when the caller opts out via --no-claude-md.
+  let claudeMd: SetupStepResult | undefined;
+  let claudeMdPath: string | null = null;
+  if (agent === "claude-code" && !options.mcpOnly && options.claudeMd !== false) {
+    if (options.dryRun) {
+      claudeMd = ok(
+        options.uninstallHooks
+          ? "would remove Recall block from CLAUDE.md"
+          : "would install Recall block into CLAUDE.md",
+      );
+    } else {
+      const result = options.uninstallHooks
+        ? uninstallClaudeCodeMemoryOverride()
+        : installClaudeCodeMemoryOverride();
+      claudeMd = { enabled: true, ok: result.ok, message: result.message };
+      claudeMdPath = result.config_path;
+    }
+  } else if (agent === "claude-code" && options.claudeMd === false) {
+    claudeMd = skipped("--no-claude-md");
+  }
+
   return {
     agent,
     detected,
     mcp,
     hooks,
     hook_config_path: options.mcpOnly ? null : hookConfigPath,
+    claude_md: claudeMd,
+    claude_md_path: claudeMdPath,
   };
 }
 

@@ -116,45 +116,60 @@ function scheduleMaintenanceLoop() {
 }
 
 let dispatcherDormantLogged = false;
+
+async function runDispatcherOnce(): Promise<void> {
+  if (dispatcherRunning) return;
+  const hasKey =
+    hasProviderConfigured("anthropic") ||
+    hasProviderConfigured("azure-openai") ||
+    hasProviderConfigured("openai");
+  if (!hasKey) {
+    if (!dispatcherDormantLogged) {
+      console.log("[recall] dispatcher dormant: no LLM provider configured (set one via 'recall maintenance credentials set <provider> <key>'; preview prompts via 'recall maintenance dispatch --preview')");
+      dispatcherDormantLogged = true;
+    }
+    return;
+  }
+  dispatcherDormantLogged = false;
+
+  dispatcherRunning = true;
+  try {
+    const report = await dispatchPendingTasks(db, {
+      maxTasks: dispatcherConfig.maxTasksPerRun,
+    });
+    if (report.attempted > 0 || report.applied > 0) {
+      console.log(
+        `[recall] dispatcher ${report.provider}: attempted=${report.attempted} applied=${report.applied} rejected=${report.rejected} released=${report.released}`,
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(`[recall] dispatcher failed: ${message}`);
+  } finally {
+    dispatcherRunning = false;
+  }
+}
+
+// Wake-up: triggered by the hook after enqueuing a task. Debounced so a
+// burst of hook calls (e.g. parallel sessions) collapses to one dispatch
+// run a few seconds later — that lets the dispatcher batch tasks and not
+// hammer the LLM provider per prompt.
+let dispatchWakeTimer: NodeJS.Timeout | null = null;
+const DISPATCH_WAKE_DEBOUNCE_MS = 3_000;
+function wakeDispatcherDebounced(): void {
+  if (!dispatcherConfig.enabled) return;
+  if (dispatchWakeTimer) return;
+  dispatchWakeTimer = setTimeout(() => {
+    dispatchWakeTimer = null;
+    void runDispatcherOnce();
+  }, DISPATCH_WAKE_DEBOUNCE_MS);
+  dispatchWakeTimer.unref?.();
+}
+
 function scheduleDispatcherLoop() {
   if (!dispatcherConfig.enabled) return;
-
-  const run = async () => {
-    if (dispatcherRunning) return;
-    // Skip if no provider is currently configured — picked up again next tick.
-    const hasKey =
-      hasProviderConfigured("anthropic") ||
-      hasProviderConfigured("azure-openai") ||
-      hasProviderConfigured("openai");
-    if (!hasKey) {
-      if (!dispatcherDormantLogged) {
-        console.log("[recall] dispatcher dormant: no LLM provider configured (set one via 'recall maintenance credentials set <provider> <key>'; preview prompts via 'recall maintenance dispatch --preview')");
-        dispatcherDormantLogged = true;
-      }
-      return;
-    }
-    dispatcherDormantLogged = false;
-
-    dispatcherRunning = true;
-    try {
-      const report = await dispatchPendingTasks(db, {
-        maxTasks: dispatcherConfig.maxTasksPerRun,
-      });
-      if (report.attempted > 0 || report.applied > 0) {
-        console.log(
-          `[recall] dispatcher ${report.provider}: attempted=${report.attempted} applied=${report.applied} rejected=${report.rejected} released=${report.released}`,
-        );
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.stack ?? error.message : String(error);
-      console.error(`[recall] dispatcher failed: ${message}`);
-    } finally {
-      dispatcherRunning = false;
-    }
-  };
-
   const timer = setInterval(() => {
-    void run();
+    void runDispatcherOnce();
   }, Math.max(60, dispatcherConfig.intervalSeconds) * 1000);
   timer.unref?.();
 }
@@ -398,6 +413,13 @@ const server = createServer(async (req, res) => {
         payload: body.payload ?? {},
       });
       return send(res, 200, result);
+    }
+
+    // Dispatch wake: called by the capture hook after enqueuing a task.
+    // Debounced 3s so a burst of hook calls collapses to one dispatch run.
+    if (path === "/dispatch/wake" && method === "POST") {
+      wakeDispatcherDebounced();
+      return send(res, 202, { status: "queued", debounce_ms: DISPATCH_WAKE_DEBOUNCE_MS });
     }
 
     // Hook prompt

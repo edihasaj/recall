@@ -107,7 +107,14 @@ program
     const report = getDoctorReport();
     if (opts.fix) {
       const detectedAgents = report.agents
-        .filter((a) => a.detected && (!a.mcp || !a.hooks))
+        .filter((a) => {
+          if (!a.detected) return false;
+          if (!a.mcp || !a.hooks) return true;
+          // Claude Code: also fix if the CLAUDE.md memory-override block is
+          // missing or stale, even when hooks + MCP are already wired.
+          if (a.agent === "claude-code" && a.claude_md && a.claude_md !== "current") return true;
+          return false;
+        })
         .map((a) => a.agent);
       if (detectedAgents.length === 0) {
         if (!opts.json) console.log("Nothing to fix — all detected agents are wired.");
@@ -120,6 +127,9 @@ program
           for (const agent of fixResult.agents) {
             console.log(`${formatAgentName(agent.agent)} MCP:   ${formatSetupStep(agent.mcp)}`);
             console.log(`${formatAgentName(agent.agent)} hooks: ${formatSetupStep(agent.hooks)}`);
+            if (agent.claude_md) {
+              console.log(`${formatAgentName(agent.agent)} CLAUDE.md: ${formatSetupStep(agent.claude_md)}`);
+            }
           }
           console.log("");
         }
@@ -223,6 +233,7 @@ setupCmd
   .option("--dry-run", "Show planned setup changes without writing")
   .option("--scope <scope>", "Hook config scope: global or project", "global")
   .option("--no-prompt-injection", "Opt out of per-prompt memory injection (writes RECALL_HOOK_INJECT_PROMPT=false inline into the agent hook command)")
+  .option("--no-claude-md", "Skip installing the managed CLAUDE.md memory-override block for Claude Code (the block stops Claude's built-in auto-memory from racing Recall)")
   .option("--yes", "Skip confirmation prompt")
   .action(async (opts) => {
     if (!opts.yes && !opts.dryRun) {
@@ -242,6 +253,7 @@ setupCmd
       scope: opts.scope,
       uninstallHooks: opts.uninstallHooks,
       promptInjection: opts.promptInjection,
+      claudeMd: opts.claudeMd,
     });
 
     console.log(`Recall app: ${result.appPath}`);
@@ -262,6 +274,12 @@ setupCmd
       if (agent.hook_config_path) {
         console.log(`  config:   ${agent.hook_config_path}`);
       }
+      if (agent.claude_md) {
+        console.log(`  CLAUDE.md: ${formatSetupStep(agent.claude_md)}`);
+        if (agent.claude_md_path) {
+          console.log(`  file:      ${agent.claude_md_path}`);
+        }
+      }
     }
   });
 
@@ -272,12 +290,14 @@ setupCmd
   .option("--codex-only", "Configure only Codex")
   .option("--claude-only", "Configure only Claude")
   .option("--no-prompt-injection", "Opt out of per-prompt memory injection (writes RECALL_HOOK_INJECT_PROMPT=false inline into the agent hook command)")
+  .option("--no-claude-md", "Skip installing the managed CLAUDE.md memory-override block for Claude Code")
   .action((opts) => {
     const result = runLocalSetup({
       appPath: opts.appPath,
       codex: opts.claudeOnly ? false : true,
       claude: opts.codexOnly ? false : true,
       promptInjection: opts.promptInjection,
+      claudeMd: opts.claudeMd,
     });
 
     console.log(`Recall app: ${result.appPath}`);
@@ -289,6 +309,7 @@ setupCmd
     console.log(`Codex hooks:  ${formatSetupStep(result.codex_hooks)}`);
     console.log(`Claude MCP:   ${formatSetupStep(result.claude)}`);
     console.log(`Claude hooks: ${formatSetupStep(result.claude_hooks)}`);
+    console.log(`Claude.md:    ${formatSetupStep(result.claude_md)}`);
   });
 
 // --- hook ---

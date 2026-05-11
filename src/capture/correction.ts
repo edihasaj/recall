@@ -14,7 +14,9 @@ import {
 import type { CreateMemoryInput } from "../models/memory.js";
 import type { CaptureContext, MemoryItem, MemoryType, EvidenceEntry } from "../types.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
-import { enqueueVerifyCapture } from "../maintenance/tasks.js";
+import { enqueueExtractRulesFromPrompt, enqueueVerifyCapture } from "../maintenance/tasks.js";
+import { hasAnyLlmProvider } from "../maintenance/dispatcher.js";
+import { randomUUID } from "node:crypto";
 import { inferScope } from "./scope.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
@@ -93,6 +95,69 @@ export function isTriggerTemplateRule(text: string): boolean {
 
 export function isHighRiskRule(text: string): boolean {
   return isDestructiveRisky(text) || isTriggerTemplateRule(text);
+}
+
+// Multi-language pre-screen for the LLM-primary capture path. Cheap regex
+// asking "is this prompt worth showing to the LLM at all?" — most coding
+// prompts are pure code requests with zero rule content. We only forward to
+// the LLM when at least one rule-shaped signal is present in any supported
+// language, OR the user uses an explicit save verb. False positives are
+// cheap (small extra LLM call); false negatives mean a rule slips by, so
+// we err on the side of letting things through.
+// JavaScript's `\b` is ASCII-only even with the `u` flag, so it fails on
+// Cyrillic, Albanian/Turkish diacritics, and CJK scripts. We use explicit
+// lookarounds with Unicode property escapes for non-ASCII alternatives, and
+// plain `\b` for ASCII Latin words.
+const NON_LETTER = "(?<![\\p{L}])(?:";
+const NON_LETTER_END = ")(?![\\p{L}])";
+const PROMPT_SCREEN_RE = new RegExp(
+  [
+    // English imperatives + save verbs (ASCII — `\b` works)
+    "\\b(?:always|never|don't|do\\s*not|must|should|prefer|avoid|remember|memorize|note|save\\s+this|keep\\s+in\\s+mind|by\\s+default|use\\s+only|forbid|please\\s+(?:always|never))\\b",
+    // Romance languages (handle diacritics with Unicode boundaries)
+    `${NON_LETTER}siempre|nunca|jamás|no\\s+uses|prefiere|recuerda${NON_LETTER_END}`,
+    `${NON_LETTER}toujours|jamais|n'utilise(?:z)?\\s+pas|préfère|rappel${NON_LETTER_END}`,
+    `${NON_LETTER}immer|nie(?:mals)?|nicht\\s+verwenden|bevorzuge|merk\\s*dir${NON_LETTER_END}`,
+    `${NON_LETTER}sempre|mai|non\\s+usare|preferisci|ricorda${NON_LETTER_END}`,
+    `${NON_LETTER}não\\s+use|prefira|lembre${NON_LETTER_END}`,
+    // Russian (Cyrillic)
+    `${NON_LETTER}всегда|никогда|не\\s+используй|предпочти|запомни${NON_LETTER_END}`,
+    // CJK — no word boundaries needed
+    "(?:总是|从不|不要使用|偏好|记住|常に|決して|使わない|覚えて)",
+    // Albanian (Edi's native) — has diacritics
+    `${NON_LETTER}gjithmonë|asnjëherë|kurrë|mos\\s+përdor|mbaj\\s+mend${NON_LETTER_END}`,
+    // Turkish
+    `${NON_LETTER}her\\s*zaman|asla|kullanma|tercih\\s+et|hatırla${NON_LETTER_END}`,
+  ].join("|"),
+  "iu",
+);
+
+// Best-effort wake-up to the local daemon's /dispatch/wake endpoint. The
+// daemon listens on a local socket; if it isn't running, the request fails
+// silently and the timer-based dispatcher cycle catches up later. Debounced
+// in the daemon itself so repeated hook calls collapse to one dispatch run.
+function wakeDispatcherBestEffort(): void {
+  const port = parseInt(process.env.RECALL_DAEMON_PORT ?? "47649", 10);
+  // Fire-and-forget; don't await, don't crash the hook on failure.
+  fetch(`http://127.0.0.1:${port}/dispatch/wake`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+    signal: AbortSignal.timeout(250),
+  }).catch(() => {
+    // Daemon not running, port closed, or timeout — ignore. The dispatcher
+    // will eventually pick up the task on its own schedule.
+  });
+}
+
+export function isPromptWorthLLM(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 8) return false;
+  // Trivial: empty or pure code / shell input
+  if (/^```/.test(trimmed)) return false;
+  // Voice-transcripted long rambles always worth a look (LLM can extract)
+  if (trimmed.length > 800) return true;
+  return PROMPT_SCREEN_RE.test(trimmed);
 }
 
 export function detectCorrections(text: string): CorrectionMatch[] {
@@ -278,6 +343,34 @@ export async function processCorrection(
   text: string,
   ctx: CorrectionContext,
 ): Promise<string[]> {
+  // LLM-primary path: when a provider is configured and the prompt passes
+  // the cheap multi-language pre-screen, hand the raw prompt to the LLM via
+  // an extract_rules_from_prompt task. The LLM extracts AND judges in one
+  // call; the applier creates candidate memories from its output. The hook
+  // doesn't block — it just enqueues and returns. The daemon dispatcher
+  // (woken via /dispatch/wake) processes the task within seconds.
+  //
+  // We deliberately bypass the regex extractor here. The LLM is the judge.
+  // Regex stays as a fallback for when no provider is configured.
+  if (process.env.RECALL_LLM_CAPTURE_DISABLED !== "true" && hasAnyLlmProvider() && isPromptWorthLLM(text)) {
+    const promptId = `prompt:${ctx.sessionId}:${Date.now()}:${randomUUID().slice(0, 8)}`;
+    const taskId = enqueueExtractRulesFromPrompt(db, {
+      prompt_id: promptId,
+      raw_prompt: text,
+      repo: ctx.repo ?? null,
+      path: ctx.path ?? null,
+      agent: ctx.agent ?? null,
+      session_id: ctx.sessionId,
+      prev_assistant_turn: ctx.prev_assistant_turn ?? null,
+      recent_tool_calls: ctx.recent_tool_calls ?? null,
+    });
+    // Best-effort wake-up; missing daemon is fine, the timer-based cycle
+    // will still run.
+    wakeDispatcherBestEffort();
+    return taskId ? [] : [];
+  }
+
+  // --- Fallback: regex path (used when no LLM provider configured) ---
   const corrections = detectCorrections(text);
   if (corrections.length === 0) return [];
   const profile = getRepoQualityProfile(db, ctx.repo);

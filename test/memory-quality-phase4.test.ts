@@ -71,7 +71,7 @@ describe("memory quality phase 4 promotion-on-repetition", () => {
     recordFeedback(db, siblingId, "s2", true, "followed");
     recordFeedback(db, siblingId, "s3", true, "followed");
 
-    const candidateIds = processCorrection(db, "always use bun", {
+    const candidateIds = processCorrection(db, "always use bun as the runtime", {
       sessionId: "s4",
       repo: "test/repo",
     });
