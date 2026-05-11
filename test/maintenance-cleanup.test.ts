@@ -336,6 +336,40 @@ describe("capture-time fragment filter", () => {
     const ramble = "always " + "blah ".repeat(80);
     expect(qualityReasons(ramble)).toContain("too_long");
   });
+
+  // Regression: fragments we observed slipping into production memories.
+  // The old VERB_HINTS contained the modals themselves, so any rule-shaped
+  // fragment that started with always/never/must passed the verb check
+  // trivially; the too_short threshold was also too lenient (14).
+  it("rejects modal-only and bare-passive fragments observed in production", async () => {
+    const { qualityReasons } = await import("../src/maintenance/cleanup.js");
+    // "always can you find" — embedded question + no real verb + too short
+    expect(qualityReasons("always can you find")).toEqual(
+      expect.arrayContaining(["too_short", "embedded_question", "no_verb"]),
+    );
+    // "always be used." — bare passive, too short to be a real rule
+    expect(qualityReasons("always be used.")).toContain("too_short");
+    // "never picked up within 60 minutes" — no action verb, just narration
+    expect(qualityReasons("never picked up within 60 minutes")).toContain("no_verb");
+    // "never sends a banner —" — trailing dash + no_verb
+    expect(qualityReasons("never sends a banner —")).toEqual(
+      expect.arrayContaining(["trailing_dash", "no_verb"]),
+    );
+    // "must work end to end doesn't bring files here" — no recognized verb
+    expect(qualityReasons("must work end to end doesn't bring files here")).toContain("no_verb");
+    // "must be checked not like this" — no real action verb, too short
+    expect(qualityReasons("must be checked not like this")).toEqual(
+      expect.arrayContaining(["no_verb"]),
+    );
+  });
+
+  it("keeps well-formed rules with action verbs intact", async () => {
+    const { qualityReasons } = await import("../src/maintenance/cleanup.js");
+    expect(qualityReasons("Always use pnpm not npm in this repo")).toHaveLength(0);
+    expect(qualityReasons("Never commit secrets to the repo")).toHaveLength(0);
+    expect(qualityReasons("Run tests for this PR before merging")).toHaveLength(0);
+    expect(qualityReasons("Do not set securityContext.privileged=true")).toHaveLength(0);
+  });
 });
 
 describe("maintenance cleanup — suppressUnproductiveCommands", () => {

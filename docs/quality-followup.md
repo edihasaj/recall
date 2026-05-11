@@ -9,6 +9,8 @@ Snapshot of the work shipped on 2026-04-28/29 and what to verify two weeks
 later. This file is meant to be self-contained so a future Claude can pick
 it up cold.
 
+> **2026-05-11 update — capture architecture flipped.** When an LLM provider is configured, capture no longer goes through the regex extractor + `qualityReasons` gate. Instead the prompt is judged by an `extract_rules_from_prompt` LLM task (priority 14) and the regex path is now a fallback for offline/airgapped runs. The fragment-filter signals documented below still apply under that fallback. See `docs/configuration.md → Capture path` for the full flow.
+
 ## Baseline (recorded 2026-04-28)
 
 - Snapshot id: `2b07bd49`, note `phase-1+2+3 baseline`

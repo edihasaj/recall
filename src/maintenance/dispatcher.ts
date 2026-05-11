@@ -204,6 +204,10 @@ async function runSingle(
   }
 }
 
+export function hasAnyLlmProvider(): boolean {
+  return resolveProvider() != null;
+}
+
 function resolveProvider(preferred?: LlmProvider): LlmProvider | null {
   const candidates: LlmProvider[] = preferred
     ? [preferred]
@@ -259,9 +263,71 @@ export function buildPrompt(task: MaintenanceTask): Prompt | null {
       return buildSummarizeSessionPrompt(task);
     case "synthesize_repo":
       return buildSynthesizeRepoPrompt(task);
+    case "extract_rules_from_prompt":
+      return buildExtractRulesFromPromptPrompt(task);
     default:
       return null;
   }
+}
+
+function buildExtractRulesFromPromptPrompt(task: MaintenanceTask): Prompt {
+  const payload = task.payload as {
+    raw_prompt?: string;
+    repo?: string | null;
+    path?: string | null;
+    agent?: string | null;
+    prev_assistant_turn?: string | null;
+    recent_tool_calls?: unknown;
+  };
+  const system = [
+    "You are the capture judge for a coding-agent memory store.",
+    "Read the USER PROMPT below and extract zero or more DURABLE RULES the user is stating about how the agent should behave on this repo (or globally).",
+    "A rule must be:",
+    "  (a) Imperative — telling the agent what to always/never do, or what to prefer.",
+    "  (b) Durable — the user expects it to apply across future sessions, not just this one task.",
+    "  (c) Specific — concrete enough that an agent can follow it without further clarification.",
+    "Recognize rules in ANY natural language (English, Spanish, French, German, Italian, Portuguese, Russian, Chinese, Japanese, Albanian, Turkish, Arabic, …). When the source is non-English, return the cleaned rule TEXT in English so memories are searchable across sessions.",
+    "REJECT (return empty list):",
+    "  • Questions ('should we use X?'), one-off task requests ('please fix this bug now'), narration ('I never use X' as description of past behavior), code paste, error logs, transcripts.",
+    "  • Trigger-template rules ('when user says X, do Y') and destructive-risky rules (delete/wipe/drop + settings/secrets/branches/files) — return them but flag is_destructive_risky=true so they require explicit user confirm before going active.",
+    "  • Anything where the intent is ambiguous without surrounding context.",
+    "Output a single CANONICAL sentence per rule, in imperative mood. Strip filler words (uh, um, like, you know).",
+    "Set scope as tight as the evidence supports: 'path' if a specific file/dir is referenced, 'repo' for repo-wide, 'global' only if the user explicitly says 'across all my projects' / 'globally' / 'everywhere'.",
+    "Confidence: 0.9+ for unambiguous explicit rules, 0.5-0.8 for inferred/soft preferences, below 0.5 means you should probably not return it at all.",
+    "Be STRICT — false positives produce wrong agent behavior. When unsure, prefer empty list over a low-confidence guess.",
+    JSON_ONLY,
+  ].join(" ");
+  const recentToolsSummary = summarizeRecentToolCalls(payload.recent_tool_calls);
+  const user = [
+    `Repo: ${JSON.stringify(payload.repo ?? null)}`,
+    `Path: ${JSON.stringify(payload.path ?? null)}`,
+    `Agent: ${JSON.stringify(payload.agent ?? null)}`,
+    payload.prev_assistant_turn
+      ? `Previous assistant turn (for context only — do not extract rules from it): ${JSON.stringify(payload.prev_assistant_turn.slice(0, 800))}`
+      : "Previous assistant turn: null",
+    recentToolsSummary ? `Recent tool calls: ${recentToolsSummary}` : "Recent tool calls: none",
+    "",
+    `USER PROMPT:`,
+    JSON.stringify(payload.raw_prompt ?? ""),
+    "",
+    'Return JSON: {"rules": [{"text": string, "type": "rule"|"decision"|"review_pattern"|"command"|"gotcha", "scope": "session"|"path"|"repo"|"team"|"global", "path_scope": string|null, "confidence": number, "is_destructive_risky": boolean, "rationale": string}], "dropped_reason": string?}',
+    'When the prompt contains no durable rule, return {"rules": []} with a brief dropped_reason.',
+  ].join("\n");
+  return { system, user, max_output_tokens: 800 };
+}
+
+function summarizeRecentToolCalls(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return value
+    .slice(-5)
+    .map((entry: any) => {
+      if (!entry || typeof entry !== "object") return null;
+      const name = typeof entry.name === "string" ? entry.name : "tool";
+      const path = typeof entry.path === "string" ? entry.path : null;
+      return path ? `${name}(${path})` : name;
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 function buildVerifyCapturePrompt(task: MaintenanceTask): Prompt {

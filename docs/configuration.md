@@ -27,6 +27,57 @@ Where to set them:
 - **At install time**: pass `--no-prompt-injection` to `recall setup` (or `recall setup local`) and the opt-out is written inline into the agent hook command — survives shell rc edits.
 - **Daemon-wide** (affects hooks invoked through the daemon transport only): edit `~/Library/LaunchAgents/com.recall.daemon.plist` under `EnvironmentVariables`, then `recall daemon restart`.
 
+## Capture path (LLM-primary)
+
+When a user prompt arrives on `UserPromptSubmit`, Recall has to decide whether anything in it is a durable rule worth saving. There are two paths, and the right one is picked automatically.
+
+### Path A — LLM-primary (default when a provider is configured)
+
+The hook does **not** try to extract rules with regex. Instead:
+
+1. A cheap **multi-language pre-screen** asks "is this prompt worth showing to the LLM at all?" It looks for imperative/save-intent markers in en/es/fr/de/it/pt/ru/zh/ja/sq/tr (e.g. `always`/`never`/`remember`, `siempre`, `toujours`, `immer`, `всегда`, `总是`, `常に`, `gjithmonë`). Pure code-request prompts with no rule signal are skipped — no LLM call, no cost.
+2. Prompts that pass the screen enqueue an `extract_rules_from_prompt` task (priority 14, top of queue).
+3. The hook calls `POST /dispatch/wake` on the local daemon (debounced 3 s) so the dispatcher fires within seconds instead of waiting for its scheduled tick.
+4. The LLM extracts zero or more durable rules from the prompt, in any language, and returns one canonical English sentence per rule with confidence and scope. Empty list is a valid answer ("nothing worth saving here").
+5. The applier creates one candidate memory per rule with semantic dedup against existing same-repo memories. Promotion still flows through repetition or explicit confirm — the LLM judges, never auto-activates.
+
+### Path B — Regex fallback (no provider configured, or LLM explicitly disabled)
+
+Same regex extractor + `qualityReasons` filter as before. Captures `always|never|must|don't VERB OBJECT` shapes in English only, with a deterministic quality gate. Use this path when:
+
+- You haven't set an LLM credential yet.
+- You're running tests (vitest pins this path on automatically).
+- You explicitly want the cheap zero-cost path on a particular shell.
+
+### Capture env vars
+
+| Variable | Default | Effect |
+|---|---|---|
+| `RECALL_LLM_CAPTURE_DISABLED` | `false` (i.e. LLM path enabled when a provider is configured) | Set to `true` to force the regex fallback path even when a key is present. Useful for offline/airgapped runs or for benchmarking. |
+| `RECALL_SETUP_SKIP_CLAUDE_MD` | unset | Set to `1` to skip installing the managed CLAUDE.md memory-override block during `recall setup`. See below for what the block does. |
+
+### Claude Code memory-override block
+
+Claude Code's harness ships a built-in "auto memory" feature that writes user-requested memories into `~/.claude/projects/<encoded-path>/memory/MEMORY.md`. That competes with Recall: the user says "remember X", the harness writes a file AND the Recall hook captures the same correction — two stores, one drift.
+
+`recall setup` writes a fenced block into `~/.claude/CLAUDE.md` that overrides the harness instruction, telling Claude Code to route all memorize/forget intents back through Recall (the hook handles capture; explicit `mcp__recall__capture_correction` / `mcp__recall__reject` / `mcp__recall__confirm` for forced operations). The block is delimited by `<!-- recall:managed:claude-md:begin vN -->` / `<!-- recall:managed:claude-md:end -->` so subsequent `recall setup` / `recall doctor --fix` runs update just that section, leaving the rest of the user's CLAUDE.md untouched.
+
+`recall doctor` reports the block status as `claude.md:ok` / `STALE` / `MISSING` / `ABSENT_NO_FILE`. `recall doctor --fix` installs or repairs.
+
+Opt out:
+- `recall setup --no-claude-md` (one-shot)
+- `RECALL_SETUP_SKIP_CLAUDE_MD=1` (persistent in `~/.zshrc` / `~/.bashrc`)
+
+### Tuning the dispatcher for LLM-primary capture
+
+The dispatcher's default `RECALL_DISPATCHER_INTERVAL_SECONDS=86400` (daily) made sense for batch maintenance, but it's too slow for capture: a rule captured today wouldn't be judged until tomorrow. The `/dispatch/wake` endpoint fixes the common case (hook fires it on every enqueue, debounced), but you can also lower the timer-based interval if you frequently work offline from the daemon:
+
+```bash
+RECALL_DISPATCHER_INTERVAL_SECONDS=900  # 15 min — captures land within 15m even if the wake endpoint is unreachable
+```
+
+The dispatcher continues to honor `RECALL_DISPATCHER_MAX_TASKS_PER_RUN` (default 5) per tick — burst protection.
+
 ## LLM-assisted memory maintenance
 
 Recall enqueues maintenance tasks (refine candidates, merge near-duplicates, summarize histories, etc.) as you use it. There are two ways those tasks get executed:
@@ -70,12 +121,14 @@ Provider auto-selection order when multiple are configured and you don't pass `-
 
 If no key is configured, the daemon still enqueues tasks and dispatches them to zero. Instead, the pending backlog surfaces in the SessionStart context of the next agent session. The active agent can pick a task up and run it against its own LLM — no extra cost because that agent was already running.
 
+The dispatcher handles all LLM-needing task kinds: `extract_rules_from_prompt` (capture, priority 14), `verify_capture` (priority 12), `refine_candidate`, `merge_duplicates`, `summarize_history`, `summarize_session`, `synthesize_repo`. Capture tasks are top-priority so the user sees fresh memories within seconds of a `/dispatch/wake` ping (see the Capture path section above).
+
 ### Dispatcher env vars
 
 | Variable | Default | Effect |
 |---|---|---|
 | `RECALL_DISPATCHER_ENABLED` | `true` | Set to `false` to disable the daemon-owned dispatcher (delegated path still works). |
-| `RECALL_DISPATCHER_INTERVAL_SECONDS` | `86400` | Seconds between dispatcher ticks. Daily by default. |
+| `RECALL_DISPATCHER_INTERVAL_SECONDS` | `86400` | Seconds between timer-driven dispatcher ticks. Daily by default. `POST /dispatch/wake` (called by the capture hook) bypasses the timer, debounced 3 s — so capture latency stays low regardless. Lower this to 900 (15 min) if you frequently work without the daemon reachable. |
 | `RECALL_DISPATCHER_MAX_TASKS_PER_RUN` | `5` | Max tasks per tick. Floor on memory_maintenance_tasks churn. |
 | `OPENAI_API_KEY` | — | Fallback when Keychain is unavailable or `recall maintenance credentials set openai` hasn't been run. |
 | `ANTHROPIC_API_KEY` | — | Same, for Anthropic. |
@@ -90,6 +143,8 @@ The deterministic cleanup loop (no LLM required) merges exact-text duplicates,
 rejects voice/typing fragments captured as user_correction candidates, and
 auto-promotes high-signal corrections. Every action lands in
 `maintenance_cleanup_log` with before/after snapshots.
+
+Fragment-rejection signals: `too_short` (<20 chars), `too_long` (>300 chars), `bare_modal`, `trailing_question`, `trailing_double_dot`, `trailing_dash`, `dangling_connector`, `filler_prefix`, `embedded_question`, `no_verb`. The list is intentionally strict — under the regex-fallback path it's the only quality gate; under the LLM-primary path the LLM is the real judge and these signals just keep obvious garbage out of the candidate pool when the LLM is unavailable.
 
 | Variable | Default | Effect |
 |---|---|---|

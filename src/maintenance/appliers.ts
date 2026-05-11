@@ -2,11 +2,15 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets, memories } from "../db/schema.js";
-import { getMemory } from "../models/memory.js";
+import { createMemory, getMemory, queryMemories } from "../models/memory.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
-import type { MaintenanceTask } from "../types.js";
+import type { CaptureContext, MaintenanceTask, MemoryType } from "../types.js";
+import { isHighRiskRule } from "../capture/correction.js";
+import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import type {
+  ExtractedRule,
+  ExtractRulesFromPromptResult,
   MergeDuplicatesResult,
   RefineCandidateResult,
   SummarizeHistoryResult,
@@ -383,6 +387,113 @@ export function applySynthesizeRepo(
   return { audit_entry_id: null, target_id: id, changed_fields: ["text"] };
 }
 
+// LLM-primary capture applier. The LLM extracted zero or more rules from the
+// raw user prompt; for each one we create a candidate memory (subject to
+// dedup against existing same-repo memories). The applier never auto-promotes
+// — promotion still flows through repetition or explicit user confirm, same
+// as the regex path. Destructive-risky rules and trigger-template rules are
+// always created as candidates, never active, regardless of confidence.
+export function applyExtractRulesFromPrompt(
+  db: RecallDb,
+  task: MaintenanceTask,
+  result: ExtractRulesFromPromptResult,
+): ApplyOutcome {
+  const payload = task.payload as {
+    repo?: string | null;
+    path?: string | null;
+    agent?: string | null;
+    session_id?: string;
+    raw_prompt?: string;
+  };
+  const repo = payload.repo ?? null;
+  const profile = getRepoQualityProfile(db, repo ?? undefined);
+
+  if (!result.rules || result.rules.length === 0) {
+    return { audit_entry_id: null, target_id: task.id, changed_fields: [] };
+  }
+
+  const captureContext: CaptureContext = {
+    prev_assistant_text: undefined,
+    recent_tool_calls: [],
+    repo,
+    path: payload.path ?? null,
+    agent: payload.agent ?? undefined,
+  };
+
+  const createdIds: string[] = [];
+  for (const rule of result.rules) {
+    if (existsSimilar(db, repo, rule)) continue;
+
+    const memoryType = (rule.type as MemoryType) ?? "rule";
+    const id = createMemory(db, {
+      type: memoryType,
+      text: rule.text,
+      scope: rule.scope,
+      path_scope: rule.path_scope ?? null,
+      repo,
+      source: "user_correction",
+      confidence: seedCandidateConfidence(rule.confidence, profile),
+      evidence: [
+        {
+          type: "session_correction",
+          session: payload.session_id ?? "unknown",
+          timestamp: new Date().toISOString(),
+          context: payload.raw_prompt ?? "",
+        },
+      ],
+      capture_context: captureContext,
+    });
+    createdIds.push(id);
+
+    const after = getMemory(db, id);
+    recordAuditWithSnapshot(
+      db,
+      id,
+      "created",
+      `maintenance:${task.claimed_by ?? "llm"}`,
+      `extract_rules_from_prompt:${task.id}${rule.rationale ? `:${rule.rationale.slice(0, 200)}` : ""}`,
+      null,
+      after ?? null,
+    );
+
+    // High-risk rules never auto-promote, even if LLM gives high confidence.
+    // The existing maybePromoteGroupCandidate path (in correction.ts) skips
+    // them; for parity we just rely on it remaining a candidate here.
+    if (rule.is_destructive_risky || isHighRiskRule(rule.text)) {
+      // No-op; candidate stays candidate until explicit confirm.
+    }
+  }
+
+  return {
+    audit_entry_id: null,
+    target_id: createdIds[0] ?? task.id,
+    changed_fields: createdIds.length > 0 ? ["created_memories"] : [],
+  };
+}
+
+function existsSimilar(
+  db: RecallDb,
+  repo: string | null,
+  rule: ExtractedRule,
+): boolean {
+  if (!repo) return false;
+  const candidates = queryMemories(db, { repo: repo ?? undefined, type: rule.type as MemoryType })
+    .filter((memory) => memory.status !== "rejected");
+  const normalized = rule.text.toLowerCase().trim();
+  return candidates.some((memory) => {
+    if (memory.text.toLowerCase().trim() === normalized) return true;
+    return jaccard(memory.text, rule.text) >= 0.85;
+  });
+}
+
+function jaccard(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/));
+  const intersection = [...wordsA].filter((w) => wordsB.has(w));
+  const union = new Set([...wordsA, ...wordsB]);
+  return union.size === 0 ? 0 : intersection.length / union.size;
+}
+
 export function applyTaskResult(
   db: RecallDb,
   task: MaintenanceTask,
@@ -401,6 +512,8 @@ export function applyTaskResult(
       return applySummarizeSession(db, task, result as SummarizeSessionResult);
     case "synthesize_repo":
       return applySynthesizeRepo(db, task, result as SynthesizeRepoResult);
+    case "extract_rules_from_prompt":
+      return applyExtractRulesFromPrompt(db, task, result as ExtractRulesFromPromptResult);
     default: {
       const never: never = task.kind;
       throw new ApplyError(`unknown kind ${never}`, "unsupported-kind");

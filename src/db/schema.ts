@@ -330,6 +330,7 @@ export const memoryMaintenanceTasks = sqliteTable("memory_maintenance_tasks", {
       "summarize_session",
       "synthesize_repo",
       "verify_capture",
+      "extract_rules_from_prompt",
     ],
   }).notNull(),
   status: text("status", {

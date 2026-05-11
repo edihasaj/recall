@@ -6,6 +6,7 @@ import { getEmbeddingModelInfo } from "../embeddings/embeddings.js";
 import { getLaunchAgentStatus } from "../daemon/launchd.js";
 import { getSystemdStatus } from "../daemon/systemd.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
+import { checkClaudeCodeMemoryOverride } from "../agents/claude-code.js";
 
 export interface AgentDoctorEntry {
   agent: "claude-code" | "codex";
@@ -15,6 +16,9 @@ export interface AgentDoctorEntry {
   legacy_notify_bridge?: boolean;
   config_path: string;
   hook_path?: string;
+  /** Only set for Claude Code — managed CLAUDE.md memory-override block status. */
+  claude_md?: "current" | "stale" | "missing" | "absent_no_file";
+  claude_md_path?: string;
   notes: string[];
 }
 
@@ -289,12 +293,31 @@ function inspectClaudeCodeInstall(home: string): AgentDoctorEntry {
     notes.push("Claude CLI detected but settings.json missing");
   }
 
+  // CLAUDE.md memory-override block. Status mirrors the install: current =
+  // installed and matches shipped content, stale = older block present (needs
+  // `recall doctor --fix`), missing = file exists but no managed block,
+  // absent_no_file = no CLAUDE.md at the expected path.
+  // Honor the `home` parameter so tests can scope to a temp HOME — otherwise
+  // the check always hits the real ~/.claude/CLAUDE.md.
+  const claudeMd = checkClaudeCodeMemoryOverride({
+    configPath: join(home, ".claude", "CLAUDE.md"),
+  });
+  if (claudeMd.status === "stale") {
+    notes.push("CLAUDE.md memory-override block is out of date — run `recall doctor --fix`");
+  } else if (claudeMd.status === "missing") {
+    notes.push("CLAUDE.md exists but has no Recall memory-override block — Claude Code's built-in auto-memory may race Recall");
+  } else if (claudeMd.status === "absent_no_file" && detected) {
+    notes.push("No CLAUDE.md at ~/.claude/CLAUDE.md — run `recall doctor --fix` to install the memory-override block");
+  }
+
   return {
     agent: "claude-code",
     detected,
     mcp,
     hooks,
     config_path: configPath,
+    claude_md: claudeMd.status,
+    claude_md_path: claudeMd.config_path,
     notes,
   };
 }
@@ -391,7 +414,10 @@ export function formatDoctorReport(report: DoctorReport): string {
     const mcp = agent.mcp ? "ok" : "MISSING";
     const hooks = agent.hooks ? "ok" : "MISSING";
     const legacy = agent.legacy_notify_bridge ? " (legacy notify bridge)" : "";
-    lines.push(`${label} mcp:${mcp} hooks:${hooks}${legacy}`);
+    const claudeMd = agent.claude_md
+      ? ` claude.md:${agent.claude_md === "current" ? "ok" : agent.claude_md.toUpperCase()}`
+      : "";
+    lines.push(`${label} mcp:${mcp} hooks:${hooks}${claudeMd}${legacy}`);
     for (const note of agent.notes) {
       lines.push(`             - ${note}`);
     }
