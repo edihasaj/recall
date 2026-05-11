@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 - 2026-05-11
+
+### Fixed
+
+- Daemon `/health` endpoint returned a hardcoded `version: "0.5.0"` regardless of the actual installed version. Now reads `version` from the bundled `package.json` at startup, so health probes report the real release.
+
 ## 0.6.1 - 2026-05-11
 
 ### Fixed
