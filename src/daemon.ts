@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import type { RecallDb } from "./db/client.js";
 import { compileContext, compileContextHybrid } from "./compiler/context.js";
 import { processCorrection, processReviewFeedback } from "./capture/correction.js";
@@ -45,6 +46,8 @@ import {
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
+const requireFromHere = createRequire(import.meta.url);
+const pkg = requireFromHere("../package.json") as { version: string };
 const maintenanceConfig = loadMaintenanceConfigFromEnv();
 let maintenanceRunning = false;
 
@@ -286,7 +289,7 @@ const server = createServer(async (req, res) => {
     if (path === "/health" && method === "GET") {
       return send(res, 200, {
         status: "ok",
-        version: "0.5.0",
+        version: pkg.version,
         embeddings: getEmbeddingModelInfo(),
       });
     }
