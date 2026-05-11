@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 - 2026-05-11
+
+### Added
+
+- LLM-primary capture path. When an LLM provider is configured, the user-prompt hook now hands the raw prompt to an `extract_rules_from_prompt` task instead of running the regex extractor. The LLM judges in any natural language (en/es/fr/de/it/pt/ru/zh/ja/sq/tr supported by the pre-screen) and returns one canonical English rule per durable directive, with confidence and scope. Empty list is a valid answer. The regex extractor stays as the fallback when no provider is configured or `RECALL_LLM_CAPTURE_DISABLED=true`.
+- Multi-language pre-screen (`isPromptWorthLLM`) filters out pure code-request prompts before the LLM call, keeping costs negligible at observed volumes.
+- `POST /dispatch/wake` daemon endpoint, debounced 3 s. The capture hook pings it on every enqueue so fresh captures get an LLM verdict within seconds instead of waiting for the next timer tick. The existing daily timer-based cadence remains as a backstop.
+- Managed CLAUDE.md memory-override block, installed by `recall setup` and repaired by `recall doctor --fix`. The block tells Claude Code's harness to defer all memorize/forget intents to Recall instead of writing to `~/.claude/projects/*/memory/MEMORY.md`, which previously produced a dual-write between Claude's built-in auto-memory and Recall. New flags `--no-claude-md` on `recall setup` and `recall setup local`, opt-out env `RECALL_SETUP_SKIP_CLAUDE_MD=1`. `recall doctor` now reports `claude.md:ok|STALE|MISSING|ABSENT_NO_FILE`.
+
+### Changed
+
+- `qualityReasons` fragment filter tightened to catch garbage that previously slipped through: removed modals (`always`, `never`, `must`, `should`, `don't`) from `VERB_HINTS` so the `no_verb` check actually fires on bare-modal scraps; bumped `MIN_RULE_LENGTH` from 14 to 20; added `trailing_dash` and `embedded_question` reasons. The expanded `VERB_HINTS` now covers `update`, `create`, `delete`, `rename`, `validate`, `verify`, `check`, `follow`, `read`, `write`, `open`, `close`, `send`, `receive`, `configure`, `enable`, `disable`.
+- Dispatcher task priority: `extract_rules_from_prompt` runs at priority 14, ahead of `verify_capture` (12), because under LLM-primary capture it IS the candidate creation path — without it, real rules never reach the queue.
+
+### Capture env
+
+- `RECALL_LLM_CAPTURE_DISABLED` (default `false`) — set to `true` to force the regex fallback path even when an LLM provider is configured. Useful for offline/airgapped runs or benchmarking.
+- `RECALL_SETUP_SKIP_CLAUDE_MD` — set to `1` to skip the managed CLAUDE.md block install during `recall setup`.
+
 ## 0.5.8 - 2026-05-06
 
 ### Fixed
