@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 - 2026-05-11
+
+### Fixed
+
+- Capture hook's `/dispatch/wake` ping used the wrong daemon port (`RECALL_DAEMON_PORT` default `47649`) instead of `RECALL_PORT` (default `7890`), so every wake silently failed and freshly captured prompts only got picked up on the timer-based dispatcher cycle. Fixed to use the canonical `RECALL_PORT` / `7890`.
+
 ## 0.6.0 - 2026-05-11
 
 ### Added
