@@ -133,11 +133,12 @@ const PROMPT_SCREEN_RE = new RegExp(
 );
 
 // Best-effort wake-up to the local daemon's /dispatch/wake endpoint. The
-// daemon listens on a local socket; if it isn't running, the request fails
-// silently and the timer-based dispatcher cycle catches up later. Debounced
-// in the daemon itself so repeated hook calls collapse to one dispatch run.
+// daemon listens on RECALL_PORT (default 7890); if it isn't running, the
+// request fails silently and the timer-based dispatcher cycle catches up
+// later. Debounced in the daemon itself so repeated hook calls collapse to
+// one dispatch run.
 function wakeDispatcherBestEffort(): void {
-  const port = parseInt(process.env.RECALL_DAEMON_PORT ?? "47649", 10);
+  const port = parseInt(process.env.RECALL_PORT ?? "7890", 10);
   // Fire-and-forget; don't await, don't crash the hook on failure.
   fetch(`http://127.0.0.1:${port}/dispatch/wake`, {
     method: "POST",
