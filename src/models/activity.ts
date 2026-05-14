@@ -9,6 +9,7 @@ import type {
   ActivityEventType,
   ActivitySource,
 } from "../types.js";
+import { redactSensitiveValue } from "../security/redaction.js";
 
 type ActivityRow = typeof activityEvents.$inferSelect;
 
@@ -27,13 +28,18 @@ export function createActivityEvent(
   db: RecallDb,
   input: CreateActivityEventInput,
 ): string {
-  const dedupeKey = activityEventDedupeKey(input);
+  const safeInput = {
+    ...input,
+    request: redactSensitiveValue(input.request ?? {}),
+    result: redactSensitiveValue(input.result ?? {}),
+  };
+  const dedupeKey = activityEventDedupeKey(safeInput);
 
   if (dedupeKey) {
     const existingId = findActivityEventByDedupeKey(db, dedupeKey);
     if (existingId) return existingId;
   } else {
-    const fuzzyId = findRecentDuplicateActivityEvent(db, input);
+    const fuzzyId = findRecentDuplicateActivityEvent(db, safeInput);
     if (fuzzyId) return fuzzyId;
   }
 
@@ -41,15 +47,15 @@ export function createActivityEvent(
   const result = db.insert(activityEvents)
     .values({
       id,
-      session_id: input.session_id ?? null,
-      repo: input.repo ?? null,
-      path: input.path ?? null,
-      source: input.source,
-      event_type: input.event_type,
-      memory_ids: input.memory_ids ?? [],
+      session_id: safeInput.session_id ?? null,
+      repo: safeInput.repo ?? null,
+      path: safeInput.path ?? null,
+      source: safeInput.source,
+      event_type: safeInput.event_type,
+      memory_ids: safeInput.memory_ids ?? [],
       dedupe_key: dedupeKey,
-      request: input.request ?? {},
-      result: input.result ?? {},
+      request: safeInput.request,
+      result: safeInput.result,
       created_at: new Date().toISOString(),
     })
     .onConflictDoNothing({ target: activityEvents.dedupe_key })

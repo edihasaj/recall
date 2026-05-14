@@ -384,6 +384,11 @@ recall maintenance list</code></pre>
               <td><code>verbose</code> restores the historical <code>Recall memory for this repo:</code> prefix and repo header.</td>
             </tr>
             <tr>
+              <td><code>RECALL_SURFACE_PENDING_CONFIRMATIONS</code></td>
+              <td><code>false</code></td>
+              <td><code>true</code> includes high-risk pending candidate confirmations at SessionStart. Default keeps stale destructive candidates out of unrelated work.</td>
+            </tr>
+            <tr>
               <td><code>RECALL_CODEX_HOOKS_MIN_VERSION</code></td>
               <td><code>0.115.0</code></td>
               <td>Min Codex CLI version eligible for the <code>hooks.json</code> install path. Below this, falls back to the legacy <code>notify</code> bridge.</td>

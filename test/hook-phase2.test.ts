@@ -106,6 +106,38 @@ describe("phase 2 hook handlers", () => {
     expect(promptEvent.result.recent_tool_calls).toEqual(result.recent_tool_calls);
   });
 
+  it("redacts secrets from stored prompt and tool telemetry", async () => {
+    const db = freshDb();
+
+    await handleToolHook(
+      {
+        session_id: "sess-redact",
+        repo: "edihasaj/recall",
+        name: "Bash",
+        exit_code: 0,
+        input_summary: "curl -H \"api-key: abc123secret\" https://example.test",
+      },
+      { db },
+    );
+    await handlePromptHook(
+      {
+        session_id: "sess-redact",
+        repo: "edihasaj/recall",
+        text: "OPENAI_API_KEY=sk-testsecret1234567890 always use pnpm",
+      },
+      { db },
+    );
+
+    const events = listActivityEvents(db, {
+      session_id: "sess-redact",
+      event_type: "session_event",
+    });
+    const serialized = JSON.stringify(events);
+    expect(serialized).toContain("[REDACTED]");
+    expect(serialized).not.toContain("abc123secret");
+    expect(serialized).not.toContain("sk-testsecret");
+  });
+
   it("records session start and end through the existing lifecycle", { timeout: 15_000 }, async () => {
     const db = freshDb();
     const repoRoot = mkdtempSync(join(tmpdir(), "recall-hook-repo-"));

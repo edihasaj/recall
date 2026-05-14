@@ -16,11 +16,13 @@ import type { CaptureContext, MemoryItem, MemoryType, EvidenceEntry } from "../t
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import { enqueueExtractRulesFromPrompt, enqueueVerifyCapture } from "../maintenance/tasks.js";
 import { hasAnyLlmProvider } from "../maintenance/dispatcher.js";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { inferScope } from "./scope.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { qualityReasons } from "../maintenance/cleanup.js";
+import { normalizeDedupeText } from "../models/dedupe.js";
+import { redactSensitiveText } from "../security/redaction.js";
 
 // --- Detection patterns ---
 
@@ -344,6 +346,8 @@ export async function processCorrection(
   text: string,
   ctx: CorrectionContext,
 ): Promise<string[]> {
+  text = redactSensitiveText(text);
+
   // LLM-primary path: when a provider is configured and the prompt passes
   // the cheap multi-language pre-screen, hand the raw prompt to the LLM via
   // an extract_rules_from_prompt task. The LLM extracts AND judges in one
@@ -354,7 +358,7 @@ export async function processCorrection(
   // We deliberately bypass the regex extractor here. The LLM is the judge.
   // Regex stays as a fallback for when no provider is configured.
   if (process.env.RECALL_LLM_CAPTURE_DISABLED !== "true" && hasAnyLlmProvider() && isPromptWorthLLM(text)) {
-    const promptId = `prompt:${ctx.sessionId}:${Date.now()}:${randomUUID().slice(0, 8)}`;
+    const promptId = stablePromptId(ctx.sessionId, ctx.repo, text);
     const taskId = enqueueExtractRulesFromPrompt(db, {
       prompt_id: promptId,
       raw_prompt: text,
@@ -497,6 +501,14 @@ export async function processCorrection(
   return ids;
 }
 
+function stablePromptId(sessionId: string, repo: string | undefined, text: string): string {
+  const hash = createHash("sha256")
+    .update(`${sessionId}\u001f${repo ?? ""}\u001f${normalizeDedupeText(text)}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `prompt:${sessionId}:${hash}`;
+}
+
 function maybePromoteGroupCandidate(
   db: RecallDb,
   candidateId: string,
@@ -573,6 +585,8 @@ export async function processReviewFeedback(
   feedback: string,
   ctx: CorrectionContext & { reviewer?: string },
 ): Promise<string[]> {
+  feedback = redactSensitiveText(feedback);
+
   const profile = getRepoQualityProfile(db, ctx.repo);
   const evidence: EvidenceEntry = {
     type: "review_feedback",

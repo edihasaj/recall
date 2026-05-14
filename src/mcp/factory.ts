@@ -422,6 +422,7 @@ tool(
     memory_id: z.string().describe("Memory ID to reject"),
   },
   async ({ memory_id }) => {
+    const before = getMemory(db, memory_id);
     const success = rejectMemory(db, memory_id);
     if (!success) {
       return {
@@ -430,6 +431,16 @@ tool(
         ],
       };
     }
+    const after = getMemory(db, memory_id);
+    recordAudit(
+      db,
+      memory_id,
+      "rejected",
+      "mcp",
+      "manual reject",
+      before ? JSON.stringify(before) : null,
+      after ? JSON.stringify(after) : null,
+    );
     return {
       content: [
         { type: "text" as const, text: `Memory ${memory_id.slice(0, 8)} rejected.` },
@@ -1018,4 +1029,3 @@ tool(
 
 return server;
 }
-

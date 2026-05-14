@@ -1,15 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
-import { isPromptWorthLLM } from "../src/capture/correction.js";
+import { isPromptWorthLLM, processCorrection } from "../src/capture/correction.js";
 import { applyExtractRulesFromPrompt } from "../src/maintenance/appliers.js";
 import { enqueueExtractRulesFromPrompt, peekTasks } from "../src/maintenance/tasks.js";
 import { queryMemories } from "../src/models/memory.js";
 import type { MaintenanceTask } from "../src/types.js";
 
 let dbCounter = 0;
+const originalOpenAiKey = process.env.OPENAI_API_KEY;
+const originalLlmCaptureDisabled = process.env.RECALL_LLM_CAPTURE_DISABLED;
 function freshDb() {
   process.env.RECALL_EMBEDDINGS_DISABLED = "true";
   const dir = mkdtempSync(join(tmpdir(), "recall-llm-capture-"));
@@ -54,6 +56,13 @@ describe("isPromptWorthLLM — multi-language pre-screen", () => {
   });
 });
 
+afterEach(() => {
+  if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAiKey;
+  if (originalLlmCaptureDisabled === undefined) delete process.env.RECALL_LLM_CAPTURE_DISABLED;
+  else process.env.RECALL_LLM_CAPTURE_DISABLED = originalLlmCaptureDisabled;
+});
+
 describe("enqueueExtractRulesFromPrompt", () => {
   it("creates one pending task per unique prompt_id", () => {
     const db = freshDb();
@@ -91,6 +100,27 @@ describe("enqueueExtractRulesFromPrompt", () => {
       agent: "claude-code",
       session_id: "s1",
     });
+    expect(peekTasks(db, { kinds: ["extract_rules_from_prompt"] })).toHaveLength(1);
+  });
+});
+
+describe("processCorrection LLM enqueue", () => {
+  it("dedupes duplicate hook deliveries for the same prompt", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "false";
+    const db = freshDb();
+
+    await processCorrection(db, "always use pnpm in this repo", {
+      sessionId: "s1",
+      repo: "test/repo",
+      agent: "codex",
+    });
+    await processCorrection(db, "always use pnpm in this repo", {
+      sessionId: "s1",
+      repo: "test/repo",
+      agent: "codex",
+    });
+
     expect(peekTasks(db, { kinds: ["extract_rules_from_prompt"] })).toHaveLength(1);
   });
 });
@@ -229,5 +259,45 @@ describe("applyExtractRulesFromPrompt", () => {
     const memories = queryMemories(db, { repo: "test/repo" });
     expect(memories).toHaveLength(1);
     expect(memories[0]!.status).toBe("candidate");
+  });
+
+  it("deduplicates near-identical destructive rules across extracted types", () => {
+    const db = freshDb();
+    const task = fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "delete the glossary tool",
+    });
+
+    applyExtractRulesFromPrompt(db, task, {
+      rules: [
+        {
+          text: "Delete Dayshape.AI.Tools.GlossaryIndexer and Dayshape.AI.Tools.GlossaryIndexer.Tests, and remove both entries from the solution file.",
+          type: "rule",
+          scope: "repo",
+          confidence: 0.99,
+          is_destructive_risky: true,
+        },
+      ],
+    });
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s2",
+      raw_prompt: "delete the glossary tool again",
+    }), {
+      rules: [
+        {
+          text: "Delete Dayshape.AI.Tools.GlossaryIndexer and Dayshape.AI.Tools.GlossaryIndexer.Tests, and remove both projects from Dayshape Solution.sln.",
+          type: "command",
+          scope: "repo",
+          confidence: 0.99,
+          is_destructive_risky: true,
+        },
+      ],
+    });
+
+    expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(1);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -17,7 +17,12 @@ function freshDb() {
 }
 
 describe("pending high-risk confirmations surface", () => {
+  afterEach(() => {
+    delete process.env.RECALL_SURFACE_PENDING_CONFIRMATIONS;
+  });
+
   it("omits surface when no risky candidates exist", async () => {
+    process.env.RECALL_SURFACE_PENDING_CONFIRMATIONS = "true";
     const db = freshDb();
     createMemory(db, {
       type: "rule",
@@ -35,7 +40,26 @@ describe("pending high-risk confirmations surface", () => {
     expect(result.pending_confirmations).toBeUndefined();
   });
 
+  it("does not surface high-risk candidates by default", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "remove all plugins from settings",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.4,
+    });
+
+    const result = await handleSessionStartHook(
+      { session_id: "sess-1", agent: "claude-code", repo: "test/repo" },
+      { db },
+    );
+    expect(result.pending_confirmations).toBeUndefined();
+  });
+
   it("surfaces high-risk candidates (destructive + trigger-template) for the session repo", async () => {
+    process.env.RECALL_SURFACE_PENDING_CONFIRMATIONS = "true";
     const db = freshDb();
     const riskyId = createMemory(db, {
       type: "rule",
@@ -93,6 +117,7 @@ describe("pending high-risk confirmations surface", () => {
   });
 
   it("does not surface candidates that have already been promoted or rejected", async () => {
+    process.env.RECALL_SURFACE_PENDING_CONFIRMATIONS = "true";
     const db = freshDb();
     const id = createMemory(db, {
       type: "rule",
@@ -121,8 +146,8 @@ describe("pending high-risk confirmations surface", () => {
     });
     expect(text).toMatch(/7 high-risk/);
     expect(text).toMatch(/\+5 more/);
-    expect(text).toMatch(/recall\.confirm/);
-    expect(text).toMatch(/recall\.reject/);
+    expect(text).toMatch(/mcp__recall__confirm/);
+    expect(text).toMatch(/mcp__recall__reject/);
     expect(text).toMatch(/abcdef12/);
     // Each item is tagged with its risk reason so the agent knows why.
     expect(text).toMatch(/destructive\)/);
