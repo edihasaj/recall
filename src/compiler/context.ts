@@ -19,6 +19,8 @@ const DEFAULT_CONFIG: CompilerConfig = {
 };
 const QUERY_RESULT_LIMIT = 2;
 const QUERY_VECTOR_RELEVANCE_FLOOR = 0.7;
+const HISTORY_VECTOR_RELEVANCE_FLOOR = 0.7;
+const HISTORY_LEXICAL_RELEVANCE_FLOOR = 0.01;
 
 export interface CompileRequest {
   repo: string;
@@ -459,6 +461,10 @@ async function selectRelevantHistory(
     limit: Math.max(limit * 3, 6),
   });
   return results
+    .filter((result) =>
+      result.lexical_score >= HISTORY_LEXICAL_RELEVANCE_FLOOR ||
+      result.similarity >= HISTORY_VECTOR_RELEVANCE_FLOOR
+    )
     .map((result) => result.snippet)
     .filter((snippet) => HISTORY_KINDS.has(snippet.kind))
     .slice(0, limit);

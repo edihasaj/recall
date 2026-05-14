@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.3 - 2026-05-14
+
+### Fixed
+
+- Prompt-time history injection now requires a lexical match or clear vector relevance before adding history-only context. This prevents stale summaries, such as old demo or launch notes, from steering unrelated turns.
+- Memory quality gates now dedupe duplicate LLM capture tasks, merge near-identical destructive candidates across varied LLM types, redact sensitive hook/activity telemetry before storage, and audit CLI/MCP/HTTP memory rejections.
+- High-risk pending confirmations no longer surface at every SessionStart by default; set `RECALL_SURFACE_PENDING_CONFIRMATIONS=true` to restore that queue in startup context.
+
 ## 0.6.2 - 2026-05-11
 
 ### Fixed
