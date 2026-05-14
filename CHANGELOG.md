@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6 - 2026-05-14
+
+### Fixed
+
+- Dashboard and Settings content now share a larger titlebar top inset, keeping the app icon, status badge, and settings controls clear of the macOS window toolbar.
+
 ## 0.6.5 - 2026-05-14
 
 ### Fixed
