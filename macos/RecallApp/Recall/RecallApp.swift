@@ -18,6 +18,12 @@ enum AppVersion {
     }()
 }
 
+enum AppLayout {
+    static let horizontalPadding: CGFloat = 20
+    static let titlebarTopPadding: CGFloat = 56
+    static let bottomPadding: CGFloat = 20
+}
+
 @main
 struct RecallApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -401,9 +407,9 @@ struct DashboardView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 32)
-        .padding(.bottom, 20)
+        .padding(.horizontal, AppLayout.horizontalPadding)
+        .padding(.top, AppLayout.titlebarTopPadding)
+        .padding(.bottom, AppLayout.bottomPadding)
     }
 }
 
@@ -428,7 +434,9 @@ private struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(20)
+        .padding(.horizontal, AppLayout.horizontalPadding)
+        .padding(.top, AppLayout.titlebarTopPadding)
+        .padding(.bottom, AppLayout.bottomPadding)
     }
 }
 
