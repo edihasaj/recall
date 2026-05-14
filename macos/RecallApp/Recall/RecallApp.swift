@@ -20,7 +20,7 @@ enum AppVersion {
 
 enum AppLayout {
     static let horizontalPadding: CGFloat = 20
-    static let titlebarTopPadding: CGFloat = 56
+    static let titlebarTopPadding: CGFloat = 32
     static let bottomPadding: CGFloat = 20
 }
 
@@ -37,7 +37,7 @@ struct RecallApp: App {
     var body: some Scene {
         Window("Recall", id: "dashboard") {
             DashboardView(controller: controller, preferences: preferences)
-                .frame(minWidth: 560, minHeight: 420)
+                .frame(minWidth: 560, minHeight: 520)
                 .task {
                     controller.start()
                     preferences.syncLaunchAtLogin()
@@ -47,7 +47,7 @@ struct RecallApp: App {
                 .background(WindowOpener())
                 .background(DashboardWindowGuard())
         }
-        .defaultSize(width: 640, height: 460)
+        .defaultSize(width: 640, height: 540)
 
         Settings {
             SettingsView(preferences: preferences)
@@ -303,6 +303,16 @@ struct DashboardView: View {
     @ObservedObject var preferences: AppPreferences
 
     var body: some View {
+        ScrollView(.vertical) {
+            content
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .padding(.horizontal, AppLayout.horizontalPadding)
+        .padding(.top, AppLayout.titlebarTopPadding)
+        .padding(.bottom, AppLayout.bottomPadding)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 16) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
@@ -404,12 +414,7 @@ struct DashboardView: View {
                 Button("Open Logs") { controller.openLogDir() }
                 Button("Refresh") { controller.refresh() }
             }
-
-            Spacer()
         }
-        .padding(.horizontal, AppLayout.horizontalPadding)
-        .padding(.top, AppLayout.titlebarTopPadding)
-        .padding(.bottom, AppLayout.bottomPadding)
     }
 }
 

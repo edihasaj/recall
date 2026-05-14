@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.7 - 2026-05-14
+
+### Fixed
+
+- Dashboard content now scrolls vertically in the compact window, keeping the action buttons reachable while preserving the titlebar-safe top spacing.
+- Tuned the shared titlebar inset for Dashboard and Settings content so it clears the toolbar without leaving a large blank band.
+
 ## 0.6.6 - 2026-05-14
 
 ### Fixed
