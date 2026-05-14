@@ -8,10 +8,11 @@ import { historySnippetEmbeddings, historySnippets } from "../src/db/schema.js";
 import { createActivityEvent } from "../src/models/activity.js";
 import { createHistorySnippet, listHistorySnippets } from "../src/history/snippets.js";
 import { runMaintenanceCycle } from "../src/maintenance/lifecycle.js";
-import { searchHistorySnippets } from "../src/history/retrieval.js";
+import { bootstrapHistoryEmbeddings, searchHistorySnippets } from "../src/history/retrieval.js";
 import { flushEmbeddingJobs, loadEmbeddingConfigFromEnv } from "../src/embeddings/embeddings.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 import { rebuildHistoryVecIndex } from "../src/vector/sqlite-vec-history.js";
+import { compileContextHybrid } from "../src/compiler/context.js";
 
 let dbCounter = 0;
 
@@ -218,6 +219,44 @@ describe("phase 6 history retrieval", () => {
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0].snippet.text).toContain("pnpm");
     expect(results.some((result) => result.snippet.kind === "correction_summary")).toBe(true);
+  });
+
+  it("does not inject history-only context on weak semantic prompt matches", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    installMockEmbeddingProvider((text, purpose) => {
+      if (purpose === "query" && text.toLowerCase().includes("demo")) return [1, 0, 0];
+      if (purpose === "query") return [0.6, 0.8, 0];
+      return [1, 0, 0];
+    });
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+
+    createHistorySnippet(db, {
+      repo: "test/repo",
+      kind: "decision_summary",
+      text: "Repo: test/repo\nFrequent user decisions:\n- (1) User direction: patch production after demo is done.",
+    });
+
+    const config = loadEmbeddingConfigFromEnv()!;
+    await bootstrapHistoryEmbeddings(db, config, { repo: "test/repo" });
+    rebuildHistoryVecIndex(db, config, { repo: "test/repo" });
+
+    const generic = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "what should I work on now",
+      embedding_config: config,
+    });
+    expect(generic.text).toBe("");
+    expect(generic.history_included).toHaveLength(0);
+
+    const explicit = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "demo",
+      embedding_config: config,
+    });
+    expect(explicit.text).toContain("after demo is done");
+    expect(explicit.history_included).toHaveLength(1);
   });
 
   it("archives old session summaries after repo summaries exist", async () => {
