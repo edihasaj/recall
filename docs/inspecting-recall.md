@@ -11,6 +11,7 @@ read_when:
 ## Current Setup
 
 - Production app: `/Applications/Recall.app`
+- Login item: Recall.app main app, enabled by default when launched from `/Applications`
 - LaunchAgent label: `com.recall.daemon`
 - Default daemon URL: `http://localhost:7890`
 - Data dir: `~/.recall`
