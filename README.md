@@ -68,6 +68,7 @@ npm run install:app
 ```
 
 The app embeds its own Node runtime plus Recall `dist/`, `drizzle/`, and `node_modules/`, then manages the bundled daemon via launchd.
+When run from `/Applications`, the app registers itself as a login item by default so the menu bar status icon comes back after login; the daemon LaunchAgent remains the background worker.
 
 Configure local agent runtimes against the installed app. `recall setup --yes` wires MCP and lifecycle hooks for supported detected runtimes so memory injection does not depend on the model choosing to call `query`:
 

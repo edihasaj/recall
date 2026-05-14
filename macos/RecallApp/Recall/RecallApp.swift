@@ -34,10 +34,12 @@ struct RecallApp: App {
                 .frame(minWidth: 560, minHeight: 420)
                 .task {
                     controller.start()
+                    preferences.syncLaunchAtLogin()
                     preferences.applyActivationPolicy()
-                    delegate.attach(controller: controller)
+                    delegate.attach(controller: controller, preferences: preferences)
                 }
                 .background(WindowOpener())
+                .background(DashboardWindowGuard())
         }
         .defaultSize(width: 640, height: 460)
 
@@ -61,17 +63,69 @@ private struct WindowOpener: View {
     }
 }
 
+private struct DashboardWindowGuard: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            context.coordinator.attach(to: view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.attach(to: view.window)
+        }
+    }
+
+    final class Coordinator: NSObject, NSWindowDelegate {
+        private weak var window: NSWindow?
+        private var observer: NSObjectProtocol?
+
+        func attach(to window: NSWindow?) {
+            guard let window, self.window !== window else { return }
+            self.window = window
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            observer = NotificationCenter.default.addObserver(
+                forName: .recallOpenDashboard,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.window?.makeKeyAndOrderFront(nil)
+            }
+        }
+
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            sender.orderOut(nil)
+            return false
+        }
+
+        deinit {
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var templateImage: NSImage?
     private var colorImage: NSImage?
     private weak var controller: DaemonController?
+    private weak var preferences: AppPreferences?
 
     private var launchdStatusItem: NSMenuItem?
     private var healthStatusItem: NSMenuItem?
     private var setupStatusItem: NSMenuItem?
     private var dataStatusItem: NSMenuItem?
+    private var loginStatusItem: NSMenuItem?
     private var userInitiatedQuit = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -122,10 +176,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         healthStatusItem = makeStatusItem()
         setupStatusItem = makeStatusItem()
         dataStatusItem = makeStatusItem()
+        loginStatusItem = makeStatusItem()
         menu.addItem(launchdStatusItem!)
         menu.addItem(healthStatusItem!)
         menu.addItem(setupStatusItem!)
         menu.addItem(dataStatusItem!)
+        menu.addItem(loginStatusItem!)
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(makeItem(title: "Open Recall", action: #selector(openDashboard)))
@@ -149,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             healthStatusItem?.title = "Health:   —"
             setupStatusItem?.title = "Setup:    —"
             dataStatusItem?.title = "Data:     —"
+            loginStatusItem?.title = "Login:    —"
             return
         }
         launchdStatusItem?.title = "Launchd:  \(controller.launchdState)"
@@ -156,10 +213,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         healthStatusItem?.title = "Health:   \(healthDot) \(controller.healthText)"
         setupStatusItem?.title = "Setup:    \(controller.setupStatus)"
         dataStatusItem?.title = "Data:     \(controller.dataDir)"
+        loginStatusItem?.title = "Login:    \(preferences?.loginItemStatusText ?? "—")"
     }
 
-    func attach(controller: DaemonController) {
+    func attach(controller: DaemonController, preferences: AppPreferences) {
         self.controller = controller
+        self.preferences = preferences
     }
 
     private func makeItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -191,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let color = colorImage {
             statusItem?.button?.image = color
         }
+        preferences?.refreshLoginItemStatus()
         controller?.refresh()
         updateStatusItems()
     }
@@ -275,18 +335,33 @@ struct DashboardView: View {
             }
 
             GroupBox("Appearance") {
-                Toggle(isOn: Binding(
-                    get: { preferences.showDockIcon },
-                    set: { preferences.setShowDockIcon($0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show Dock Icon")
-                        Text("Off by default. Enable only when you want Recall in the Dock.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(isOn: Binding(
+                        get: { preferences.launchAtLogin },
+                        set: { preferences.setLaunchAtLogin($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Start at Login")
+                            Text(preferences.loginItemStatusText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .toggleStyle(.switch)
+
+                    Toggle(isOn: Binding(
+                        get: { preferences.showDockIcon },
+                        set: { preferences.setShowDockIcon($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show Dock Icon")
+                            Text("Off by default. Enable only when you want Recall in the Dock.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
                 }
-                .toggleStyle(.switch)
                 .padding(.top, 4)
             }
 
@@ -332,6 +407,14 @@ private struct SettingsView: View {
 
     var body: some View {
         Form {
+            Toggle("Start at Login", isOn: Binding(
+                get: { preferences.launchAtLogin },
+                set: { preferences.setLaunchAtLogin($0) }
+            ))
+            Text(preferences.loginItemStatusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Toggle("Show Dock Icon", isOn: Binding(
                 get: { preferences.showDockIcon },
                 set: { preferences.setShowDockIcon($0) }
@@ -375,40 +458,5 @@ private struct LabeledValue: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.system(size: 12, weight: .medium, design: .monospaced))
-    }
-}
-
-@MainActor
-final class AppPreferences: ObservableObject {
-    @Published private(set) var showDockIcon: Bool
-
-    private let defaults = UserDefaults.standard
-    private let dockKey = "showDockIcon"
-
-    init() {
-        self.showDockIcon = defaults.object(forKey: dockKey) as? Bool ?? false
-        Self.applyBundledAppIcon()
-        applyActivationPolicy()
-    }
-
-    func setShowDockIcon(_ enabled: Bool) {
-        showDockIcon = enabled
-        defaults.set(enabled, forKey: dockKey)
-        applyActivationPolicy()
-    }
-
-    func applyActivationPolicy() {
-        Self.applyBundledAppIcon()
-        let policy: NSApplication.ActivationPolicy = showDockIcon ? .regular : .accessory
-        NSApp.setActivationPolicy(policy)
-        if showDockIcon {
-            NSApp.activate(ignoringOtherApps: true)
-        }
-    }
-
-    static func applyBundledAppIcon() {
-        guard let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
-              let image = NSImage(contentsOfFile: path) else { return }
-        NSApplication.shared.applicationIconImage = image
     }
 }

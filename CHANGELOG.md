@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 - 2026-05-14
+
+### Fixed
+
+- Recall.app now registers the menu bar app itself as a login item by default, so reboot/login restores the status icon instead of only starting the background daemon. The dashboard and Settings panes expose the login-item status and a Start at Login toggle.
+- Closing the dashboard window now hides it through an `NSWindowDelegate` guard instead of letting SwiftUI close the scene, keeping the menu bar status item alive until the user chooses Quit Recall.
+
 ## 0.6.3 - 2026-05-14
 
 ### Fixed
