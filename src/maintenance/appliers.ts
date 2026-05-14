@@ -477,21 +477,40 @@ function existsSimilar(
   rule: ExtractedRule,
 ): boolean {
   if (!repo) return false;
-  const candidates = queryMemories(db, { repo: repo ?? undefined, type: rule.type as MemoryType })
+  const ruleIsHighRisk = rule.is_destructive_risky || isHighRiskRule(rule.text);
+  const candidates = queryMemories(db, {
+    repo: repo ?? undefined,
+    ...(ruleIsHighRisk ? {} : { type: rule.type as MemoryType }),
+  })
     .filter((memory) => memory.status !== "rejected");
   const normalized = rule.text.toLowerCase().trim();
   return candidates.some((memory) => {
     if (memory.text.toLowerCase().trim() === normalized) return true;
+    if (ruleIsHighRisk && isHighRiskRule(memory.text)) {
+      return containmentOverlap(memory.text, rule.text) >= 0.65;
+    }
     return jaccard(memory.text, rule.text) >= 0.85;
   });
 }
 
 function jaccard(a: string, b: string): number {
-  const wordsA = new Set(a.toLowerCase().split(/\s+/));
-  const wordsB = new Set(b.toLowerCase().split(/\s+/));
+  const wordsA = new Set(tokens(a));
+  const wordsB = new Set(tokens(b));
   const intersection = [...wordsA].filter((w) => wordsB.has(w));
   const union = new Set([...wordsA, ...wordsB]);
   return union.size === 0 ? 0 : intersection.length / union.size;
+}
+
+function containmentOverlap(a: string, b: string): number {
+  const wordsA = new Set(tokens(a));
+  const wordsB = new Set(tokens(b));
+  const intersection = [...wordsA].filter((w) => wordsB.has(w));
+  const smaller = Math.min(wordsA.size, wordsB.size);
+  return smaller === 0 ? 0 : intersection.length / smaller;
+}
+
+function tokens(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9.]+/g) ?? [];
 }
 
 export function applyTaskResult(

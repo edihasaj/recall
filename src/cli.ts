@@ -36,7 +36,7 @@ import { createPolicy, listPolicies, togglePolicy, deletePolicy, evaluatePolicy,
 import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "./health/scoring.js";
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
-import { getAuditTrail, getRecentAudit, formatAuditTrail, rollbackMemory } from "./audit/trail.js";
+import { getAuditTrail, getRecentAudit, formatAuditTrail, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { runLocalSetup } from "./setup/local.js";
@@ -705,7 +705,18 @@ program
       console.error(`Memory not found: ${idPrefix}`);
       process.exit(1);
     }
+    const before = JSON.stringify(mem);
     rejectMemory(db, mem.id);
+    const after = getMemory(db, mem.id);
+    recordAudit(
+      db,
+      mem.id,
+      "rejected",
+      "cli",
+      "manual reject",
+      before,
+      after ? JSON.stringify(after) : null,
+    );
     console.log(`Rejected: ${mem.id.slice(0, 8)}`);
   });
 

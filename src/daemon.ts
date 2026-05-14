@@ -17,7 +17,7 @@ import { createPolicy, listPolicies, evaluatePolicy, requestApproval, resolveApp
 import { computeHealthScore, computeAllHealthScores } from "./health/scoring.js";
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories } from "./pruning/pruner.js";
-import { getAuditTrail, getRecentAudit, rollbackMemory } from "./audit/trail.js";
+import { getAuditTrail, getRecentAudit, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "./repo/discovery.js";
@@ -532,7 +532,20 @@ const server = createServer(async (req, res) => {
     // Reject memory
     if (path === "/reject" && method === "POST") {
       const body = await parseBody(req);
+      const before = getMemory(db, body.memory_id);
       const ok = rejectMemory(db, body.memory_id);
+      if (ok) {
+        const after = getMemory(db, body.memory_id);
+        recordAudit(
+          db,
+          body.memory_id,
+          "rejected",
+          "daemon:http",
+          "manual reject",
+          before ? JSON.stringify(before) : null,
+          after ? JSON.stringify(after) : null,
+        );
+      }
       return send(res, ok ? 200 : 404, { success: ok });
     }
 

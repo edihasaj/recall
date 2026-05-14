@@ -15,6 +15,7 @@ You can tune that with these env vars (read fresh on each hook invocation — no
 | `RECALL_HOOK_INJECT_CONTEXT` | `true` | Set to `false` to disable all hook-driven memory injection (SessionStart + UserPromptSubmit). Hooks still fire for telemetry and correction capture. |
 | `RECALL_HOOK_INJECT_PROMPT` | `true` | Per-prompt memory injection on `UserPromptSubmit`. Uses hybrid retrieval with your prompt as the query — if nothing scores above the relevance floor, nothing is injected (no fall-through to a full-repo dump). Per-session dedup also applies: memories already delivered in this session are not re-emitted. Set to `false` to opt out. |
 | `RECALL_HOOK_INJECT_STYLE` | `minimal` | Set to `verbose` to restore the historical format (`Recall memory for this repo:\n# Recall: <slug>\n\n...`). `minimal` strips the prefix and repo header — the section bullets are all that lands in context. |
+| `RECALL_SURFACE_PENDING_CONFIRMATIONS` | `false` | Set to `true` to include high-risk pending candidate confirmations at SessionStart. By default they stay out of injected context so stale destructive candidates do not interrupt unrelated work. |
 | `RECALL_CODEX_HOOKS_MIN_VERSION` | `0.115.0` | Minimum CLI version eligible for that runtime's `hooks.json` install path. Below this, `recall setup --yes` / `recall doctor --fix` fall back to the legacy `notify` bridge so memory capture still works. Override if you've forked/patched that runtime. |
 
 Where to set them:
@@ -39,7 +40,7 @@ The hook does **not** try to extract rules with regex. Instead:
 2. Prompts that pass the screen enqueue an `extract_rules_from_prompt` task (priority 14, top of queue).
 3. The hook calls `POST /dispatch/wake` on the local daemon (debounced 3 s) so the dispatcher fires within seconds instead of waiting for its scheduled tick.
 4. The LLM extracts zero or more durable rules from the prompt, in any language, and returns one canonical English sentence per rule with confidence and scope. Empty list is a valid answer ("nothing worth saving here").
-5. The applier creates one candidate memory per rule with semantic dedup against existing same-repo memories. Promotion still flows through repetition or explicit confirm — the LLM judges, never auto-activates.
+5. The applier creates one candidate memory per rule with semantic dedup against existing same-repo memories. Duplicate hook deliveries for the same prompt share one extraction task, and near-identical high-risk candidates are deduped even when the LLM varies the rule type. Promotion still flows through repetition or explicit confirm — the LLM judges, never auto-activates.
 
 ### Path B — Regex fallback (no provider configured, or LLM explicitly disabled)
 
