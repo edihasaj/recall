@@ -82,22 +82,29 @@ private struct DashboardWindowGuard: NSViewRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSWindowDelegate {
         private weak var window: NSWindow?
-        private var observer: NSObjectProtocol?
+        private var observesOpenDashboard = false
 
         func attach(to window: NSWindow?) {
             guard let window, self.window !== window else { return }
             self.window = window
             window.isReleasedWhenClosed = false
             window.delegate = self
-            observer = NotificationCenter.default.addObserver(
-                forName: .recallOpenDashboard,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.window?.makeKeyAndOrderFront(nil)
+            if !observesOpenDashboard {
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(showWindow),
+                    name: .recallOpenDashboard,
+                    object: nil
+                )
+                observesOpenDashboard = true
             }
+        }
+
+        @objc private func showWindow() {
+            window?.makeKeyAndOrderFront(nil)
         }
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -106,9 +113,7 @@ private struct DashboardWindowGuard: NSViewRepresentable {
         }
 
         deinit {
-            if let observer {
-                NotificationCenter.default.removeObserver(observer)
-            }
+            NotificationCenter.default.removeObserver(self)
         }
     }
 }

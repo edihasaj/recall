@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5 - 2026-05-14
+
+### Fixed
+
+- The dashboard close guard is now explicitly main-actor isolated, fixing the macOS app release build on Xcode 16.4 while keeping the 0.6.4 login-item and menu-bar lifecycle behavior.
+
 ## 0.6.4 - 2026-05-14
 
 ### Fixed
