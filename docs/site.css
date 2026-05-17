@@ -27,7 +27,7 @@ html {
 
 body {
   margin: 0;
-  padding-top: 18px;
+  padding: 18px env(safe-area-inset-right, 0) 0 env(safe-area-inset-left, 0);
   min-height: 100vh;
   font: 16px/1.55 var(--body);
   color: var(--ink);
@@ -116,12 +116,14 @@ main {
 }
 
 .hero {
-  min-height: clamp(620px, 82vh, 760px);
+  position: relative;
+  min-height: clamp(560px, 76vh, 760px);
   display: grid;
-  grid-template-columns: minmax(0, 0.94fr) minmax(360px, 0.78fr);
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 0.78fr);
   gap: clamp(28px, 6vw, 76px);
   align-items: center;
   padding: clamp(58px, 9vw, 96px) 0 44px;
+  overflow: clip;
 }
 
 .hero-copy {
@@ -222,7 +224,9 @@ h1 {
 
 .os-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
+  max-width: 100%;
   margin-top: 32px;
   padding: 4px;
   border: 1px solid rgba(36, 22, 17, 0.16);
@@ -308,15 +312,18 @@ h1 {
 
 .hero-visual {
   position: relative;
+  min-width: 0;
 }
 
 .hero-visual::before {
   content: "";
   position: absolute;
   inset: -18px 12% auto -8%;
+  max-width: 100%;
   height: 58px;
   background: repeating-linear-gradient(90deg, rgba(185, 86, 43, 0.18) 0 18px, transparent 18px 34px);
   transform: rotate(-5deg);
+  pointer-events: none;
 }
 
 .product-window {
@@ -518,12 +525,19 @@ h1 {
 pre {
   margin: 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 18px 20px 22px;
   border-top: 1px solid rgba(255, 246, 234, 0.13);
   color: #f7dcc2;
   background: rgba(20, 15, 13, 0.68);
   font-size: 12px;
   line-height: 1.55;
+  scrollbar-width: thin;
+}
+
+pre code {
+  display: block;
+  min-width: max-content;
 }
 
 .proof {
@@ -757,6 +771,12 @@ footer {
   }
 }
 
+@media (max-width: 1080px) {
+  .flow-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 920px) {
   .site-head,
   main,
@@ -790,9 +810,8 @@ footer {
   }
 
   .proof,
-  .flow-grid,
   .links-band {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -804,19 +823,28 @@ footer {
   .site-head {
     position: static;
     flex-direction: column;
+    padding: 12px;
   }
 
   nav {
     width: 100%;
     justify-content: flex-start;
+    font-size: 13px;
+    gap: 8px 12px;
   }
 
   h1 {
-    font-size: clamp(68px, 24vw, 106px);
+    font-size: clamp(60px, 22vw, 106px);
   }
 
   .lede {
-    font-size: 20px;
+    font-size: 18px;
+  }
+
+  .hero {
+    padding-top: 36px;
+    padding-bottom: 28px;
+    gap: 32px;
   }
 
   .hero-actions,
@@ -833,6 +861,16 @@ footer {
 
   .install-strip {
     align-items: stretch;
+  }
+
+  .os-tabs {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .os-tab {
+    flex: 1 1 auto;
+    text-align: center;
   }
 
   .status-row {
@@ -855,6 +893,10 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  .proof {
+    margin-bottom: 56px;
+  }
+
   .flow-grid article {
     min-height: auto;
   }
@@ -863,7 +905,54 @@ footer {
     padding: 22px;
   }
 
+  .product-window pre,
+  .injection {
+    font-size: 11px;
+  }
+
+  pre,
+  pre code {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  pre {
+    overflow-x: visible;
+  }
+
+  .window-top strong {
+    font-size: 11px;
+  }
+
   footer {
     flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 380px) {
+  .site-head,
+  main,
+  footer {
+    width: calc(100% - 20px);
+  }
+
+  h1 {
+    font-size: clamp(52px, 20vw, 92px);
+  }
+
+  .lede {
+    font-size: 17px;
+  }
+
+  .button {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+
+  pre {
+    padding: 14px 14px 16px;
   }
 }

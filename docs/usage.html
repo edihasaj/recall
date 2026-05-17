@@ -115,14 +115,20 @@
         background: #2f211a;
         font-size: 12px;
       }
-      .env-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 4px;
-        background: rgba(255, 250, 242, 0.6);
+      .env-table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         border: 1px solid var(--line);
         border-radius: 8px;
-        overflow: hidden;
+        background: rgba(255, 250, 242, 0.6);
+      }
+      .env-table {
+        width: 100%;
+        min-width: 480px;
+        border-collapse: collapse;
+        margin-top: 0;
+        background: transparent;
+        border: 0;
         font-size: 14px;
       }
       .env-table th,
@@ -170,13 +176,34 @@
         text-decoration: none;
         background: rgba(219, 232, 210, 0.7);
       }
+      .usage-head {
+        word-break: break-word;
+      }
       @media (max-width: 720px) {
         .doc-grid {
           grid-template-columns: 1fr;
         }
-        .env-table th:nth-child(2),
-        .env-table td:nth-child(2) {
-          display: none;
+        .doc-grid pre {
+          font-size: 11px;
+        }
+        .env-table {
+          font-size: 13px;
+        }
+        .env-table th,
+        .env-table td {
+          padding: 8px 10px;
+        }
+      }
+      @media (max-width: 480px) {
+        .usage-head h1 {
+          font-size: clamp(44px, 14vw, 72px);
+        }
+        .usage-head p {
+          font-size: 17px;
+        }
+        .toc {
+          font-size: 12px;
+          padding: 12px;
         }
       }
     </style>
@@ -363,7 +390,7 @@ recall maintenance list</code></pre>
         </p>
 
         <h3 style="margin: 18px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">Hook injection</h3>
-        <table class="env-table">
+        <div class="env-table-wrap"><table class="env-table">
           <thead>
             <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
           </thead>
@@ -394,10 +421,10 @@ recall maintenance list</code></pre>
               <td>Min Codex CLI version eligible for the <code>hooks.json</code> install path. Below this, falls back to the legacy <code>notify</code> bridge.</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
 
         <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">Daemon &amp; storage</h3>
-        <table class="env-table">
+        <div class="env-table-wrap"><table class="env-table">
           <thead>
             <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
           </thead>
@@ -408,23 +435,23 @@ recall maintenance list</code></pre>
             <tr><td><code>RECALL_MAINTENANCE_INTERVAL_SECONDS</code></td><td><code>300</code></td><td>Interval for the non-LLM loop.</td></tr>
             <tr><td><code>RECALL_EMBEDDINGS_DISABLED</code></td><td><code>false</code></td><td><code>true</code> skips embedding generation; FTS-only ranking still works.</td></tr>
           </tbody>
-        </table>
+        </table></div>
 
         <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">Capture path</h3>
         <p style="margin: 4px 0 10px; color: var(--ink-soft);">
           Default flow on every prompt: a cheap multi-language pre-screen (en/es/fr/de/it/pt/ru/zh/ja/sq/tr) decides whether the prompt is worth showing the LLM. Pure code-request prompts are skipped. Rule-shaped prompts go through an <code>extract_rules_from_prompt</code> task; the LLM extracts zero or more durable rules and the applier creates candidate memories. The hook also calls <code>POST /dispatch/wake</code> so the dispatcher fires within seconds rather than on its timer. If no LLM provider is configured, the legacy regex extractor takes over (English-only, deterministic).
         </p>
-        <table class="env-table">
+        <div class="env-table-wrap"><table class="env-table">
           <thead>
             <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
           </thead>
           <tbody>
             <tr><td><code>RECALL_LLM_CAPTURE_DISABLED</code></td><td><code>false</code></td><td>Set <code>true</code> to force the regex-fallback path even when an LLM key is configured.</td></tr>
           </tbody>
-        </table>
+        </table></div>
 
         <h3 style="margin: 22px 0 8px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--copper-dark);">LLM dispatcher</h3>
-        <table class="env-table">
+        <div class="env-table-wrap"><table class="env-table">
           <thead>
             <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
           </thead>
@@ -434,7 +461,7 @@ recall maintenance list</code></pre>
             <tr><td><code>RECALL_DISPATCHER_MAX_TASKS_PER_RUN</code></td><td><code>5</code></td><td>Max tasks per tick.</td></tr>
             <tr><td><code>OPENAI_API_KEY</code> · <code>ANTHROPIC_API_KEY</code></td><td>—</td><td>Fallback when Keychain has no entry. Azure uses the four <code>AZURE_OPENAI_*</code> vars together.</td></tr>
           </tbody>
-        </table>
+        </table></div>
       </section>
 
       <section class="doc-section" id="more" data-reveal="9">
