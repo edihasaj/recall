@@ -428,6 +428,73 @@ export const qualitySnapshots = sqliteTable("quality_snapshots", {
   index("idx_quality_snapshots_taken").on(table.taken_at),
 ]));
 
+// Knowledge graph: canonical entity nodes mentioned across memories.
+// An entity is a "thing" memories talk about — a file, a function, a library,
+// a domain concept, a tool, or a repo. The normalized_name field is the
+// dedupe key (lowercased, stripped of decorations), so multiple textual
+// surface forms can collapse to one node.
+export const entities = sqliteTable("entities", {
+  id: text("id").primaryKey(),
+  kind: text("kind", {
+    enum: ["file", "function", "library", "tool", "concept", "repo_path", "command", "url"],
+  }).notNull(),
+  name: text("name").notNull(),
+  normalized_name: text("normalized_name").notNull(),
+  repo: text("repo"),
+  description: text("description"),
+  first_seen_memory_id: text("first_seen_memory_id"),
+  mention_count: integer("mention_count").notNull().default(0),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+}, (table) => ([
+  index("idx_entities_normalized").on(table.normalized_name),
+  index("idx_entities_kind").on(table.kind),
+  index("idx_entities_repo").on(table.repo),
+]));
+
+// Typed relations between entities. confidence is 0..1; provenance is
+// the memory that justified inserting the edge. Multi-edges are allowed:
+// the same pair can have several relation_types or multiple support
+// memories — we de-dupe on (source, target, relation_type, source_memory).
+export const entityRelations = sqliteTable("entity_relations", {
+  id: text("id").primaryKey(),
+  source_entity_id: text("source_entity_id")
+    .notNull()
+    .references(() => entities.id),
+  target_entity_id: text("target_entity_id")
+    .notNull()
+    .references(() => entities.id),
+  relation_type: text("relation_type", {
+    enum: ["uses", "replaces", "conflicts_with", "tested_by", "depends_on", "references", "part_of"],
+  }).notNull(),
+  source_memory_id: text("source_memory_id"),
+  confidence: real("confidence").notNull().default(0.6),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_entity_relations_source").on(table.source_entity_id),
+  index("idx_entity_relations_target").on(table.target_entity_id),
+  index("idx_entity_relations_type").on(table.relation_type),
+]));
+
+// Mention edges: which memories reference which entities. This is the
+// join used by graph retrieval to walk from a memory to its neighbours.
+export const memoryEntities = sqliteTable("memory_entities", {
+  id: text("id").primaryKey(),
+  memory_id: text("memory_id")
+    .notNull()
+    .references(() => memories.id),
+  entity_id: text("entity_id")
+    .notNull()
+    .references(() => entities.id),
+  /** Where in the text the mention occurred; 'extracted' for LLM/heuristic output. */
+  source: text("source", { enum: ["heuristic", "llm", "manual"] }).notNull().default("heuristic"),
+  weight: real("weight").notNull().default(1.0),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_memory_entities_memory").on(table.memory_id),
+  index("idx_memory_entities_entity").on(table.entity_id),
+]));
+
 // Phase-1 deterministic cleanup log (revertable, no LLM required)
 export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
   id: text("id").primaryKey(),

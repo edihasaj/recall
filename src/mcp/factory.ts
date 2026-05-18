@@ -41,6 +41,15 @@ import {
   releaseTask,
   submitTask,
 } from "../maintenance/tasks.js";
+import { graphQuery } from "../graph/retrieval.js";
+import {
+  getEntity,
+  listEntities,
+  listMemoryIdsForEntity,
+  neighborsOf,
+  type RelationType,
+} from "../graph/store.js";
+import { loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 
 export function createRecallMcpServer(db: RecallDb = initDb()) {
 const activityEventTypes = [
@@ -1023,6 +1032,149 @@ tool(
         { type: "text" as const, text: JSON.stringify(outcome) },
       ],
       isError: outcome.status !== "released",
+    };
+  },
+);
+
+const RELATION_TYPES = [
+  "uses",
+  "replaces",
+  "conflicts_with",
+  "tested_by",
+  "depends_on",
+  "references",
+  "part_of",
+] as const;
+
+const ENTITY_KINDS = [
+  "file",
+  "function",
+  "library",
+  "tool",
+  "concept",
+  "repo_path",
+  "command",
+  "url",
+] as const;
+
+tool(
+  "graph_query",
+  "Knowledge-graph aware retrieval. Same shape as `query` but walks the entity graph N hops from the seed memories so related memories that don't textually match the query still surface (e.g. asking about 'auth' returns a memory about `jose` key rotation if both reference the same auth entities). Use for complex questions where you suspect related context exists under a different vocabulary.",
+  {
+    query: z.string().describe("Natural-language question or task description."),
+    repo: z.string().optional().describe("Restrict to a repository."),
+    hops: z.number().int().min(0).max(4).optional().describe("Graph walk depth (default 2)."),
+    limit: z.number().int().min(1).max(50).optional().describe("Max hits to return (default 15)."),
+    relation_types: z.array(z.enum(RELATION_TYPES)).optional().describe("Restrict graph walk to these relation types."),
+  },
+  async ({ query, repo, hops, limit, relation_types }) => {
+    const embeddingConfig = loadEmbeddingConfigFromEnv();
+    const result = await graphQuery(db, query, embeddingConfig, {
+      repo,
+      hops,
+      limit,
+      relationTypes: relation_types as RelationType[] | undefined,
+    });
+    const payload = {
+      seed_count: result.seed_count,
+      expanded_entities: result.expanded_entities,
+      hits: result.hits.map((h) => ({
+        memory_id: h.memory.id,
+        text: h.memory.text,
+        repo: h.memory.repo,
+        scope: h.memory.scope,
+        status: h.memory.status,
+        via: h.via,
+        score: Number(h.score.toFixed(4)),
+        hops: h.hops,
+        shared_entities: h.shared_entities.map((e) => ({
+          id: e.id,
+          kind: e.kind,
+          name: e.name,
+        })),
+      })),
+    };
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+    };
+  },
+);
+
+tool(
+  "graph_neighbors",
+  "Walk the entity graph from a starting entity. Returns the neighbour entities + relations + every memory mentioning any of them. Use this to explore 'what else does the codebase know about X'.",
+  {
+    entity_id: z.string().describe("Starting entity ID (from entity_list or graph_query.shared_entities[].id)."),
+    hops: z.number().int().min(1).max(5).optional().describe("Walk depth (default 1)."),
+    relation_types: z.array(z.enum(RELATION_TYPES)).optional().describe("Restrict to these relation types."),
+    include_memories: z.boolean().optional().describe("Include the memory IDs that mention each entity (default true)."),
+  },
+  async ({ entity_id, hops, relation_types, include_memories }) => {
+    const root = getEntity(db, entity_id);
+    if (!root) {
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ error: "entity not found", entity_id }) }],
+        isError: true,
+      };
+    }
+    const walk = neighborsOf(db, entity_id, {
+      hops,
+      relationTypes: relation_types as RelationType[] | undefined,
+    });
+    const memIds = include_memories === false
+      ? {}
+      : Object.fromEntries(walk.entities.map((e) => [e.id, listMemoryIdsForEntity(db, e.id)]));
+    const payload = {
+      root: { id: root.id, kind: root.kind, name: root.name, repo: root.repo },
+      entities: walk.entities.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        name: e.name,
+        repo: e.repo,
+        mention_count: e.mention_count,
+      })),
+      relations: walk.relations.map((r) => ({
+        source: r.source_entity_id,
+        target: r.target_entity_id,
+        type: r.relation_type,
+        confidence: r.confidence,
+      })),
+      memories_by_entity: memIds,
+    };
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+    };
+  },
+);
+
+tool(
+  "entity_list",
+  "List entities (files, functions, libraries, tools, concepts) the knowledge graph knows about. Filter by repo/kind/search to find a starting node for graph_neighbors.",
+  {
+    repo: z.string().optional().describe("Restrict to a repository."),
+    kind: z.enum(ENTITY_KINDS).optional().describe("Restrict to one entity kind."),
+    search: z.string().optional().describe("Case-insensitive substring filter on name."),
+    limit: z.number().int().min(1).max(500).optional().describe("Max rows (default 100)."),
+  },
+  async ({ repo, kind, search, limit }) => {
+    const rows = listEntities(db, {
+      repo,
+      kind,
+      search,
+      limit,
+    });
+    const payload = {
+      count: rows.length,
+      entities: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        name: r.name,
+        repo: r.repo,
+        mention_count: r.mention_count,
+      })),
+    };
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
     };
   },
 );

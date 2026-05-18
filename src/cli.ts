@@ -1775,6 +1775,193 @@ daemonCmd
     console.log(getServiceInfo(status.label));
   });
 
+// --- ui (WebUI dashboard) ---
+
+const uiCmd = program
+  .command("ui")
+  .description("Control the Recall WebUI dashboard (browser-based view of memories, graph, sessions)");
+
+uiCmd
+  .command("start", { isDefault: true })
+  .description("Start the WebUI and open it in your default browser")
+  .option("--port <port>", "WebUI port", "7891")
+  .option("--daemon-port <port>", "Daemon port", "7890")
+  .option("--no-open", "Do not open the browser automatically")
+  .action(async (opts) => {
+    const daemonPort = parseInt(opts.daemonPort, 10);
+    const webuiPort = parseInt(opts.port, 10);
+    try {
+      const res = await fetch(`http://localhost:${daemonPort}/webui/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ port: webuiPort, open: opts.open !== false }),
+      });
+      const status = (await res.json()) as { url?: string; running?: boolean; port?: number };
+      if (!res.ok || !status.running) {
+        console.error(`Failed to start WebUI: ${JSON.stringify(status)}`);
+        process.exit(1);
+      }
+      console.log(`Recall WebUI: ${status.url}`);
+      if (opts.open === false) {
+        console.log("Open the URL in your browser to view the dashboard.");
+      }
+    } catch (err) {
+      console.error(
+        `Could not reach daemon at http://localhost:${daemonPort}. Is it running? Try \`recall daemon start\`.`,
+      );
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  });
+
+uiCmd
+  .command("stop")
+  .description("Stop the WebUI listener (the browser tab stays open)")
+  .option("--daemon-port <port>", "Daemon port", "7890")
+  .action(async (opts) => {
+    const daemonPort = parseInt(opts.daemonPort, 10);
+    try {
+      const res = await fetch(`http://localhost:${daemonPort}/webui/stop`, { method: "POST" });
+      const status = (await res.json()) as { running: boolean };
+      console.log(status.running ? "WebUI still running" : "WebUI stopped");
+    } catch (err) {
+      console.error(
+        `Could not reach daemon at http://localhost:${daemonPort}. Is it running?`,
+      );
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  });
+
+uiCmd
+  .command("status")
+  .description("Show WebUI status")
+  .option("--daemon-port <port>", "Daemon port", "7890")
+  .action(async (opts) => {
+    const daemonPort = parseInt(opts.daemonPort, 10);
+    try {
+      const res = await fetch(`http://localhost:${daemonPort}/webui/status`);
+      const status = (await res.json()) as {
+        running: boolean;
+        url: string | null;
+        port: number | null;
+        client_count: number;
+        dist_exists: boolean;
+        dist_dir: string | null;
+      };
+      if (!status.running) {
+        console.log("WebUI: stopped");
+        if (!status.dist_exists) {
+          console.log(`Bundle missing at ${status.dist_dir}. Run \`npm run webui:build\` once.`);
+        }
+        return;
+      }
+      console.log(`WebUI: running at ${status.url}`);
+      console.log(`Live clients: ${status.client_count}`);
+      if (!status.dist_exists) {
+        console.log(`Bundle missing at ${status.dist_dir}. UI will render a fallback page.`);
+      }
+    } catch (err) {
+      console.error(
+        `Could not reach daemon at http://localhost:${daemonPort}. Is it running?`,
+      );
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  });
+
+// --- graph (knowledge graph) ---
+
+const graphCmd = program
+  .command("graph")
+  .description("Inspect and rebuild the knowledge graph (entities + relations)");
+
+graphCmd
+  .command("stats")
+  .description("Show entity/relation counts")
+  .action(async () => {
+    const db = initDb();
+    const { countEntities, countRelations } = await import("./graph/store.js");
+    console.log(`entities:  ${countEntities(db)}`);
+    console.log(`relations: ${countRelations(db)}`);
+  });
+
+graphCmd
+  .command("backfill")
+  .description("Run the heuristic extractor over every active memory (idempotent)")
+  .option("--repo <repo>", "Limit to a single repo")
+  .option("--limit <n>", "Cap rows processed", "10000")
+  .action(async (opts) => {
+    const db = initDb();
+    const { ingestMemoryHeuristic } = await import("./graph/ingest.js");
+    const rows = queryMemories(db, {
+      repo: opts.repo,
+      status: "active",
+      limit: parseInt(opts.limit, 10),
+    });
+    let totalEntities = 0;
+    let totalRelations = 0;
+    for (const row of rows) {
+      const s = ingestMemoryHeuristic(db, { id: row.id, text: row.text, repo: row.repo });
+      totalEntities += s.entities_created_or_updated;
+      totalRelations += s.relations_created_or_updated;
+    }
+    console.log(
+      `Processed ${rows.length} memories — entity touches: ${totalEntities}, relation touches: ${totalRelations}`,
+    );
+  });
+
+graphCmd
+  .command("entities")
+  .description("List entities")
+  .option("--repo <repo>", "Filter by repo")
+  .option("--kind <kind>", "Filter by entity kind")
+  .option("--search <q>", "Substring filter on name")
+  .option("--limit <n>", "Max rows", "50")
+  .action(async (opts) => {
+    const db = initDb();
+    const { listEntities } = await import("./graph/store.js");
+    const rows = listEntities(db, {
+      repo: opts.repo,
+      kind: opts.kind,
+      search: opts.search,
+      limit: parseInt(opts.limit, 10),
+    });
+    if (rows.length === 0) {
+      console.log("(no entities)");
+      return;
+    }
+    for (const r of rows) {
+      console.log(
+        `${r.mention_count.toString().padStart(4)}  ${r.kind.padEnd(10)} ${r.name}  ${r.repo ?? ""}`,
+      );
+    }
+  });
+
+graphCmd
+  .command("query <query...>")
+  .description("Run graph-aware retrieval for a query")
+  .option("--repo <repo>", "Restrict to repo")
+  .option("--hops <n>", "Graph hops", "2")
+  .option("--limit <n>", "Max hits", "10")
+  .action(async (queryTokens: string[], opts) => {
+    const db = initDb();
+    const { graphQuery } = await import("./graph/retrieval.js");
+    const { loadEmbeddingConfigFromEnv } = await import("./embeddings/embeddings.js");
+    const embeddingConfig = loadEmbeddingConfigFromEnv();
+    const result = await graphQuery(db, queryTokens.join(" "), embeddingConfig, {
+      repo: opts.repo,
+      hops: parseInt(opts.hops, 10),
+      limit: parseInt(opts.limit, 10),
+    });
+    console.log(`seeds=${result.seed_count}  expanded_entities=${result.expanded_entities}`);
+    for (const h of result.hits) {
+      console.log(
+        `[${h.via}${h.hops}] score=${h.score.toFixed(3)}  ${h.memory.id.slice(0, 8)}  ${h.memory.text.slice(0, 100)}`,
+      );
+    }
+  });
+
 // --- Tier-2 maintenance tasks ---
 
 const maintenanceCmd = program

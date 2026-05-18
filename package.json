@@ -28,7 +28,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup && node -e \"const f='dist/cli.js';const c=require('fs').readFileSync(f,'utf8');if(!c.startsWith('#!'))require('fs').writeFileSync(f,'#!/usr/bin/env node\\n'+c);require('fs').chmodSync(f,0o755)\"",
+    "build": "tsup && npm run webui:build && node -e \"const f='dist/cli.js';const c=require('fs').readFileSync(f,'utf8');if(!c.startsWith('#!'))require('fs').writeFileSync(f,'#!/usr/bin/env node\\n'+c);require('fs').chmodSync(f,0o755)\"",
+    "webui:build": "cd webui && (test -d node_modules || npm install --no-audit --no-fund) && npm run build",
+    "webui:dev": "cd webui && npm run dev",
     "build:app": "bash scripts/build-app.sh",
     "install:app": "bash scripts/install-app.sh",
     "dev": "tsup --watch",

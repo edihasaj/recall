@@ -27,6 +27,31 @@ import {
   recordSessionLifecycleEvent,
   startSessionLifecycle,
 } from "./session/lifecycle.js";
+import { emit as emitEvent } from "./daemon/events.js";
+import { graphQuery } from "./graph/retrieval.js";
+import {
+  getEntity,
+  listEntities,
+  listEntitiesForMemory,
+  listMemoryIdsForEntity,
+  neighborsOf,
+  countEntities,
+  countRelations,
+  type RelationType,
+} from "./graph/store.js";
+import { safeIngestMemoryById } from "./graph/ingest.js";
+import type { EntityKind } from "./graph/normalize.js";
+
+function safeIngestMemory(memoryId: string): void {
+  safeIngestMemoryById(db, memoryId);
+}
+import {
+  getStatus as getWebUiStatus,
+  isRunning as webUiIsRunning,
+  start as startWebUi,
+  stop as stopWebUi,
+} from "./webui/server.js";
+import { spawn } from "node:child_process";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
@@ -144,6 +169,12 @@ async function runDispatcherOnce(): Promise<void> {
       console.log(
         `[recall] dispatcher ${report.provider}: attempted=${report.attempted} applied=${report.applied} rejected=${report.rejected} released=${report.released}`,
       );
+      emitEvent("dispatcher.tick", {
+        provider: report.provider ?? "unknown",
+        attempted: report.attempted,
+        applied: report.applied,
+        rejected: report.rejected,
+      });
     }
   } catch (error) {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -196,6 +227,12 @@ function scheduleCleanupLoop() {
         console.log(
           `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions} suppress=${c.command_suppressions} globalize=${c.globalizations}/${c.globalize_losers}`,
         );
+        emitEvent("cleanup.tick", {
+          run_id: report.run_id,
+          merges: c.dedupe_clusters,
+          promotions: c.repeat_promotions,
+          suppressions: c.command_suppressions,
+        });
       }
       // Surface logical conflicts after each tick. Cheap (O(n²) over active
       // memories) and lets users see "Use pnpm" vs "Use bun" before the
@@ -207,6 +244,14 @@ function scheduleCleanupLoop() {
         );
         for (const c of newContradictions.slice(0, 5)) {
           console.log(`  [${c.severity}] ${c.contradiction_type}: ${c.description.slice(0, 120)}`);
+        }
+        for (const c of newContradictions) {
+          emitEvent("contradiction.detected", {
+            contradiction_id: c.id,
+            memory_a: c.memory_a_id,
+            memory_b: c.memory_b_id,
+            severity: c.severity,
+          });
         }
       }
     } catch (error) {
@@ -378,6 +423,11 @@ const server = createServer(async (req, res) => {
         path: body.path ?? null,
         meta: body.meta ?? {},
       });
+      emitEvent("session.started", {
+        session_id: body.session_id,
+        client: body.client ?? null,
+        repo: body.repo ?? null,
+      });
       return send(res, 200, result);
     }
 
@@ -415,7 +465,130 @@ const server = createServer(async (req, res) => {
         meta: body.meta ?? {},
         payload: body.payload ?? {},
       });
+      emitEvent("session.ended", {
+        session_id: body.session_id,
+        repo: body.repo ?? null,
+      });
       return send(res, 200, result);
+    }
+
+    // --- Knowledge graph endpoints (mirror MCP tools) ---
+
+    if (path === "/graph/stats" && method === "GET") {
+      return send(res, 200, {
+        entities: countEntities(db),
+        relations: countRelations(db),
+      });
+    }
+
+    if (path === "/graph/entities" && method === "GET") {
+      const repo = url.searchParams.get("repo") ?? undefined;
+      const kind = url.searchParams.get("kind") as EntityKind | null;
+      const search = url.searchParams.get("search") ?? undefined;
+      const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+      const rows = listEntities(db, {
+        repo,
+        kind: kind ?? undefined,
+        search,
+        limit,
+      });
+      return send(res, 200, {
+        count: rows.length,
+        entities: rows,
+      });
+    }
+
+    if (path === "/graph/query" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.query || typeof body.query !== "string") {
+        return send(res, 400, { error: "query (string) required" });
+      }
+      const embeddingConfig = loadEmbeddingConfigFromEnv();
+      const result = await graphQuery(db, body.query, embeddingConfig, {
+        repo: body.repo,
+        hops: typeof body.hops === "number" ? body.hops : undefined,
+        limit: typeof body.limit === "number" ? body.limit : undefined,
+        relationTypes: Array.isArray(body.relation_types)
+          ? (body.relation_types as RelationType[])
+          : undefined,
+      });
+      return send(res, 200, {
+        seed_count: result.seed_count,
+        expanded_entities: result.expanded_entities,
+        hits: result.hits.map((h) => ({
+          memory_id: h.memory.id,
+          text: h.memory.text,
+          repo: h.memory.repo,
+          scope: h.memory.scope,
+          status: h.memory.status,
+          via: h.via,
+          score: h.score,
+          hops: h.hops,
+          shared_entities: h.shared_entities,
+        })),
+        entities: result.entities,
+      });
+    }
+
+    if (path.startsWith("/graph/entity/") && method === "GET") {
+      const id = path.slice("/graph/entity/".length);
+      const ent = getEntity(db, id);
+      if (!ent) return send(res, 404, { error: "entity not found" });
+      return send(res, 200, {
+        entity: ent,
+        memories: listMemoryIdsForEntity(db, id),
+      });
+    }
+
+    if (path === "/graph/neighbors" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.entity_id || typeof body.entity_id !== "string") {
+        return send(res, 400, { error: "entity_id (string) required" });
+      }
+      const root = getEntity(db, body.entity_id);
+      if (!root) return send(res, 404, { error: "entity not found" });
+      const walk = neighborsOf(db, body.entity_id, {
+        hops: typeof body.hops === "number" ? body.hops : undefined,
+        relationTypes: Array.isArray(body.relation_types)
+          ? (body.relation_types as RelationType[])
+          : undefined,
+      });
+      const includeMemories = body.include_memories !== false;
+      const memoriesByEntity = includeMemories
+        ? Object.fromEntries(walk.entities.map((e) => [e.id, listMemoryIdsForEntity(db, e.id)]))
+        : {};
+      return send(res, 200, {
+        root,
+        entities: walk.entities,
+        relations: walk.relations,
+        memories_by_entity: memoriesByEntity,
+      });
+    }
+
+    if (path.startsWith("/graph/memory/") && method === "GET") {
+      const memId = path.slice("/graph/memory/".length);
+      const ents = listEntitiesForMemory(db, memId);
+      return send(res, 200, { memory_id: memId, entities: ents });
+    }
+
+    // WebUI lifecycle: start/stop/status. The :7891 listener is opt-in; only
+    // mounted when the user opens the dashboard from the menubar or CLI.
+    if (path === "/webui/status" && method === "GET") {
+      return send(res, 200, getWebUiStatus());
+    }
+    if (path === "/webui/start" && method === "POST") {
+      const body = await parseBody(req).catch(() => ({}));
+      const status = await startWebUi({
+        port: typeof body.port === "number" ? body.port : undefined,
+      });
+      if (body.open !== false && status.url) {
+        openInBrowser(status.url);
+      }
+      return send(res, 200, status);
+    }
+    if (path === "/webui/stop" && method === "POST") {
+      const status = await stopWebUi();
+      return send(res, 200, status);
     }
 
     // Dispatch wake: called by the capture hook after enqueuing a task.
@@ -496,6 +669,14 @@ const server = createServer(async (req, res) => {
         request: { text: body.text },
         result: { created: ids },
       });
+      for (const id of ids) {
+        safeIngestMemory(id);
+        emitEvent("memory.created", {
+          memory_id: id,
+          repo: repo ?? null,
+          source: "correction",
+        });
+      }
       return send(res, 200, { created: ids });
     }
 
@@ -519,6 +700,14 @@ const server = createServer(async (req, res) => {
         request: { feedback: body.feedback, reviewer: body.reviewer ?? null },
         result: { created: ids },
       });
+      for (const id of ids) {
+        safeIngestMemory(id);
+        emitEvent("memory.created", {
+          memory_id: id,
+          repo: repo ?? null,
+          source: "review",
+        });
+      }
       return send(res, 200, { created: ids });
     }
 
@@ -526,6 +715,13 @@ const server = createServer(async (req, res) => {
     if (path === "/confirm" && method === "POST") {
       const body = await parseBody(req);
       const ok = confirmMemory(db, body.memory_id);
+      if (ok) {
+        const mem = getMemory(db, body.memory_id);
+        emitEvent("memory.confirmed", {
+          memory_id: body.memory_id,
+          repo: mem?.repo ?? null,
+        });
+      }
       return send(res, ok ? 200 : 404, { success: ok });
     }
 
@@ -545,6 +741,11 @@ const server = createServer(async (req, res) => {
           before ? JSON.stringify(before) : null,
           after ? JSON.stringify(after) : null,
         );
+        emitEvent("memory.rejected", {
+          memory_id: body.memory_id,
+          repo: before?.repo ?? null,
+          actor: "daemon:http",
+        });
       }
       return send(res, ok ? 200 : 404, { success: ok });
     }
@@ -566,6 +767,12 @@ const server = createServer(async (req, res) => {
         memory_ids: [body.memory_id],
         request: { injected: body.injected, outcome: body.outcome },
         result: { feedback_id: id },
+      });
+      emitEvent("feedback.recorded", {
+        memory_id: body.memory_id,
+        session_id: body.session_id,
+        outcome: String(body.outcome ?? ""),
+        injected: Boolean(body.injected),
       });
       return send(res, 200, { feedback_id: id });
     }
@@ -615,6 +822,21 @@ const server = createServer(async (req, res) => {
           artifact_written: artifact.written,
         },
       });
+      emitEvent("scan.completed", {
+        repo: mem?.repo ?? null,
+        created: ids.length,
+        repo_path: body.repo_path,
+      });
+      for (const id of ids) {
+        safeIngestMemory(id);
+        const m = getMemory(db, id);
+        emitEvent("memory.created", {
+          memory_id: id,
+          repo: m?.repo ?? null,
+          source: "scan",
+          type: m?.type,
+        });
+      }
       return send(res, 200, {
         created: ids,
         count: ids.length,
@@ -794,6 +1016,14 @@ const server = createServer(async (req, res) => {
     if (path === "/contradictions/detect" && method === "POST") {
       const body = await parseBody(req);
       const found = detectContradictions(db, body.repo);
+      for (const c of found) {
+        emitEvent("contradiction.detected", {
+          contradiction_id: c.id,
+          memory_a: c.memory_a_id,
+          memory_b: c.memory_b_id,
+          severity: c.severity,
+        });
+      }
       return send(res, 200, { contradictions: found });
     }
 
@@ -810,6 +1040,12 @@ const server = createServer(async (req, res) => {
     if (path === "/contradictions/resolve" && method === "POST") {
       const body = await parseBody(req);
       const ok = resolveContradiction(db, body.contradiction_id, body.keep_memory_id, body.actor ?? "daemon", body.resolution);
+      if (ok) {
+        emitEvent("contradiction.resolved", {
+          contradiction_id: body.contradiction_id,
+          keep_memory_id: body.keep_memory_id,
+        });
+      }
       return send(res, ok ? 200 : 404, { success: ok });
     }
 
@@ -862,6 +1098,28 @@ function send(
   res.statusCode = status;
   res.end(JSON.stringify(data));
 }
+
+function openInBrowser(url: string): void {
+  // Per-platform default opener. macOS gets `open`, Linux `xdg-open`,
+  // Windows `start`. Errors are swallowed: the daemon should not crash
+  // because the user has no graphical session.
+  const platform = process.platform;
+  try {
+    if (platform === "darwin") {
+      spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    } else if (platform === "win32") {
+      spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    } else {
+      spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+    }
+  } catch (err) {
+    console.error(`[recall] failed to open browser for ${url}:`, err);
+  }
+}
+
+// Re-export for callers that want to introspect WebUI state without
+// importing webui/server directly (e.g. the recall ui CLI).
+export { webUiIsRunning };
 
 async function startDaemon() {
   const backup = ensureDailyBackup();

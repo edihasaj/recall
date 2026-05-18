@@ -29,6 +29,7 @@ struct RecallApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var controller = DaemonController()
     @StateObject private var preferences = AppPreferences()
+    @StateObject private var webui = WebUIController()
 
     init() {
         AppPreferences.applyBundledAppIcon()
@@ -36,18 +37,19 @@ struct RecallApp: App {
 
     var body: some Scene {
         Window("Recall", id: "dashboard") {
-            DashboardView(controller: controller, preferences: preferences)
-                .frame(minWidth: 560, minHeight: 520)
+            DashboardView(controller: controller, preferences: preferences, webui: webui)
+                .frame(minWidth: 820, minHeight: 600)
                 .task {
                     controller.start()
+                    webui.start()
                     preferences.syncLaunchAtLogin()
                     preferences.applyActivationPolicy()
-                    delegate.attach(controller: controller, preferences: preferences)
+                    delegate.attach(controller: controller, preferences: preferences, webui: webui)
                 }
                 .background(WindowOpener())
                 .background(DashboardWindowGuard())
         }
-        .defaultSize(width: 640, height: 540)
+        .defaultSize(width: 920, height: 640)
 
         Settings {
             SettingsView(preferences: preferences)
@@ -131,12 +133,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var colorImage: NSImage?
     private weak var controller: DaemonController?
     private weak var preferences: AppPreferences?
+    private weak var webui: WebUIController?
 
     private var launchdStatusItem: NSMenuItem?
     private var healthStatusItem: NSMenuItem?
     private var setupStatusItem: NSMenuItem?
     private var dataStatusItem: NSMenuItem?
     private var loginStatusItem: NSMenuItem?
+    private var webuiStatusItem: NSMenuItem?
+    private var webuiToggleItem: NSMenuItem?
     private var userInitiatedQuit = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -188,14 +193,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupStatusItem = makeStatusItem()
         dataStatusItem = makeStatusItem()
         loginStatusItem = makeStatusItem()
+        webuiStatusItem = makeStatusItem()
         menu.addItem(launchdStatusItem!)
         menu.addItem(healthStatusItem!)
         menu.addItem(setupStatusItem!)
         menu.addItem(dataStatusItem!)
         menu.addItem(loginStatusItem!)
+        menu.addItem(webuiStatusItem!)
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(makeItem(title: "Open Recall", action: #selector(openDashboard)))
+        webuiToggleItem = makeItem(title: "Open Dashboard in Browser", action: #selector(toggleWebUi))
+        menu.addItem(webuiToggleItem!)
         menu.addItem(makeItem(title: "Refresh Status", action: #selector(refreshStatus)))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(makeItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
@@ -217,6 +226,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             setupStatusItem?.title = "Setup:    —"
             dataStatusItem?.title = "Data:     —"
             loginStatusItem?.title = "Login:    —"
+            webuiStatusItem?.title = "WebUI:    —"
+            webuiToggleItem?.title = "Open Dashboard in Browser"
             return
         }
         launchdStatusItem?.title = "Launchd:  \(controller.launchdState)"
@@ -225,11 +236,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupStatusItem?.title = "Setup:    \(controller.setupStatus)"
         dataStatusItem?.title = "Data:     \(controller.dataDir)"
         loginStatusItem?.title = "Login:    \(preferences?.loginItemStatusText ?? "—")"
+
+        if let webui {
+            let dot = webui.running ? "●" : "○"
+            webuiStatusItem?.title = "WebUI:    \(dot) \(webui.statusText)"
+            webuiToggleItem?.title = webui.running
+                ? "Close Dashboard (\(webui.clientCount) live)"
+                : "Open Dashboard in Browser"
+        } else {
+            webuiStatusItem?.title = "WebUI:    —"
+            webuiToggleItem?.title = "Open Dashboard in Browser"
+        }
     }
 
-    func attach(controller: DaemonController, preferences: AppPreferences) {
+    func attach(controller: DaemonController, preferences: AppPreferences, webui: WebUIController) {
         self.controller = controller
         self.preferences = preferences
+        self.webui = webui
     }
 
     private func makeItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -263,6 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         preferences?.refreshLoginItemStatus()
         controller?.refresh()
+        webui?.refresh()
         updateStatusItems()
     }
 
@@ -281,6 +305,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func refreshStatus() {
         controller?.refresh()
+        webui?.refresh()
+    }
+
+    @objc private func toggleWebUi() {
+        guard let webui else { return }
+        if webui.running {
+            webui.closeDashboard()
+        } else {
+            webui.openDashboard()
+        }
     }
 
     @objc private func openSettings() {
@@ -301,119 +335,451 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 struct DashboardView: View {
     @ObservedObject var controller: DaemonController
     @ObservedObject var preferences: AppPreferences
+    @ObservedObject var webui: WebUIController
+
+    @State private var selection: AppSection = .overview
 
     var body: some View {
-        ScrollView(.vertical) {
-            content
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+        NavigationSplitView {
+            SidebarView(
+                selection: $selection,
+                controller: controller,
+                webui: webui
+            )
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
+        } detail: {
+            DetailView(
+                section: selection,
+                controller: controller,
+                preferences: preferences,
+                webui: webui
+            )
         }
-        .padding(.horizontal, AppLayout.horizontalPadding)
-        .padding(.top, AppLayout.titlebarTopPadding)
-        .padding(.bottom, AppLayout.bottomPadding)
+        .navigationSplitViewStyle(.balanced)
+    }
+}
+
+private enum AppSection: String, Hashable, CaseIterable {
+    case overview, daemon, webui, preferences
+
+    var label: String {
+        switch self {
+        case .overview: return "Overview"
+        case .daemon: return "Daemon"
+        case .webui: return "Web Dashboard"
+        case .preferences: return "Preferences"
+        }
     }
 
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 16) {
+    var systemImage: String {
+        switch self {
+        case .overview: return "square.grid.2x2.fill"
+        case .daemon: return "bolt.horizontal.circle.fill"
+        case .webui: return "safari.fill"
+        case .preferences: return "gearshape.fill"
+        }
+    }
+}
+
+private struct SidebarView: View {
+    @Binding var selection: AppSection
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var webui: WebUIController
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Brand + version
+            HStack(spacing: 10) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("Recall")
-                            .font(.system(size: 28, weight: .semibold))
-                        Text(AppVersion.display)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.secondary.opacity(0.12))
-                            )
-                            .textSelection(.enabled)
-                    }
-                    Text(controller.summary)
+                    .frame(width: 36, height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recall")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(AppVersion.display)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                StatusBadge(healthy: controller.healthOK)
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 12)
 
-            GroupBox("Daemon") {
-                VStack(alignment: .leading, spacing: 10) {
-                    LabeledValue(label: "Launchd", value: controller.launchdState)
-                    LabeledValue(label: "Health", value: controller.healthText)
-                    LabeledValue(label: "Setup", value: controller.setupStatus)
-                    LabeledValue(label: "Data", value: controller.dataDir)
-                    LabeledValue(label: "Logs", value: controller.logDir)
+            // Nav list
+            List(selection: $selection) {
+                Section {
+                    ForEach(AppSection.allCases, id: \.self) { section in
+                        Label(section.label, systemImage: section.systemImage)
+                            .tag(section)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+
+            Divider()
+
+            // Persistent footer — primary action always visible
+            SidebarFooter(controller: controller, webui: webui)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+        }
+    }
+}
+
+private struct SidebarFooter: View {
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var webui: WebUIController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(controller.healthOK ? Color.green : Color.orange)
+                    .frame(width: 8, height: 8)
+                Text(controller.healthOK ? "Daemon healthy" : "Needs attention")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
             }
 
-            GroupBox("Appearance") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(isOn: Binding(
-                        get: { preferences.launchAtLogin },
-                        set: { preferences.setLaunchAtLogin($0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Start at Login")
-                            Text(preferences.loginItemStatusText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(webui.running ? Color.green : Color.gray.opacity(0.6))
+                    .frame(width: 8, height: 8)
+                Text(webui.running ? "WebUI live" : "WebUI offline")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            if webui.running {
+                HStack(spacing: 6) {
+                    Button {
+                        webui.openInBrowser()
+                    } label: {
+                        Label("Open in Browser", systemImage: "safari")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Button {
+                        webui.closeDashboard()
+                    } label: {
+                        Image(systemName: "xmark.circle")
+                    }
+                    .controlSize(.large)
+                    .help("Close Dashboard")
+                }
+            } else {
+                Button {
+                    webui.openDashboard()
+                } label: {
+                    Label("Open Web Dashboard", systemImage: "safari")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+        }
+    }
+}
+
+private struct DetailView: View {
+    let section: AppSection
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var preferences: AppPreferences
+    @ObservedObject var webui: WebUIController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DetailHeader(section: section, controller: controller, webui: webui)
+                .padding(.horizontal, 28)
+                .padding(.top, 28)
+                .padding(.bottom, 16)
+
+            Divider()
+
+            ScrollView(.vertical) {
+                Group {
+                    switch section {
+                    case .overview:
+                        OverviewTab(controller: controller, webui: webui)
+                    case .daemon:
+                        DaemonTab(controller: controller, webui: webui)
+                    case .webui:
+                        WebDashboardTab(webui: webui)
+                    case .preferences:
+                        PreferencesTab(preferences: preferences)
+                    }
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct DetailHeader: View {
+    let section: AppSection
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var webui: WebUIController
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(section.label)
+                    .font(.system(size: 22, weight: .semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            StatusBadge(healthy: controller.healthOK)
+        }
+    }
+
+    private var subtitle: String {
+        switch section {
+        case .overview:
+            return "Snapshot of daemon and web dashboard state."
+        case .daemon:
+            return "Local HTTP daemon · lifecycle, paths, logs."
+        case .webui:
+            return "Browser-based dashboard on http://localhost:7891."
+        case .preferences:
+            return "Startup and appearance options."
+        }
+    }
+}
+
+private struct OverviewTab: View {
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var webui: WebUIController
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox("Status") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        LabeledValue(label: "Daemon", value: controller.launchdState)
+                        LabeledValue(label: "Health", value: controller.healthText)
+                        LabeledValue(label: "WebUI", value: webui.statusText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                }
+
+                GroupBox("Quick Actions") {
+                    HStack(spacing: 10) {
+                        Button("Open Data Folder") { controller.openDataDir() }
+                        Button("Open Logs") { controller.openLogDir() }
+                        Spacer()
+                        Button("Refresh") { controller.refresh(); webui.refresh() }
+                    }
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let lastError = controller.lastError, !lastError.isEmpty {
+                    GroupBox("Recent Error") {
+                        Text(lastError)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                    }
+                }
+
+                if controller.setupRunning {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(controller.setupStatus)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, AppLayout.horizontalPadding)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+private struct DaemonTab: View {
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var webui: WebUIController
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox("Service") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        LabeledValue(label: "Launchd", value: controller.launchdState)
+                        LabeledValue(label: "Health", value: controller.healthText)
+                        LabeledValue(label: "Setup", value: controller.setupStatus)
+                        LabeledValue(label: "Data", value: controller.dataDir)
+                        LabeledValue(label: "Logs", value: controller.logDir)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                }
+
+                GroupBox("Lifecycle") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Button("Install + Start") { controller.installAndStart() }
+                                .buttonStyle(.borderedProminent)
+                            Button("Start") { controller.startDaemon() }
+                            Button("Stop") { controller.stopDaemon() }
+                            Button("Restart") { controller.restartDaemon() }
+                        }
+                        HStack(spacing: 10) {
+                            Button("Open Data Folder") { controller.openDataDir() }
+                            Button("Open Logs") { controller.openLogDir() }
+                            Spacer()
+                            Button("Refresh") { controller.refresh(); webui.refresh() }
                         }
                     }
-                    .toggleStyle(.switch)
-
-                    Toggle(isOn: Binding(
-                        get: { preferences.showDockIcon },
-                        set: { preferences.setShowDockIcon($0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Show Dock Icon")
-                            Text("Off by default. Enable only when you want Recall in the Dock.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.switch)
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.top, 4)
-            }
 
-            if let lastError = controller.lastError, !lastError.isEmpty {
-                Text(lastError)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.red)
-            }
-
-            if controller.setupRunning {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(controller.setupStatus)
+                if let lastError = controller.lastError, !lastError.isEmpty {
+                    Text(lastError)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.red)
                 }
             }
+            .padding(.horizontal, AppLayout.horizontalPadding)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+}
 
-            HStack(spacing: 10) {
-                Button("Install + Start") { controller.installAndStart() }
-                Button("Start") { controller.startDaemon() }
-                Button("Stop") { controller.stopDaemon() }
-                Button("Restart") { controller.restartDaemon() }
-            }
+private struct WebDashboardTab: View {
+    @ObservedObject var webui: WebUIController
 
-            HStack(spacing: 10) {
-                Button("Open Data Folder") { controller.openDataDir() }
-                Button("Open Logs") { controller.openLogDir() }
-                Button("Refresh") { controller.refresh() }
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox("Status") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(webui.running ? Color.green : Color.gray.opacity(0.5))
+                                .frame(width: 10, height: 10)
+                            Text(webui.statusText)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        Text("The browser-based dashboard shows memories, the knowledge graph, contradictions, and live activity. It runs on http://localhost:7891 only while open and shuts itself down when you close it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                }
+
+                GroupBox("Controls") {
+                    HStack(spacing: 10) {
+                        if webui.running {
+                            Button {
+                                webui.openInBrowser()
+                            } label: {
+                                Label("Open in Browser", systemImage: "safari")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button("Close Dashboard") { webui.closeDashboard() }
+                        } else {
+                            Button {
+                                webui.openDashboard()
+                            } label: {
+                                Label("Open Web Dashboard", systemImage: "safari")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        Spacer()
+                        Button("Refresh") { webui.refresh() }
+                    }
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let err = webui.lastError {
+                    GroupBox("Last Error") {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                    }
+                }
             }
+            .padding(.horizontal, AppLayout.horizontalPadding)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+private struct PreferencesTab: View {
+    @ObservedObject var preferences: AppPreferences
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox("Startup") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(isOn: Binding(
+                            get: { preferences.launchAtLogin },
+                            set: { preferences.setLaunchAtLogin($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Start at Login")
+                                Text(preferences.loginItemStatusText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                GroupBox("Appearance") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(isOn: Binding(
+                            get: { preferences.showDockIcon },
+                            set: { preferences.setShowDockIcon($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show Dock Icon")
+                                Text("Off by default. Enable only when you want Recall in the Dock.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                    .padding(.top, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, AppLayout.horizontalPadding)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 }

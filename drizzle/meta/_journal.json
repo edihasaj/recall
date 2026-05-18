@@ -57,6 +57,13 @@
       "when": 1777672300900,
       "tag": "0007_flawless_maximus",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1779057164161,
+      "tag": "0008_premium_red_hulk",
+      "breakpoints": true
     }
   ]
 }
