@@ -27,18 +27,31 @@ export interface ActivityEvent {
   id: string;
   session_id: string | null;
   repo: string | null;
+  path: string | null;
   source: string;
   event_type: string;
   memory_ids: string[] | null;
+  request: Record<string, unknown>;
+  result: Record<string, unknown>;
   created_at: string;
 }
 
 export interface SessionRow {
   session_id: string;
   repo: string | null;
+  first_at: string;
   last_at: string;
   event_count: number;
   event_types: string[];
+}
+
+export interface ActivityQuery {
+  repo?: string;
+  session_id?: string;
+  source?: string;
+  event_type?: string;
+  since?: string;
+  limit?: number;
 }
 
 export interface ContradictionRow {
@@ -120,10 +133,10 @@ export const api = {
   memories: (repo?: string, status?: string, limit = 100) =>
     getJson<{ memories: MemoryItem[] }>("/memories", { repo, status, limit }),
   memory: (id: string) => getJson<MemoryItem>(`/memory/${encodeURIComponent(id)}`),
-  activity: (repo?: string, limit = 50) =>
-    getJson<{ events: ActivityEvent[] }>("/activity", { repo, limit }),
-  sessions: (repo?: string, limit = 50) =>
-    getJson<{ sessions: SessionRow[] }>("/sessions", { repo, limit }),
+  activity: (query: ActivityQuery = {}) =>
+    getJson<{ events: ActivityEvent[] }>("/activity", { limit: 50, ...query }),
+  sessions: (query: Omit<ActivityQuery, "session_id"> = {}) =>
+    getJson<{ sessions: SessionRow[] }>("/sessions", { limit: 50, ...query }),
   contradictions: () =>
     getJson<{ contradictions: ContradictionRow[] }>("/contradictions"),
   confirm: (memory_id: string) => postJson<{ success: boolean }>("/confirm", { memory_id }),
