@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0 - 2026-05-20
+
+### Added
+
+- Web dashboard shell: the daemon now serves a full SPA at `/webui/start` with Memories, Graph, Timeline, Sessions, and Contradictions tabs. Recall.app's *Open Dashboard in Browser* hooks into this directly; `recall webui start` exposes the same surface for non-app installs.
+- Knowledge graph (entities + relations) extracted from memories. New `/graph/stats`, `/graph/entities`, `/graph/relations`, `/graph/neighbors`, and `/graph/memory/:id` endpoints; CLI `recall graph stats|entities|backfill|query`. Heuristic extractor runs at capture time and is idempotent.
+- Graph dashboard with two views: a 2D layered layout grouped by entity kind, and a 3D force-directed layout (`react-force-graph-3d` + `three.js`). Toggle in the toolbar. Click any node to drill into linked memories and neighbours.
+- Paginated list endpoints. `/memories`, `/activity`, `/sessions`, and `/contradictions` now accept `offset` + `limit` and return `{ offset, limit, has_more }`. Memories and activity push LIMIT/OFFSET into SQL; sessions slice an aggregated window.
+- Web dashboard pagination + URL-persisted filters across every list. 50 rows per page, auto-load on scroll via IntersectionObserver, "load more" button at the bottom. Memories supports `?focus=<id>` deep links so Timeline events can link straight to the underlying rule.
+- Timeline page rebuild: filter dropdowns for repo/source/event_type, click-to-expand rows that reveal full request/result JSON and link out to memories, session_id chip filter, plus a one-line tool-summary preview for each event.
+- Sessions page rebuild: repo filter, duration label, last-seen relative time, event-type colour chips, inline drilldown that lists the session's events oldest-first, and one-click hand-off into Timeline filtered by `session_id`.
+- Modern macOS app shell. Sidebar navigation, persistent footer with daemon/WebUI status, dock-icon preference, login-item registration, and tabs for Overview / Daemon / Web Dashboard / Preferences.
+- Benchmark harness (`benchmark/seed.ts`, `benchmark/load.ts`) and a Playwright + ffmpeg demo recorder (`scripts/record-demo.sh`, `scripts/record-demo.mjs`). New npm scripts: `bench:seed`, `bench:load`, `demo:record`.
+
+### Fixed
+
+- `LSUIElement=YES` launches Recall.app as a menu-bar agent, so SwiftUI's lazy Window scene never materialized at startup. Controllers and the window-open observer both lived inside that scene, leaving the status menu stuck on em-dashes and *Open Recall* / *Open Dashboard in Browser* as no-ops until the user manually opened the window. Moved `DaemonController`, `AppPreferences`, and `WebUIController` onto AppDelegate so they boot and are observable from launch, and added a cold-path that materializes the SwiftUI window via its registered Window-menu item.
+- `/graph/entities?search=…` ran the contains-match filter after `SELECT … LIMIT`, so long-tail entities never surfaced unless they happened to sit in the top-N by mention_count. Pushed the LIKE into the SQL WHERE (both `normalized_name` and `LOWER(name)`) so the limit applies post-filter.
+
 ## 0.6.7 - 2026-05-14
 
 ### Fixed
