@@ -515,14 +515,19 @@ export async function produceMergeDuplicateTasks(
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (!embeddingConfig) return 0;
 
-  const activeMemories = db.select().from(memories)
-    .where(eq(memories.status, "active"))
+  // Seed from both active and candidate memories. The original implementation
+  // only seeded from active rows, which meant N-way candidate clusters (e.g. the
+  // same "react project (no next.js)" rule captured once per repo) accumulated
+  // forever and the merger never had a chance to collapse them before
+  // promotion. findSemanticDuplicates() already excludes rejected rows.
+  const seedMemories = db.select().from(memories)
+    .where(inArray(memories.status, ["active", "candidate"]))
     .all();
 
   const visited = new Set<string>();
   let enqueued = 0;
 
-  for (const mem of activeMemories) {
+  for (const mem of seedMemories) {
     if (visited.has(mem.id)) continue;
     if (!mem.repo) continue;
 
