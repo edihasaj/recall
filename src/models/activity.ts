@@ -142,13 +142,14 @@ export function listActivityEvents(
   if (query.event_type) conditions.push(eq(activityEvents.event_type, query.event_type));
   if (query.since) conditions.push(gte(activityEvents.created_at, query.since));
 
+  const offset = query.offset ?? 0;
+  const limit = query.limit ?? 1000;
   const base = db.select().from(activityEvents);
-  const rows = conditions.length > 0
-    ? base.where(and(...conditions)).orderBy(desc(activityEvents.created_at)).all()
-    : base.orderBy(desc(activityEvents.created_at)).all();
-
-  const limited = query.limit ? rows.slice(0, query.limit) : rows;
-  return limited.map(rowToActivityEvent);
+  const ordered = conditions.length > 0
+    ? base.where(and(...conditions)).orderBy(desc(activityEvents.created_at))
+    : base.orderBy(desc(activityEvents.created_at));
+  const rows = ordered.limit(limit).offset(offset).all();
+  return rows.map(rowToActivityEvent);
 }
 
 export function listActivitySessions(

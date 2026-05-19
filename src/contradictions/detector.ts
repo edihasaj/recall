@@ -285,16 +285,14 @@ export function autoResolveContradictions(
 
 export function listContradictions(
   db: RecallDb,
-  options: { resolved?: boolean } = {},
+  options: { resolved?: boolean; limit?: number; offset?: number } = {},
 ): Array<typeof contradictions.$inferSelect> {
-  if (options.resolved !== undefined) {
-    return db
-      .select()
-      .from(contradictions)
-      .where(eq(contradictions.resolved, options.resolved))
-      .all();
-  }
-  return db.select().from(contradictions).all();
+  const limit = options.limit ?? 1000;
+  const offset = options.offset ?? 0;
+  const builder = options.resolved !== undefined
+    ? db.select().from(contradictions).where(eq(contradictions.resolved, options.resolved))
+    : db.select().from(contradictions);
+  return builder.limit(limit).offset(offset).all();
 }
 
 // --- Helpers ---

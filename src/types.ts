@@ -231,6 +231,7 @@ export const ActivityEventQuery = z.object({
   event_type: ActivityEventType.optional(),
   since: z.string().optional(),
   limit: z.number().int().positive().optional(),
+  offset: z.number().int().nonnegative().optional(),
 });
 export type ActivityEventQuery = z.infer<typeof ActivityEventQuery>;
 

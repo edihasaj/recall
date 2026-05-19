@@ -789,15 +789,15 @@ const server = createServer(async (req, res) => {
     if (path === "/memories" && method === "GET") {
       const repo = url.searchParams.get("repo") ?? undefined;
       const status = url.searchParams.get("status") as any;
-      const limit = url.searchParams.get("limit");
-      const offset = url.searchParams.get("offset");
-      const items = queryMemories(db, {
-        repo,
-        status,
-        limit: limit ? parseInt(limit, 10) : undefined,
-        offset: offset ? parseInt(offset, 10) : undefined,
+      const limit = parseInt(url.searchParams.get("limit") ?? "50", 10);
+      const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
+      const items = queryMemories(db, { repo, status, limit, offset });
+      return send(res, 200, {
+        memories: items,
+        offset,
+        limit,
+        has_more: items.length === limit,
       });
-      return send(res, 200, { memories: items });
     }
 
     // Get single memory
@@ -945,9 +945,11 @@ const server = createServer(async (req, res) => {
       const event_type = url.searchParams.get("event_type") as any;
       const since = url.searchParams.get("since") ?? undefined;
       const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
-      return send(res, 200, {
-        events: listActivityEvents(db, { repo, session_id, source, event_type, since, limit }),
+      const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
+      const events = listActivityEvents(db, {
+        repo, session_id, source, event_type, since, limit, offset,
       });
+      return send(res, 200, { events, offset, limit, has_more: events.length === limit });
     }
 
     if (path === "/sessions" && method === "GET") {
@@ -956,8 +958,19 @@ const server = createServer(async (req, res) => {
       const event_type = url.searchParams.get("event_type") as any;
       const since = url.searchParams.get("since") ?? undefined;
       const limit = parseInt(url.searchParams.get("limit") ?? "20", 10);
+      const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
+      // Sessions aggregate over events; pull a window large enough that
+      // requesting page N returns ~limit distinct sessions, then slice.
+      const grouped = listActivitySessions(db, {
+        repo, source, event_type, since,
+        limit: Math.max(limit + offset, 200),
+      });
+      const page = grouped.slice(offset, offset + limit);
       return send(res, 200, {
-        sessions: listActivitySessions(db, { repo, source, event_type, since, limit }),
+        sessions: page,
+        offset,
+        limit,
+        has_more: grouped.length > offset + limit,
       });
     }
 
@@ -1038,10 +1051,19 @@ const server = createServer(async (req, res) => {
     // Contradictions: list
     if (path === "/contradictions" && method === "GET") {
       const resolved = url.searchParams.get("resolved");
+      const limit = parseInt(url.searchParams.get("limit") ?? "50", 10);
+      const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
       const items = listContradictions(db, {
         resolved: resolved === "true" ? true : resolved === "false" ? false : undefined,
+        limit,
+        offset,
       });
-      return send(res, 200, { contradictions: items });
+      return send(res, 200, {
+        contradictions: items,
+        offset,
+        limit,
+        has_more: items.length === limit,
+      });
     }
 
     // Contradictions: resolve
