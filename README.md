@@ -11,6 +11,20 @@ Recall is a local repo-memory compiler for coding agents. It learns from correct
 - Website: <https://recallmemory.dev/>
 - Releases: <https://github.com/edihasaj/recall/releases>
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Comparison vs other memory systems: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md)
+
+## Why Recall?
+
+You correct your agent. Next session it forgets. You correct it again. Recall captures the *durable rules* hidden in those corrections — once — and re-injects them every session via lifecycle hooks. Local-first, no cloud, no API keys required for the common path.
+
+The story in 3 lines:
+
+```bash
+recall correct -r owner/repo "don't use npm, use pnpm"   # one correction
+# next session start:
+# → SessionStart hook fires, injects:  "- use pnpm as the package manager"
+# → your agent never reaches for npm again
+```
 
 ## Web Dashboard
 
