@@ -41,7 +41,10 @@
     "db:push": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bench:seed": "tsx benchmark/seed.ts",
+    "bench:load": "tsx benchmark/load.ts",
+    "demo:record": "bash scripts/record-demo.sh"
   },
   "engines": {
     "node": ">=22.0.0"
