@@ -28,9 +28,12 @@ final class WebUIController: ObservableObject {
     func openDashboard() {
         Task { [daemonPort] in
             do {
+                // open=false: the daemon used to launch the browser too, which
+                // produced a second tab on top of the NSWorkspace.open below.
+                // Single source of truth → the app opens it.
                 let status = try await Self.postJson(
                     url: "http://localhost:\(daemonPort)/webui/start",
-                    body: ["open": true]
+                    body: ["open": false]
                 )
                 await MainActor.run {
                     self.applyStatus(status)

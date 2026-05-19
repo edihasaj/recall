@@ -27,9 +27,6 @@ enum AppLayout {
 @main
 struct RecallApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var controller = DaemonController()
-    @StateObject private var preferences = AppPreferences()
-    @StateObject private var webui = WebUIController()
 
     init() {
         AppPreferences.applyBundledAppIcon()
@@ -37,24 +34,40 @@ struct RecallApp: App {
 
     var body: some Scene {
         Window("Recall", id: "dashboard") {
-            DashboardView(controller: controller, preferences: preferences, webui: webui)
+            DashboardHost(delegate: delegate)
                 .frame(minWidth: 820, minHeight: 600)
-                .task {
-                    controller.start()
-                    webui.start()
-                    preferences.syncLaunchAtLogin()
-                    preferences.applyActivationPolicy()
-                    delegate.attach(controller: controller, preferences: preferences, webui: webui)
-                }
                 .background(WindowOpener())
                 .background(DashboardWindowGuard())
         }
         .defaultSize(width: 920, height: 640)
 
         Settings {
-            SettingsView(preferences: preferences)
+            SettingsHost(delegate: delegate)
                 .frame(width: 420)
         }
+    }
+}
+
+/// Bridges the AppDelegate-owned controllers into the SwiftUI view tree.
+/// Controllers live on AppDelegate so they exist from launch even though
+/// LSUIElement keeps the Window scene from auto-materializing.
+private struct DashboardHost: View {
+    let delegate: AppDelegate
+
+    var body: some View {
+        DashboardView(
+            controller: delegate.controller,
+            preferences: delegate.preferences,
+            webui: delegate.webui
+        )
+    }
+}
+
+private struct SettingsHost: View {
+    let delegate: AppDelegate
+
+    var body: some View {
+        SettingsView(preferences: delegate.preferences)
     }
 }
 
@@ -131,9 +144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var templateImage: NSImage?
     private var colorImage: NSImage?
-    private weak var controller: DaemonController?
-    private weak var preferences: AppPreferences?
-    private weak var webui: WebUIController?
+    // Owned, not weak: SwiftUI scenes are lazy under LSUIElement, so AppDelegate
+    // is the only place these can live from launch onward. The menu reads from
+    // them immediately; the dashboard views observe them when (or if) shown.
+    let controller = DaemonController()
+    let preferences = AppPreferences()
+    let webui = WebUIController()
 
     private var launchdStatusItem: NSMenuItem?
     private var healthStatusItem: NSMenuItem?
@@ -169,6 +185,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Boot controllers first — the menu we're about to build reads from them.
+        controller.start()
+        webui.start()
+        preferences.syncLaunchAtLogin()
+        preferences.applyActivationPolicy()
+
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
 
@@ -220,39 +242,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStatusItems() {
-        guard let controller else {
-            launchdStatusItem?.title = "Launchd:  —"
-            healthStatusItem?.title = "Health:   —"
-            setupStatusItem?.title = "Setup:    —"
-            dataStatusItem?.title = "Data:     —"
-            loginStatusItem?.title = "Login:    —"
-            webuiStatusItem?.title = "WebUI:    —"
-            webuiToggleItem?.title = "Open Dashboard in Browser"
-            return
-        }
         launchdStatusItem?.title = "Launchd:  \(controller.launchdState)"
         let healthDot = controller.healthOK ? "●" : "○"
         healthStatusItem?.title = "Health:   \(healthDot) \(controller.healthText)"
         setupStatusItem?.title = "Setup:    \(controller.setupStatus)"
         dataStatusItem?.title = "Data:     \(controller.dataDir)"
-        loginStatusItem?.title = "Login:    \(preferences?.loginItemStatusText ?? "—")"
+        loginStatusItem?.title = "Login:    \(preferences.loginItemStatusText)"
 
-        if let webui {
-            let dot = webui.running ? "●" : "○"
-            webuiStatusItem?.title = "WebUI:    \(dot) \(webui.statusText)"
-            webuiToggleItem?.title = webui.running
-                ? "Close Dashboard (\(webui.clientCount) live)"
-                : "Open Dashboard in Browser"
-        } else {
-            webuiStatusItem?.title = "WebUI:    —"
-            webuiToggleItem?.title = "Open Dashboard in Browser"
-        }
-    }
-
-    func attach(controller: DaemonController, preferences: AppPreferences, webui: WebUIController) {
-        self.controller = controller
-        self.preferences = preferences
-        self.webui = webui
+        let dot = webui.running ? "●" : "○"
+        webuiStatusItem?.title = "WebUI:    \(dot) \(webui.statusText)"
+        webuiToggleItem?.title = webui.running
+            ? "Close Dashboard (\(webui.clientCount) live)"
+            : "Open Dashboard in Browser"
     }
 
     private func makeItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -284,9 +285,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let color = colorImage {
             statusItem?.button?.image = color
         }
-        preferences?.refreshLoginItemStatus()
-        controller?.refresh()
-        webui?.refresh()
+        preferences.refreshLoginItemStatus()
+        controller.refresh()
+        webui.refresh()
         updateStatusItems()
     }
 
@@ -300,16 +301,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openDashboard() {
         NSApp.activate(ignoringOtherApps: true)
+        // Fast path: window already materialized (WindowOpener observer is live).
+        if NSApp.windows.contains(where: { $0.identifier?.rawValue.contains("dashboard") == true || $0.title == "Recall" }) {
+            NotificationCenter.default.post(name: .recallOpenDashboard, object: nil)
+            return
+        }
+        // Cold path: under LSUIElement the SwiftUI Window scene is lazy and has
+        // never been instantiated. The Window menu item SwiftUI registers for
+        // each Window scene is how we trigger first-time creation.
+        if let item = swiftUIWindowMenuItem(named: "Recall") {
+            NSApp.sendAction(item.action!, to: item.target, from: item)
+            return
+        }
+        // Last resort — post the notification (becomes effective once the scene
+        // materializes via some other path).
         NotificationCenter.default.post(name: .recallOpenDashboard, object: nil)
     }
 
+    private func swiftUIWindowMenuItem(named title: String) -> NSMenuItem? {
+        guard let windowMenu = NSApp.windowsMenu else { return nil }
+        for item in windowMenu.items where item.title == title && item.action != nil {
+            return item
+        }
+        return nil
+    }
+
     @objc private func refreshStatus() {
-        controller?.refresh()
-        webui?.refresh()
+        controller.refresh()
+        webui.refresh()
+        updateStatusItems()
     }
 
     @objc private func toggleWebUi() {
-        guard let webui else { return }
         if webui.running {
             webui.closeDashboard()
         } else {
