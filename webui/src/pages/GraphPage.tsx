@@ -9,7 +9,10 @@ import ReactFlow, {
   type NodeMouseHandler,
 } from "reactflow";
 import "reactflow/dist/style.css";
+import { Graph3DView } from "./Graph3DView";
 import { api, type EntityKind, type EntityRow, type EntityRelationRow } from "../lib/api";
+
+type ViewMode = "2d" | "3d";
 
 const KIND_COLORS: Record<EntityKind, string> = {
   file: "#7aa2f7",
@@ -37,6 +40,7 @@ export function GraphPage() {
   const [kind, setKind] = useState<EntityKind | "">("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>("3d");
 
   const stats = useQuery({ queryKey: ["graph", "stats"], queryFn: () => api.graphStats() });
   const entities = useQuery({
@@ -46,8 +50,13 @@ export function GraphPage() {
         repo: repo || undefined,
         kind: kind || undefined,
         search: search || undefined,
-        limit: 150,
+        limit: view === "3d" ? 500 : 150,
       }),
+  });
+  const allRelations = useQuery({
+    queryKey: ["graph", "relations", repo],
+    queryFn: () => api.graphRelations({ repo: repo || undefined, limit: 4000 }),
+    enabled: view === "3d",
   });
   const neighbors = useQuery({
     queryKey: ["graph", "neighbors", selectedId],
@@ -100,10 +109,26 @@ export function GraphPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button className="btn" onClick={() => entities.refetch()}>refresh</button>
+        <button className="btn" onClick={() => { entities.refetch(); allRelations.refetch(); }}>refresh</button>
         {selectedId && (
           <button className="btn" onClick={() => setSelectedId(null)}>clear selection</button>
         )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          <button
+            className="btn"
+            onClick={() => setView("2d")}
+            style={view === "2d" ? { borderColor: "var(--accent)", color: "var(--accent)" } : undefined}
+          >
+            2D
+          </button>
+          <button
+            className="btn"
+            onClick={() => setView("3d")}
+            style={view === "3d" ? { borderColor: "var(--accent)", color: "var(--accent)" } : undefined}
+          >
+            3D
+          </button>
+        </div>
       </div>
 
       {entities.data && entities.data.count === 0 && (
@@ -113,19 +138,28 @@ export function GraphPage() {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: selectedId ? "1fr 280px" : "1fr", gap: 16 }}>
-        <div className="graph-canvas">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodeClick={handleNodeClick}
-            fitView
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background gap={20} size={1} />
-            <Controls />
-            <MiniMap pannable nodeColor={(n) => (n.style?.background as string) ?? "#444"} />
-          </ReactFlow>
-        </div>
+        {view === "2d" ? (
+          <div className="graph-canvas">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodeClick={handleNodeClick}
+              fitView
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background gap={20} size={1} />
+              <Controls />
+              <MiniMap pannable nodeColor={(n) => (n.style?.background as string) ?? "#444"} />
+            </ReactFlow>
+          </div>
+        ) : (
+          <Graph3DView
+            entities={entities.data?.entities ?? []}
+            relations={allRelations.data?.relations ?? []}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
+        )}
         {selectedId && (
           <EntityPanel
             data={neighbors.data}
@@ -237,46 +271,113 @@ function EntityPanel({
   const otherEntities = data.entities.filter((e) => e.id !== root.id);
   const memories = data.memories_by_entity[root.id] ?? [];
   return (
-    <div className="card" style={{ position: "sticky", top: 0, alignSelf: "start" }}>
+    <div
+      className="card"
+      style={{
+        position: "sticky",
+        top: 16,
+        alignSelf: "start",
+        maxHeight: "calc(100vh - 240px)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <span className="badge" style={{ color: KIND_COLORS[root.kind] }}>{root.kind}</span>
         <button className="btn" onClick={onClose} style={{ padding: "2px 8px" }}>✕</button>
       </div>
-      <div className="memory-text" style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div className="memory-text" style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, wordBreak: "break-word" }}>
         {root.name}
       </div>
       <div className="memory-meta" style={{ marginBottom: 10 }}>
         {root.repo ?? "global"} · {root.mention_count} mention{root.mention_count === 1 ? "" : "s"}
       </div>
-      <div className="page-subtitle" style={{ marginBottom: 6 }}>
-        Linked memories ({memories.length})
-      </div>
-      {memories.length === 0 && <div className="empty" style={{ padding: 8 }}>none</div>}
-      {memories.slice(0, 8).map((mid) => (
-        <div key={mid} className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
-          {mid.slice(0, 8)}
+      <div style={{ flex: 1, overflowY: "auto", marginRight: -8, paddingRight: 8 }}>
+        <div className="page-subtitle" style={{ marginBottom: 6 }}>
+          Linked memories ({memories.length})
         </div>
-      ))}
-      <div className="page-subtitle" style={{ marginTop: 14, marginBottom: 6 }}>
-        Neighbours ({otherEntities.length})
+        {memories.length === 0 && <div className="empty" style={{ padding: 8 }}>none</div>}
+        {memories.map((mid) => (
+          <MemoryPreview key={mid} memoryId={mid} />
+        ))}
+        {otherEntities.length > 0 && (
+          <>
+            <div className="page-subtitle" style={{ marginTop: 14, marginBottom: 6 }}>
+              Neighbours ({otherEntities.length})
+            </div>
+            {otherEntities.map((e) => (
+              <button
+                key={e.id}
+                className="btn"
+                onClick={() => onJump(e.id)}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  marginBottom: 4,
+                  borderColor: KIND_COLORS[e.kind],
+                  color: KIND_COLORS[e.kind],
+                  wordBreak: "break-word",
+                }}
+              >
+                {e.kind} · {e.name}
+              </button>
+            ))}
+          </>
+        )}
       </div>
-      {otherEntities.slice(0, 12).map((e) => (
-        <button
-          key={e.id}
-          className="btn"
-          onClick={() => onJump(e.id)}
-          style={{
-            display: "block",
-            width: "100%",
-            textAlign: "left",
-            marginBottom: 4,
-            borderColor: KIND_COLORS[e.kind],
-            color: KIND_COLORS[e.kind],
-          }}
-        >
-          {e.kind} · {e.name}
-        </button>
-      ))}
+    </div>
+  );
+}
+
+function MemoryPreview({ memoryId }: { memoryId: string }) {
+  const q = useQuery({
+    queryKey: ["memory", memoryId],
+    queryFn: () => api.memory(memoryId),
+    staleTime: 60_000,
+  });
+  if (q.isLoading) {
+    return (
+      <div className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 11, padding: "4px 0" }}>
+        {memoryId.slice(0, 8)} · loading…
+      </div>
+    );
+  }
+  if (q.isError || !q.data) {
+    return (
+      <div className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 11, padding: "4px 0", color: "var(--danger)" }}>
+        {memoryId.slice(0, 8)} · unavailable
+      </div>
+    );
+  }
+  const m = q.data;
+  return (
+    <div
+      style={{
+        padding: "8px 10px",
+        marginBottom: 6,
+        background: "var(--surface-2)",
+        borderRadius: 6,
+        border: "1px solid var(--border)",
+      }}
+    >
+      <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--muted)", marginBottom: 4, fontFamily: "var(--mono)" }}>
+        <span>{m.id.slice(0, 8)}</span>
+        <span>·</span>
+        <span>{m.type}</span>
+        <span>·</span>
+        <span>{m.scope}</span>
+        {m.status !== "active" && (
+          <>
+            <span>·</span>
+            <span>{m.status}</span>
+          </>
+        )}
+      </div>
+      <div style={{ fontSize: 12, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {m.text}
+      </div>
     </div>
   );
 }

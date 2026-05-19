@@ -31,6 +31,7 @@ import { emit as emitEvent } from "./daemon/events.js";
 import { graphQuery } from "./graph/retrieval.js";
 import {
   getEntity,
+  listAllRelations,
   listEntities,
   listEntitiesForMemory,
   listMemoryIdsForEntity,
@@ -479,6 +480,13 @@ const server = createServer(async (req, res) => {
         entities: countEntities(db),
         relations: countRelations(db),
       });
+    }
+
+    if (path === "/graph/relations" && method === "GET") {
+      const repo = url.searchParams.get("repo") ?? undefined;
+      const limit = parseInt(url.searchParams.get("limit") ?? "2000", 10);
+      const rows = listAllRelations(db, { repo, limit });
+      return send(res, 200, { count: rows.length, relations: rows });
     }
 
     if (path === "/graph/entities" && method === "GET") {

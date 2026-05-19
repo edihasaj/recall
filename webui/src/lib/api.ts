@@ -135,6 +135,8 @@ export const api = {
   graphStats: () => getJson<GraphStats>("/graph/stats"),
   graphEntities: (params?: { repo?: string; kind?: string; search?: string; limit?: number }) =>
     getJson<{ count: number; entities: EntityRow[] }>("/graph/entities", params),
+  graphRelations: (params?: { repo?: string; limit?: number }) =>
+    getJson<{ count: number; relations: EntityRelationRow[] }>("/graph/relations", params),
   graphNeighbors: (entity_id: string, hops = 1) =>
     postJson<GraphNeighborsResult>("/graph/neighbors", { entity_id, hops, include_memories: true }),
   graphMemoryEntities: (memory_id: string) =>

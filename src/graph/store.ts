@@ -351,6 +351,49 @@ export function neighborsOf(
   };
 }
 
+/**
+ * List every relation in the graph, optionally restricted to relations
+ * whose source AND target entities both belong to the given repo. Used by
+ * the WebUI to render the whole graph at once (no seed required).
+ */
+export function listAllRelations(
+  db: RecallDb,
+  opts: { repo?: string; limit?: number } = {},
+): EntityRelationRow[] {
+  const limit = Math.min(Math.max(opts.limit ?? 2000, 1), 10_000);
+  if (!opts.repo) {
+    return db
+      .select()
+      .from(entityRelations)
+      .limit(limit)
+      .all() as EntityRelationRow[];
+  }
+  // Filter both endpoints to entities in the repo. Two-step: collect ids,
+  // then pick relations whose endpoints are both inside that set.
+  const repoEntityIds = db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(eq(entities.repo, opts.repo))
+    .all()
+    .map((r) => r.id);
+  if (repoEntityIds.length === 0) return [];
+  const idSet = new Set(repoEntityIds);
+  const all = db
+    .select()
+    .from(entityRelations)
+    .where(
+      and(
+        inArray(entityRelations.source_entity_id, repoEntityIds),
+        inArray(entityRelations.target_entity_id, repoEntityIds),
+      ),
+    )
+    .limit(limit)
+    .all() as EntityRelationRow[];
+  return all.filter(
+    (r) => idSet.has(r.source_entity_id) && idSet.has(r.target_entity_id),
+  );
+}
+
 export function countEntities(db: RecallDb): number {
   const row = db
     .select({ c: sql<number>`count(*)` })
