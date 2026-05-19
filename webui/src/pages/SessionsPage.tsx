@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type ActivityEvent, type SessionRow } from "../lib/api";
+import { useLoadMore } from "../lib/useLoadMore";
+import { LoadMore } from "../lib/LoadMore";
+
+const PAGE_SIZE = 50;
 
 const TYPE_COLORS: Record<string, string> = {
   compile: "#7aa2f7",
@@ -27,19 +31,29 @@ export function SessionsPage() {
     setParams(p, { replace: true });
   };
 
-  const sessions = useQuery({
-    queryKey: ["sessions", { repo }],
-    queryFn: () => api.sessions({ repo: repo || undefined, limit: 200 }),
+  const resetKey = useMemo(() => JSON.stringify({ repo }), [repo]);
+  const page = useLoadMore<SessionRow, { repo: string }>({
+    fetchPage: async (offset, q) => {
+      const res = await api.sessions({
+        repo: q.repo || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      return { items: res.sessions, has_more: res.has_more };
+    },
+    pageSize: PAGE_SIZE,
+    resetKey,
+    query: { repo },
     refetchInterval: 12_000,
   });
 
   const repos = useMemo(() => {
     const set = new Set<string>();
-    for (const s of sessions.data?.sessions ?? []) if (s.repo) set.add(s.repo);
+    for (const s of page.items) if (s.repo) set.add(s.repo);
     return [...set].sort();
-  }, [sessions.data]);
+  }, [page.items]);
 
-  const list = sessions.data?.sessions ?? [];
+  const list = page.items;
 
   return (
     <div>
@@ -59,16 +73,22 @@ export function SessionsPage() {
             <option key={r} value={r}>{r}</option>
           ))}
         </select>
-        <button className="btn" onClick={() => sessions.refetch()} style={{ marginLeft: "auto" }}>
+        <button className="btn" onClick={() => page.refresh()} style={{ marginLeft: "auto" }}>
           refresh
         </button>
       </div>
 
-      {sessions.isLoading && <div className="empty">loading…</div>}
-      {!sessions.isLoading && list.length === 0 && <div className="empty">no sessions yet</div>}
+      {page.isLoading && list.length === 0 && <div className="empty">loading…</div>}
+      {!page.isLoading && list.length === 0 && <div className="empty">no sessions yet</div>}
       {list.map((s) => (
         <SessionCard key={s.session_id} session={s} />
       ))}
+      <LoadMore
+        hasMore={page.hasMore}
+        isLoading={page.isLoadingMore}
+        onLoadMore={page.loadMore}
+        total={list.length}
+      />
     </div>
   );
 }

@@ -52,7 +52,19 @@ export interface ActivityQuery {
   event_type?: string;
   since?: string;
   limit?: number;
+  offset?: number;
 }
+
+export interface Page<K extends string, T> {
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export type ActivityPage = { events: ActivityEvent[] } & Page<"events", ActivityEvent>;
+export type SessionPage = { sessions: SessionRow[] } & Page<"sessions", SessionRow>;
+export type MemoryPage = { memories: MemoryItem[] } & Page<"memories", MemoryItem>;
+export type ContradictionPage = { contradictions: ContradictionRow[] } & Page<"contradictions", ContradictionRow>;
 
 export interface ContradictionRow {
   id: string;
@@ -130,15 +142,19 @@ export interface GraphNeighborsResult {
 
 export const api = {
   health: () => getJson<{ status: string; version: string }>("/health"),
-  memories: (repo?: string, status?: string, limit = 100) =>
-    getJson<{ memories: MemoryItem[] }>("/memories", { repo, status, limit }),
+  memories: (query: { repo?: string; status?: string; limit?: number; offset?: number } = {}) =>
+    getJson<MemoryPage>("/memories", { limit: 50, ...query }),
   memory: (id: string) => getJson<MemoryItem>(`/memory/${encodeURIComponent(id)}`),
   activity: (query: ActivityQuery = {}) =>
-    getJson<{ events: ActivityEvent[] }>("/activity", { limit: 50, ...query }),
+    getJson<ActivityPage>("/activity", { limit: 50, ...query }),
   sessions: (query: Omit<ActivityQuery, "session_id"> = {}) =>
-    getJson<{ sessions: SessionRow[] }>("/sessions", { limit: 50, ...query }),
-  contradictions: () =>
-    getJson<{ contradictions: ContradictionRow[] }>("/contradictions"),
+    getJson<SessionPage>("/sessions", { limit: 50, ...query }),
+  contradictions: (query: { resolved?: boolean; limit?: number; offset?: number } = {}) =>
+    getJson<ContradictionPage>("/contradictions", {
+      limit: 50,
+      ...query,
+      resolved: query.resolved == null ? undefined : String(query.resolved),
+    }),
   confirm: (memory_id: string) => postJson<{ success: boolean }>("/confirm", { memory_id }),
   reject: (memory_id: string) => postJson<{ success: boolean }>("/reject", { memory_id }),
   resolveContradiction: (id: string, keep_memory_id: string) =>

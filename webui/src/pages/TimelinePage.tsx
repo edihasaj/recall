@@ -1,8 +1,11 @@
 import { useMemo, useState, type CSSProperties } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, type ActivityEvent } from "../lib/api";
 import { useLiveEvents } from "../lib/events";
+import { useLoadMore } from "../lib/useLoadMore";
+import { LoadMore } from "../lib/LoadMore";
+
+const PAGE_SIZE = 50;
 
 const EVENT_TYPES = [
   "compile",
@@ -46,32 +49,42 @@ export function TimelinePage() {
     setParams(next, { replace: true });
   };
 
-  const activity = useQuery({
-    queryKey: ["activity", { repo, source, eventType, sessionId }],
-    queryFn: () =>
-      api.activity({
-        repo: repo || undefined,
-        source: source || undefined,
-        event_type: eventType || undefined,
-        session_id: sessionId || undefined,
-        limit: 200,
-      }),
+  const resetKey = useMemo(
+    () => JSON.stringify({ repo, source, eventType, sessionId }),
+    [repo, source, eventType, sessionId],
+  );
+
+  const page = useLoadMore<ActivityEvent, { repo: string; source: string; eventType: string; sessionId: string }>({
+    fetchPage: async (offset, q) => {
+      const res = await api.activity({
+        repo: q.repo || undefined,
+        source: q.source || undefined,
+        event_type: q.eventType || undefined,
+        session_id: q.sessionId || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      });
+      return { items: res.events, has_more: res.has_more };
+    },
+    pageSize: PAGE_SIZE,
+    resetKey,
+    query: { repo, source, eventType, sessionId },
     refetchInterval: 8_000,
   });
   const live = useLiveEvents(20);
 
   const sources = useMemo(() => {
     const set = new Set<string>();
-    for (const e of activity.data?.events ?? []) set.add(e.source);
+    for (const e of page.items) set.add(e.source);
     return [...set].sort();
-  }, [activity.data]);
+  }, [page.items]);
   const repos = useMemo(() => {
     const set = new Set<string>();
-    for (const e of activity.data?.events ?? []) if (e.repo) set.add(e.repo);
+    for (const e of page.items) if (e.repo) set.add(e.repo);
     return [...set].sort();
-  }, [activity.data]);
+  }, [page.items]);
 
-  const filtered = activity.data?.events ?? [];
+  const filtered = page.items;
   const hasFilter = repo || source || eventType || sessionId;
 
   return (
@@ -130,7 +143,7 @@ export function TimelinePage() {
             clear all
           </button>
         )}
-        <button className="btn" onClick={() => activity.refetch()} style={{ marginLeft: "auto" }}>
+        <button className="btn" onClick={() => page.refresh()} style={{ marginLeft: "auto" }}>
           refresh
         </button>
       </div>
@@ -153,13 +166,19 @@ export function TimelinePage() {
         </div>
       )}
 
-      {activity.isLoading && <div className="empty">loading…</div>}
-      {!activity.isLoading && filtered.length === 0 && (
+      {page.isLoading && filtered.length === 0 && <div className="empty">loading…</div>}
+      {!page.isLoading && filtered.length === 0 && (
         <div className="empty">no events match your filters</div>
       )}
       {filtered.map((e) => (
         <EventRow key={e.id} event={e} onJumpSession={(sid) => setParam("session_id", sid)} />
       ))}
+      <LoadMore
+        hasMore={page.hasMore}
+        isLoading={page.isLoadingMore}
+        onLoadMore={page.loadMore}
+        total={filtered.length}
+      />
     </div>
   );
 }
