@@ -678,6 +678,89 @@ pre code {
   letter-spacing: 0.02em;
 }
 
+.dashboard-showcase {
+  display: grid;
+  gap: clamp(20px, 3.5vw, 40px);
+  margin: 0 0 78px;
+}
+
+.dashboard-intro {
+  max-width: 760px;
+}
+
+.dashboard-intro h2 {
+  margin: 8px 0 14px;
+  font-family: var(--display);
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.05;
+}
+
+.dashboard-intro p {
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.dashboard-demo {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.dashboard-demo img {
+  display: block;
+  width: 100%;
+  max-width: 1080px;
+  height: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(36, 22, 17, 0.18);
+  box-shadow: 0 32px 80px rgba(73, 38, 20, 0.22);
+  background: #1f1411;
+}
+
+.dashboard-demo figcaption {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.dashboard-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: clamp(16px, 2.5vw, 28px);
+}
+
+.dashboard-tiles figure {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  background: rgba(36, 22, 17, 0.04);
+  border: 1px solid rgba(36, 22, 17, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.dashboard-tiles img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(36, 22, 17, 0.14);
+  background: #1f1411;
+}
+
+.dashboard-tiles figcaption {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dashboard-tiles strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .command-stack {
   display: grid;
   gap: 12px;

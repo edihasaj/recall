@@ -207,6 +207,37 @@
         </figure>
       </section>
 
+      <section class="dashboard-showcase" aria-label="Web dashboard">
+        <div class="dashboard-intro" data-reveal="11">
+          <p class="eyebrow">v0.7 · web dashboard</p>
+          <h2>See everything your agents have learned.</h2>
+          <p>
+            Open <strong>Dashboard in Browser</strong> from the menu bar (or run
+            <code>recall webui start</code>) and the bundled SPA serves a knowledge graph,
+            timeline, sessions feed, and contradictions view — local-only on
+            <code>http://localhost:7891</code>, no cloud, no account.
+          </p>
+        </div>
+        <figure class="dashboard-demo" data-reveal="11">
+          <img src="./demo.gif" alt="Recall web dashboard: clicking through Memories, the knowledge graph (2D and 3D), Timeline, and Sessions." loading="lazy" width="1280" height="800" />
+          <figcaption>End-to-end walkthrough of the dashboard.</figcaption>
+        </figure>
+        <div class="dashboard-tiles">
+          <figure data-reveal="11">
+            <img src="./graph-2d.png" alt="Knowledge graph 2D layered view grouped by entity kind: files, functions, libraries, tools, commands, concepts." loading="lazy" />
+            <figcaption><strong>Knowledge graph.</strong> 2D layered view + 3D force layout. Entities are extracted from every memory; contains-match search filters across the whole set, not just the top-N.</figcaption>
+          </figure>
+          <figure data-reveal="11">
+            <img src="./timeline.png" alt="Timeline of activity events from coding agents: tool calls, prompt submits, captures, with filter chips for repo/source/type." loading="lazy" />
+            <figcaption><strong>Timeline.</strong> Filterable feed of every daemon event with click-to-expand request/result JSON and deep links into linked memories.</figcaption>
+          </figure>
+          <figure data-reveal="11">
+            <img src="./sessions.png" alt="Sessions list showing per-session duration, event count, and event-type chips across multiple coding-agent runs." loading="lazy" />
+            <figcaption><strong>Sessions.</strong> Every distinct session across MCP, hooks, and CLI traffic with duration, type chips, and inline drilldown.</figcaption>
+          </figure>
+        </div>
+      </section>
+
       <section class="install-panel" aria-label="Install and developer setup">
         <div data-reveal="12">
           <p class="eyebrow">Install</p>
