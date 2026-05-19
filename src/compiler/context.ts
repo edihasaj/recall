@@ -22,6 +22,30 @@ const QUERY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const HISTORY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const HISTORY_LEXICAL_RELEVANCE_FLOOR = 0.01;
 
+/**
+ * Strip harness boilerplate from a hook-supplied prompt before we hand it
+ * to the lexical+vector search. Tags like <task-notification>, <system-reminder>,
+ * tool-result wrappers, and large attached blobs (Image:/Read N lines:/etc.)
+ * dilute the embedding without contributing intent. Aggressively trim them
+ * so what we search on is the user's actual ask.
+ */
+export function normalizeQueryForRetrieval(text: string): string {
+  if (!text) return "";
+  let out = text;
+  // Drop self-closed and paired XML-ish tags the agent harnesses emit:
+  // task-notification, system-reminder, command-name, command-args,
+  // local-command-stdout, user-prompt-submit-hook, etc.
+  out = out.replace(/<\/?(?:task-[a-z-]+|system-[a-z-]+|command-[a-z-]+|local-command-[a-z-]+|user-prompt-[a-z-]+|tool-[a-z-]+)\b[^>]*>/gi, " ");
+  // Strip [Image: ...] markers and explicit "Tool loaded.", "Tool result:" wrappers.
+  out = out.replace(/\[Image:[^\]]*\]/gi, " ");
+  out = out.replace(/\bTool (?:loaded|result|use|call)\b[:.]?/gi, " ");
+  // Compact runs of whitespace and trim. Bound length so a 100k-token paste
+  // doesn't tank embedding latency.
+  out = out.replace(/\s+/g, " ").trim();
+  if (out.length > 1200) out = out.slice(0, 1200);
+  return out;
+}
+
 export interface CompileRequest {
   repo: string;
   path?: string;
@@ -181,8 +205,13 @@ export async function compileContextHybrid(
     confidence_threshold:
       req.config?.confidence_threshold ?? profile.compile_confidence_threshold,
   };
-  const selectedHistory = req.query_text
-    ? await selectRelevantHistory(db, req.repo, req.query_text, config.max_history_snippets)
+  // Strip harness wrapper text from the user prompt before it influences either
+  // history selection or hybridSearch. Without this, <task-notification> blocks
+  // and similar boilerplate dominated the embedding signal.
+  const normalizedQuery = req.query_text ? normalizeQueryForRetrieval(req.query_text) : "";
+  const effectiveQuery = normalizedQuery.length > 0 ? normalizedQuery : undefined;
+  const selectedHistory = effectiveQuery
+    ? await selectRelevantHistory(db, req.repo, effectiveQuery, config.max_history_snippets)
     : selectRepoHistory(db, req.repo, config.max_history_snippets);
 
   const repoMemories = queryMemories(db, { repo: req.repo });
@@ -220,8 +249,8 @@ export async function compileContextHybrid(
     };
   }
 
-  const retrieval = req.query_text
-    ? await hybridSearch(db, req.query_text, embeddingConfig, {
+  const retrieval = effectiveQuery
+    ? await hybridSearch(db, effectiveQuery, embeddingConfig, {
         repo: req.repo,
         limit: QUERY_RESULT_LIMIT,
       })
@@ -237,7 +266,7 @@ export async function compileContextHybrid(
   const ranked = passing
     .filter((memory) => {
       const retrievalItem = retrievalById.get(memory.id);
-      if (req.query_text) {
+      if (effectiveQuery) {
         if (!retrievalItem) return false;
         if (embeddingConfig && retrievalItem.similarity < QUERY_VECTOR_RELEVANCE_FLOOR) {
           return false;
@@ -251,7 +280,7 @@ export async function compileContextHybrid(
     .map((memory) => {
       const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
       const weighted = feedbackWeightedScore(memory.confidence, summaries.get(memory.id) ?? emptySummary);
-      const score = req.query_text
+      const score = effectiveQuery
         ? (retrievalScore * 0.45) +
           (weighted * 0.25) +
           (scopeScore(memory, req.path) * 0.15) +
