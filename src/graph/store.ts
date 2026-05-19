@@ -4,7 +4,7 @@
  * code path (capture hook, dispatcher, scan, MCP tool).
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { entities, entityRelations, memoryEntities } from "../db/schema.js";
 import { normalizeName, type EntityKind } from "./normalize.js";
@@ -145,25 +145,30 @@ export interface ListEntitiesOptions {
 }
 
 export function listEntities(db: RecallDb, opts: ListEntitiesOptions = {}): EntityRow[] {
-  const conditions: ReturnType<typeof eq>[] = [];
+  const conditions = [] as Array<ReturnType<typeof eq> | ReturnType<typeof or>>;
   if (opts.repo) conditions.push(eq(entities.repo, opts.repo));
   if (opts.kind) conditions.push(eq(entities.kind, opts.kind));
+  if (opts.search) {
+    // Push the contains-match into SQL so LIMIT applies post-filter; the
+    // previous in-memory filter only saw the top-N by mention_count and
+    // missed long-tail matches entirely.
+    const needle = `%${opts.search.toLowerCase()}%`;
+    conditions.push(
+      or(
+        like(entities.normalized_name, needle),
+        like(sql`lower(${entities.name})`, needle),
+      )!,
+    );
+  }
   const where = conditions.length === 1 ? conditions[0] : conditions.length > 1 ? and(...conditions) : undefined;
   const builder = where
     ? db.select().from(entities).where(where)
     : db.select().from(entities);
-  const rows = builder
+  return builder
     .orderBy(sql`${entities.mention_count} DESC`)
     .limit(opts.limit ?? 200)
     .offset(opts.offset ?? 0)
     .all() as EntityRow[];
-  if (opts.search) {
-    const needle = opts.search.toLowerCase();
-    return rows.filter(
-      (r) => r.normalized_name.includes(needle) || r.name.toLowerCase().includes(needle),
-    );
-  }
-  return rows;
 }
 
 export interface LinkMemoryEntityInput {
