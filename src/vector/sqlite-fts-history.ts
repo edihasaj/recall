@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets } from "../db/schema.js";
+import { getSynonyms } from "./synonyms.js";
 
 const FTS_HISTORY_INDEX = "fts_history_index";
 const FTS_TOKENIZER = `porter unicode61 remove_diacritics 2`;
@@ -132,6 +133,12 @@ function isPrefixable(token: string) {
   return token.length >= 4 && /^[A-Za-z]+$/.test(token);
 }
 
+function emitToken(token: string, prefixDisabled: boolean): string {
+  return !prefixDisabled && isPrefixable(token)
+    ? `"${token}"*`
+    : `"${token}"`;
+}
+
 function buildFtsQuery(query: string) {
   const tokens = query
     .match(/[A-Za-z0-9_.:/-]+/g)
@@ -139,11 +146,17 @@ function buildFtsQuery(query: string) {
     .filter(Boolean) ?? [];
   if (tokens.length === 0) return null;
   const prefixDisabled = process.env.RECALL_FTS_PREFIX === "false";
+  const synonymsDisabled = process.env.RECALL_SYNONYMS === "false";
   return tokens
-    .map((token) =>
-      !prefixDisabled && isPrefixable(token) ? `"${token}"*` : `"${token}"`,
-    )
-    .join(" ");
+    .map((token) => {
+      const base = emitToken(token, prefixDisabled);
+      if (synonymsDisabled) return base;
+      const syns = getSynonyms(token);
+      if (syns.length === 0) return base;
+      const alts = syns.map((s) => emitToken(s, prefixDisabled));
+      return `(${[base, ...alts].join(" OR ")})`;
+    })
+    .join(" AND ");
 }
 
 export function searchHistoryFtsIndex(

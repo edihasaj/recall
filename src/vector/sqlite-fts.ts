@@ -1,6 +1,7 @@
 import type { RecallDb } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { memories } from "../db/schema.js";
+import { getSynonyms } from "./synonyms.js";
 
 const FTS_MEMORY_INDEX = "fts_memory_index";
 
@@ -27,6 +28,25 @@ function isPrefixable(token: string) {
   return token.length >= 4 && /^[A-Za-z]+$/.test(token);
 }
 
+function emitToken(token: string, prefixDisabled: boolean): string {
+  return !prefixDisabled && isPrefixable(token)
+    ? `"${token}"*`
+    : `"${token}"`;
+}
+
+function expandTokenWithSynonyms(
+  token: string,
+  prefixDisabled: boolean,
+  synonymsDisabled: boolean,
+): string {
+  const base = emitToken(token, prefixDisabled);
+  if (synonymsDisabled) return base;
+  const syns = getSynonyms(token);
+  if (syns.length === 0) return base;
+  const alts = syns.map((s) => emitToken(s, prefixDisabled));
+  return `(${[base, ...alts].join(" OR ")})`;
+}
+
 function buildFtsQuery(query: string) {
   const tokens = query
     .match(/[A-Za-z0-9_.:/-]+/g)
@@ -37,11 +57,16 @@ function buildFtsQuery(query: string) {
   // Default is AND-of-phrase tokens, which is the right call for the short
   // coding-rule queries we ship for. Set RECALL_FTS_MODE=or for natural-
   // language haystacks (e.g. LongMemEval) where AND is too strict.
-  const join = process.env.RECALL_FTS_MODE === "or" ? " OR " : " ";
+  // FTS5 needs an explicit `AND` keyword when joining a parenthesized
+  // synonym group with the next token (implicit-AND via whitespace is only
+  // valid between bare phrases) — use the keyword form universally so both
+  // shapes work.
+  const join = process.env.RECALL_FTS_MODE === "or" ? " OR " : " AND ";
   const prefixDisabled = process.env.RECALL_FTS_PREFIX === "false";
+  const synonymsDisabled = process.env.RECALL_SYNONYMS === "false";
   return tokens
     .map((token) =>
-      !prefixDisabled && isPrefixable(token) ? `"${token}"*` : `"${token}"`,
+      expandTokenWithSynonyms(token, prefixDisabled, synonymsDisabled),
     )
     .join(join);
 }
