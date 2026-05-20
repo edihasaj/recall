@@ -3,20 +3,38 @@ import type { RecallDb } from "../db/client.js";
 import { historySnippets } from "../db/schema.js";
 
 const FTS_HISTORY_INDEX = "fts_history_index";
+const FTS_TOKENIZER = `porter unicode61 remove_diacritics 2`;
 
 function getSqlite(db: RecallDb) {
   return db.$client;
 }
 
+function getFtsCreateSql(db: RecallDb, table: string): string | null {
+  const row = getSqlite(db)
+    .prepare("select sql from sqlite_master where type = 'table' and name = ?")
+    .get(table) as { sql: string } | undefined;
+  return row?.sql ?? null;
+}
+
 export function ensureHistoryFtsIndex(db: RecallDb) {
-  getSqlite(db).exec(`
+  const sqlite = getSqlite(db);
+  const existing = getFtsCreateSql(db, FTS_HISTORY_INDEX);
+  const needsMigration = existing !== null && !existing.includes("porter");
+  if (needsMigration) {
+    sqlite.exec(`drop table if exists ${FTS_HISTORY_INDEX};`);
+  }
+  sqlite.exec(`
     create virtual table if not exists ${FTS_HISTORY_INDEX} using fts5(
       snippet_id UNINDEXED,
       text,
       repo UNINDEXED,
-      kind UNINDEXED
+      kind UNINDEXED,
+      tokenize="${FTS_TOKENIZER}"
     );
   `);
+  if (needsMigration) {
+    rebuildHistoryFtsIndex(db);
+  }
 }
 
 export function removeHistoryFtsRow(db: RecallDb, snippetId: string) {
@@ -110,13 +128,22 @@ export function verifyHistoryFtsIndex(
   return { expected, indexed, drift: expected - indexed };
 }
 
+function isPrefixable(token: string) {
+  return token.length >= 4 && /^[A-Za-z]+$/.test(token);
+}
+
 function buildFtsQuery(query: string) {
   const tokens = query
     .match(/[A-Za-z0-9_.:/-]+/g)
     ?.map((token) => token.replace(/"/g, '""'))
     .filter(Boolean) ?? [];
   if (tokens.length === 0) return null;
-  return tokens.map((token) => `"${token}"`).join(" ");
+  const prefixDisabled = process.env.RECALL_FTS_PREFIX === "false";
+  return tokens
+    .map((token) =>
+      !prefixDisabled && isPrefixable(token) ? `"${token}"*` : `"${token}"`,
+    )
+    .join(" ");
 }
 
 export function searchHistoryFtsIndex(

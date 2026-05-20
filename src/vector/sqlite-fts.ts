@@ -4,6 +4,11 @@ import { memories } from "../db/schema.js";
 
 const FTS_MEMORY_INDEX = "fts_memory_index";
 
+// Porter stemming so `degree`≈`degrees`, `graduate`≈`graduated`. Closes most
+// of the single-session-user gap in LongMemEval-S. Coupled with unicode61 +
+// diacritic folding so accented inputs match unaccented index rows.
+const FTS_TOKENIZER = `porter unicode61 remove_diacritics 2`;
+
 type MemoryRow = typeof memories.$inferSelect;
 
 function getSqlite(db: RecallDb) {
@@ -14,6 +19,12 @@ function shouldIndexLexically(
   memory: Pick<MemoryRow, "status" | "confidence">,
 ) {
   return memory.status !== "rejected" && memory.status !== "transient";
+}
+
+// Stem-safe identifier shape: alphabetic only and ≥4 chars. Tokens with
+// digits, dots, slashes, etc. are kept as exact phrases (no prefix '*').
+function isPrefixable(token: string) {
+  return token.length >= 4 && /^[A-Za-z]+$/.test(token);
 }
 
 function buildFtsQuery(query: string) {
@@ -27,11 +38,28 @@ function buildFtsQuery(query: string) {
   // coding-rule queries we ship for. Set RECALL_FTS_MODE=or for natural-
   // language haystacks (e.g. LongMemEval) where AND is too strict.
   const join = process.env.RECALL_FTS_MODE === "or" ? " OR " : " ";
-  return tokens.map((token) => `"${token}"`).join(join);
+  const prefixDisabled = process.env.RECALL_FTS_PREFIX === "false";
+  return tokens
+    .map((token) =>
+      !prefixDisabled && isPrefixable(token) ? `"${token}"*` : `"${token}"`,
+    )
+    .join(join);
+}
+
+function getFtsCreateSql(db: RecallDb, table: string): string | null {
+  const row = getSqlite(db)
+    .prepare("select sql from sqlite_master where type = 'table' and name = ?")
+    .get(table) as { sql: string } | undefined;
+  return row?.sql ?? null;
 }
 
 export function ensureMemoryFtsIndex(db: RecallDb) {
   const sqlite = getSqlite(db);
+  const existing = getFtsCreateSql(db, FTS_MEMORY_INDEX);
+  const needsMigration = existing !== null && !existing.includes("porter");
+  if (needsMigration) {
+    sqlite.exec(`drop table if exists ${FTS_MEMORY_INDEX};`);
+  }
   sqlite.exec(`
     create virtual table if not exists ${FTS_MEMORY_INDEX} using fts5(
       memory_id UNINDEXED,
@@ -40,9 +68,13 @@ export function ensureMemoryFtsIndex(db: RecallDb) {
       status UNINDEXED,
       type UNINDEXED,
       scope UNINDEXED,
-      path_scope UNINDEXED
+      path_scope UNINDEXED,
+      tokenize="${FTS_TOKENIZER}"
     );
   `);
+  if (needsMigration) {
+    rebuildMemoryFtsIndex(db);
+  }
 }
 
 export function dropMemoryFtsIndex(db: RecallDb) {
