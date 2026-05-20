@@ -85,29 +85,31 @@ What the script does, per question:
 5. Map memory IDs back to session IDs, score `recall_any@{5,10,20}`,
    NDCG@10, MRR.
 
-### Current numbers — 🚧 5-question smoke landed, N=60 stratified in flight
+### Current numbers — N=60 stratified, in flight
 
-The first 5-question smoke (all `single-session-user`, the hardest
-category in agentmemory's per-type breakdown):
+Cumulative R@5 as the stratified N=60 run progresses (snapshots emitted
+every 10 questions by the script):
+
+| Progress | R@5 |
+|----------|-----|
+| 10/60 | 80.0 % |
+| 20/60 | 85.0 % |
+| 30/60 | 86.7 % |
+| 40/60 | 85.0 % |
+
+Final numbers + the per-type breakdown will land here when the run
+finishes (~26 min remaining at the 40/60 mark). Comparison row:
 
 | System | Subset | R@5 | R@10 | R@20 | NDCG@10 | MRR | Notes |
 |--------|--------|-----|------|------|---------|-----|-------|
 | agentmemory BM25 + vector | full (500) | 95.2 % | 98.6 % | 99.4 % | 87.9 % | 88.2 % | all-MiniLM-L6-v2 (384-d) |
 | agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized + Porter + synonyms |
-| Recall hybridSearch | n=5, `single-session-user` | 40.0 % | 60.0 % | 80.0 % | 23.0 % | 13.1 % | multilingual-e5-small (384-d), FTS5 OR |
+| Recall hybridSearch | n=60, stratified | ~85 % | _pending_ | _pending_ | _pending_ | _pending_ | multilingual-e5-small (384-d), FTS5 OR |
 
-The next run (n=60, `--stratify` across all six question types) is in
-flight; numbers will update here when it lands. The interesting axis
-is the per-type R@5 vs. agentmemory:
-
-| Type | agentmemory hybrid R@5 | Recall (in progress) |
-|------|------------------------|----------------------|
-| knowledge-update | 98.7 % | _running_ |
-| multi-session | 97.7 % | _running_ |
-| single-session-assistant | 96.4 % | _running_ |
-| temporal-reasoning | 95.5 % | _running_ |
-| single-session-user | 90.0 % | 40.0 % (n=5) |
-| single-session-preference | 83.3 % | _running_ |
+> The earlier 5-question smoke landed at R@5=40 %, but all five were
+> `single-session-user` (the hardest category — agentmemory's hybrid
+> only hits 90 % there). The stratified N=60 sample covers every
+> category and is the honest number to compare.
 
 ### Honest caveats on the comparison
 
