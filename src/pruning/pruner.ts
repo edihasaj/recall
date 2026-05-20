@@ -36,7 +36,13 @@ export function pruneMemories(
   db: RecallDb,
   config: Partial<PruneConfig> = {},
 ): PruneResult {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
+  // Spread-merge keeps `undefined` from the caller's partial, which then
+  // overrides the default and NaN-poisons the retention math. Strip explicit
+  // undefined before merging so partial configs fall through to defaults.
+  const definedConfig = Object.fromEntries(
+    Object.entries(config).filter(([, v]) => v !== undefined),
+  ) as Partial<PruneConfig>;
+  const cfg = { ...DEFAULT_CONFIG, ...definedConfig };
   const now = Date.now();
   const dayMs = 86_400_000;
 
