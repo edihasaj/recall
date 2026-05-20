@@ -480,6 +480,19 @@ function lexicalRankToScore(rank: number, position: number): number {
   return 1 / (1 + safeRank + position);
 }
 
+const DEFAULT_LEX_WEIGHT = 0.35;
+const DEFAULT_VEC_WEIGHT = 0.65;
+const DEFAULT_RRF_K = 60;
+const DEFAULT_RRF_LEX_WEIGHT = 1;
+const DEFAULT_RRF_VEC_WEIGHT = 1;
+
+function readFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 export async function hybridSearch(
   db: RecallDb,
   query: string,
@@ -496,9 +509,14 @@ export async function hybridSearch(
     ? Math.max(config.similarity_threshold, MIN_HYBRID_VECTOR_SIMILARITY)
     : null;
 
+  // Pull a wider window (10x final limit, min 50) into each arm so RRF has
+  // enough headroom to recombine. Old code pulled 2x/min-20 which starves the
+  // fusion for natural-language queries where the right answer often sits at
+  // rank 8–15 in one arm.
+  const armLimit = Math.max(limit * 10, 50);
   const lexicalMatches = searchMemoryFtsIndex(db, query, {
     repo: options.repo,
-    limit: Math.max(limit * 2, 20),
+    limit: armLimit,
   });
   const semanticMatches = config
     ? searchMemoryVecIndex(
@@ -507,13 +525,23 @@ export async function hybridSearch(
           await generateEmbedding(query, config, "query"),
           resolveProvider(config).metadata().index_dimensions,
         ),
-        { repo: options.repo, limit: Math.max(limit * 2, 20) },
+        { repo: options.repo, limit: armLimit },
       )
     : [];
 
   const rowsById = new Map(
     db.select().from(memories).all().map((row) => [row.id, row]),
   );
+
+  // RECALL_FUSION=weighted falls back to the legacy weighted-sum so the
+  // ablation harness can compare on the same data.
+  const fusionMode =
+    process.env.RECALL_FUSION === "weighted" ? "weighted" : "rrf";
+  const rrfK = readFloat("RECALL_RRF_K", DEFAULT_RRF_K);
+  const rrfLexW = readFloat("RECALL_RRF_LEX_WEIGHT", DEFAULT_RRF_LEX_WEIGHT);
+  const rrfVecW = readFloat("RECALL_RRF_VEC_WEIGHT", DEFAULT_RRF_VEC_WEIGHT);
+  const lexW = readFloat("RECALL_LEX_WEIGHT", DEFAULT_LEX_WEIGHT);
+  const vecW = readFloat("RECALL_VEC_WEIGHT", DEFAULT_VEC_WEIGHT);
 
   const merged = new Map<string, {
     memory: MemoryItem;
@@ -528,30 +556,36 @@ export async function hybridSearch(
     if (!row || !shouldEmbedMemory(row)) continue;
 
     const lexicalScore = lexicalRankToScore(match.lexical_rank, i);
+    const initialScore =
+      fusionMode === "rrf" ? (rrfLexW / (rrfK + i + 1)) : lexicalScore * lexW;
     merged.set(match.memory_id, {
       memory: rowToMemory(row),
       similarity: 0,
       lexical_score: lexicalScore,
-      score: lexicalScore * 0.35,
+      score: initialScore,
     });
   }
 
-  for (const match of semanticMatches) {
+  for (let i = 0; i < semanticMatches.length; i++) {
+    const match = semanticMatches[i];
     const row = rowsById.get(match.memory_id);
     if (!row || !shouldEmbedMemory(row)) continue;
 
     const similarity = Math.max(0, 1 - match.distance);
     if (minSimilarity !== null && similarity < minSimilarity) continue;
+
     const existing = merged.get(match.memory_id);
+    const vecContribution =
+      fusionMode === "rrf" ? (rrfVecW / (rrfK + i + 1)) : similarity * vecW;
     if (existing) {
       existing.similarity = similarity;
-      existing.score = (similarity * 0.65) + (existing.lexical_score * 0.35);
+      existing.score += vecContribution;
     } else {
       merged.set(match.memory_id, {
         memory: rowToMemory(row),
         similarity,
         lexical_score: 0,
-        score: similarity * 0.65,
+        score: vecContribution,
       });
     }
   }
