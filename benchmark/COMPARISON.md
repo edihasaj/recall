@@ -85,18 +85,29 @@ What the script does, per question:
 5. Map memory IDs back to session IDs, score `recall_any@{5,10,20}`,
    NDCG@10, MRR.
 
-### Current numbers — 🚧 in progress
+### Current numbers — 🚧 5-question smoke landed, N=60 stratified in flight
 
-> Running on a 50-question subset (n=50 sampled from the 500-question
-> non-abstention set) at the moment. Numbers will land here once the
-> run finishes (~80 min on M-series macOS, single-process,
-> nomic-embed-text-v1.5 512-d).
+The first 5-question smoke (all `single-session-user`, the hardest
+category in agentmemory's per-type breakdown):
 
 | System | Subset | R@5 | R@10 | R@20 | NDCG@10 | MRR | Notes |
 |--------|--------|-----|------|------|---------|-----|-------|
 | agentmemory BM25 + vector | full (500) | 95.2 % | 98.6 % | 99.4 % | 87.9 % | 88.2 % | all-MiniLM-L6-v2 (384-d) |
-| agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized+Porter+synonyms |
-| Recall hybridSearch | n=50 (subset) | _running_ | _running_ | _running_ | _running_ | _running_ | nomic-embed-text-v1.5 (512-d), FTS5 OR |
+| agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized + Porter + synonyms |
+| Recall hybridSearch | n=5, `single-session-user` | 40.0 % | 60.0 % | 80.0 % | 23.0 % | 13.1 % | multilingual-e5-small (384-d), FTS5 OR |
+
+The next run (n=60, `--stratify` across all six question types) is in
+flight; numbers will update here when it lands. The interesting axis
+is the per-type R@5 vs. agentmemory:
+
+| Type | agentmemory hybrid R@5 | Recall (in progress) |
+|------|------------------------|----------------------|
+| knowledge-update | 98.7 % | _running_ |
+| multi-session | 97.7 % | _running_ |
+| single-session-assistant | 96.4 % | _running_ |
+| temporal-reasoning | 95.5 % | _running_ |
+| single-session-user | 90.0 % | 40.0 % (n=5) |
+| single-session-preference | 83.3 % | _running_ |
 
 ### Honest caveats on the comparison
 
