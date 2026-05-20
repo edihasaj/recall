@@ -24,10 +24,10 @@ import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { initStandaloneDb } from "../src/db/client.js";
-import { createMemory } from "../src/models/memory.js";
 import {
-  generateEmbeddings,
+  generateEmbedding,
   hybridSearch,
   loadEmbeddingConfigFromEnv,
   storeEmbedding,
@@ -176,36 +176,54 @@ async function main() {
     const entry = entries[qi]!;
     const repo = `q_${qi}_${entry.question_id.slice(0, 8)}`;
 
-    // 1) Seed haystack memories for this question. Embed in one batch — the
-    //    per-call overhead of the embed pipeline (Transformer tokenizer
-    //    warmup, projection) is the dominant cost over the model itself.
+    // 1) Seed haystack memories for this question. We bypass createMemory()
+    //    intentionally: it queues an async embedding sync per row via
+    //    queueMemoryEmbeddingSync, and 50 of those firing in parallel against
+    //    a single-threaded inference worker plus the same sqlite handle is
+    //    the path to a 0%-CPU deadlock. Insert raw, then drive the batched
+    //    embed + index upserts ourselves below.
     const seeded: string[] = [];
     const seedTexts: string[] = [];
+    const now = new Date().toISOString();
     for (let si = 0; si < entry.haystack_sessions.length; si++) {
       const sessionId = entry.haystack_session_ids[si]!;
       const text = turnsToText(entry.haystack_sessions[si]!);
-      const memoryId = createMemory(db, {
+      const memoryId = randomUUID();
+      db.insert(memories).values({
+        id: memoryId,
         type: "rule",
         text,
         scope: "repo",
+        path_scope: null,
         repo,
+        status: "active",
+        confidence: 0.9,
         source: "repo_scan",
-        confidence: 0.9, // forces status=active so hybridSearch returns it
-        dedupe: false,
-      });
+        evidence: [] as any,
+        capture_context: null,
+        supersedes: null,
+        dedupe_key: null,
+        created_at: now,
+        updated_at: now,
+        last_validated_at: null,
+        last_injected_at: null,
+        injection_count: 0,
+        override_count: 0,
+        repetition_count: 0,
+      }).run();
       seeded.push(memoryId);
       seedTexts.push(text);
       memToSession.set(memoryId, sessionId);
     }
 
-    // Chunk to avoid OOM on the transformers.js batch tensor — a 48-session
-    // haystack with verbose chat content can produce ~10k tokens per session.
+    // Single-call embed per session. Batched (`embedBatch`) leaks worker
+    // threads across calls under transformers.js's onnxruntime, growing RSS
+    // unboundedly across questions; one-at-a-time keeps memory flat at the
+    // cost of throughput. The per-call cost is dominated by the model itself,
+    // not by tokenizer overhead, so the speed delta vs batched is small.
     const embeddings: Float32Array[] = [];
-    const CHUNK = 8;
-    for (let off = 0; off < seedTexts.length; off += CHUNK) {
-      const slice = seedTexts.slice(off, off + CHUNK);
-      const out = await generateEmbeddings(slice, embeddingConfig, "document");
-      embeddings.push(...out);
+    for (const text of seedTexts) {
+      embeddings.push(await generateEmbedding(text, embeddingConfig, "document"));
     }
     for (let si = 0; si < seeded.length; si++) {
       const memoryId = seeded[si]!;
