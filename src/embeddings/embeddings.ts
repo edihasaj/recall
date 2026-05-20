@@ -25,6 +25,7 @@ import {
   verifyMemoryFtsIndex,
 } from "../vector/sqlite-fts.js";
 import { generateHydeText } from "./hyde.js";
+import { isRerankerEnabled, rerankerTopK, rerankPairs } from "./reranker.js";
 
 type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
@@ -596,9 +597,29 @@ export async function hybridSearch(
     }
   }
 
-  return [...merged.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  const sorted = [...merged.values()].sort((a, b) => b.score - a.score);
+
+  // Cross-encoder re-rank: pull a wider window (default top-50), score each
+  // (query, doc) pair jointly, then keep the limit-N best. Skip silently on
+  // any failure — the fused order is already a sensible fallback.
+  if (isRerankerEnabled() && sorted.length > 1) {
+    const topK = Math.min(rerankerTopK(), sorted.length);
+    const candidates = sorted.slice(0, topK);
+    try {
+      const scores = await rerankPairs(
+        query,
+        candidates.map((c) => c.memory.text),
+      );
+      const rescored = candidates
+        .map((c, i) => ({ ...c, score: scores[i] ?? 0 }))
+        .sort((a, b) => b.score - a.score);
+      return rescored.slice(0, limit);
+    } catch {
+      // Fall through to the un-reranked fused order.
+    }
+  }
+
+  return sorted.slice(0, limit);
 }
 
 // --- Cosine similarity ---
