@@ -32,9 +32,11 @@ import {
   loadEmbeddingConfigFromEnv,
   storeEmbedding,
   ensureEmbeddingProviderReady,
+  projectEmbeddingToIndex,
 } from "../src/embeddings/embeddings.js";
-import { upsertMemoryVecRow } from "../src/vector/sqlite-vec.js";
-import { upsertMemoryFtsRow } from "../src/vector/sqlite-fts.js";
+import { upsertMemoryVecRow, searchMemoryVecIndex } from "../src/vector/sqlite-vec.js";
+import { upsertMemoryFtsRow, searchMemoryFtsIndex } from "../src/vector/sqlite-fts.js";
+import { resolveProvider } from "../src/embeddings/providers/index.js";
 import { getMemory } from "../src/models/memory.js";
 import { normalizeQueryForRetrieval } from "../src/compiler/context.js";
 import { memories } from "../src/db/schema.js";
@@ -60,6 +62,11 @@ interface BenchResult {
   mrr: number;
   retrieved_session_ids: string[];
   gold_session_ids: string[];
+  // Raw per-arm rankings (session_ids, in rank order, top 50). Persisted so
+  // offline sweeps can re-fuse without re-embedding. `dump_raw` arg gates
+  // this — adds ~5–10 % JSON size and one extra vec query per question.
+  lex_rank_session_ids?: string[];
+  vec_rank_session_ids?: string[];
 }
 
 const ABSTENTION_TYPES = new Set([
@@ -105,16 +112,18 @@ interface Args {
   out?: string;
   quiet: boolean;
   stratify: boolean;
+  dumpRaw: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { quiet: false, stratify: false };
+  const out: Args = { quiet: false, stratify: false, dumpRaw: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--limit") out.limit = parseInt(argv[++i] ?? "0", 10);
     else if (a === "--out") out.out = argv[++i];
     else if (a === "--quiet") out.quiet = true;
     else if (a === "--stratify") out.stratify = true;
+    else if (a === "--dump-raw") out.dumpRaw = true;
   }
   return out;
 }
@@ -300,6 +309,25 @@ async function main() {
       .map((h) => memToSession.get(h.memory.id))
       .filter((id): id is string => id != null);
 
+    // When --dump-raw is on, also capture the per-arm rankings so offline
+    // sweeps can re-fuse different lex/vec mixes without re-embedding.
+    let lexRankIds: string[] | undefined;
+    let vecRankIds: string[] | undefined;
+    if (args.dumpRaw) {
+      const lex = searchMemoryFtsIndex(db, query, { repo, limit: 50 });
+      lexRankIds = lex
+        .map((r) => memToSession.get(r.memory_id))
+        .filter((id): id is string => id != null);
+      const queryEmb = projectEmbeddingToIndex(
+        await generateEmbedding(query, embeddingConfig, "query"),
+        resolveProvider(embeddingConfig).metadata().index_dimensions,
+      );
+      const vec = searchMemoryVecIndex(db, queryEmb, { repo, limit: 50 });
+      vecRankIds = vec
+        .map((r) => memToSession.get(r.memory_id))
+        .filter((id): id is string => id != null);
+    }
+
     if (qi < 3 && !args.quiet) {
       // Sanity counts directly from the DB.
       const memCount = db.select().from(memories).all().filter((m) => m.repo === repo).length;
@@ -340,6 +368,8 @@ async function main() {
       mrr: mrr(retrievedSessionIds, goldSet),
       retrieved_session_ids: retrievedSessionIds.slice(0, 10),
       gold_session_ids: entry.answer_session_ids,
+      lex_rank_session_ids: lexRankIds,
+      vec_rank_session_ids: vecRankIds,
     });
 
     // 3) Drop the per-question rows so the next question starts clean.
