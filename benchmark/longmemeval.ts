@@ -100,15 +100,43 @@ function mrr(retrieved: string[], gold: Set<string>): number {
   return 0;
 }
 
-function parseArgs(argv: string[]): { limit?: number; out?: string; quiet: boolean } {
-  const out: { limit?: number; out?: string; quiet: boolean } = { quiet: false };
+interface Args {
+  limit?: number;
+  out?: string;
+  quiet: boolean;
+  stratify: boolean;
+}
+
+function parseArgs(argv: string[]): Args {
+  const out: Args = { quiet: false, stratify: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--limit") out.limit = parseInt(argv[++i] ?? "0", 10);
     else if (a === "--out") out.out = argv[++i];
     else if (a === "--quiet") out.quiet = true;
+    else if (a === "--stratify") out.stratify = true;
   }
   return out;
+}
+
+function stratifySample<T extends { question_type: string }>(entries: T[], limit: number): T[] {
+  // Round-robin by question_type so a small N still covers every category.
+  const byType = new Map<string, T[]>();
+  for (const e of entries) {
+    const arr = byType.get(e.question_type) ?? [];
+    arr.push(e);
+    byType.set(e.question_type, arr);
+  }
+  const buckets = [...byType.values()];
+  const picked: T[] = [];
+  let idx = 0;
+  while (picked.length < limit && buckets.some((b) => b.length > 0)) {
+    const bucket = buckets[idx % buckets.length]!;
+    const next = bucket.shift();
+    if (next) picked.push(next);
+    idx++;
+  }
+  return picked;
 }
 
 async function main() {
@@ -137,11 +165,14 @@ async function main() {
 
   let entries = raw.filter((e) => !ABSTENTION_TYPES.has(e.question_type));
   if (args.limit && args.limit < entries.length) {
-    entries = entries.slice(0, args.limit);
+    entries = args.stratify
+      ? stratifySample(entries, args.limit)
+      : entries.slice(0, args.limit);
   }
   console.log(
     `processing ${entries.length} non-abstention questions ` +
-      `(${raw.length - entries.length} excluded as abstention)`,
+      `(${raw.length - entries.length} excluded as abstention)` +
+      (args.stratify ? " · stratified across types" : ""),
   );
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
