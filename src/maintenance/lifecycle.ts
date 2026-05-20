@@ -40,6 +40,8 @@ export interface MaintenanceConfig {
   activity_retention_days: number;
   feedback_retention_days: number;
   signal_retention_days: number;
+  rejected_retention_days: number;
+  transient_retention_days: number;
   history_session_retention_days: number;
   sqlite_analyze_enabled: boolean;
   sqlite_optimize_enabled: boolean;
@@ -100,6 +102,8 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "90", 10),
     feedback_retention_days: parseInt(process.env.RECALL_FEEDBACK_RETENTION_DAYS ?? "180", 10),
     signal_retention_days: parseInt(process.env.RECALL_SIGNAL_RETENTION_DAYS ?? "180", 10),
+    rejected_retention_days: parseInt(process.env.RECALL_REJECTED_RETENTION_DAYS ?? "90", 10),
+    transient_retention_days: parseInt(process.env.RECALL_TRANSIENT_RETENTION_DAYS ?? "7", 10),
     history_session_retention_days: parseInt(process.env.RECALL_HISTORY_SESSION_RETENTION_DAYS ?? "30", 10),
     sqlite_analyze_enabled: process.env.RECALL_SQLITE_ANALYZE_ENABLED !== "false",
     sqlite_optimize_enabled: process.env.RECALL_SQLITE_OPTIMIZE_ENABLED !== "false",
@@ -132,6 +136,8 @@ export async function runMaintenanceCycle(
   const prune = pruneMemories(db, {
     stale_days: config.stale_days,
     min_health_score: config.min_health_score,
+    rejected_retention_days: config.rejected_retention_days,
+    transient_retention_days: config.transient_retention_days,
   });
   const scannedMemoryCleanup = reconcileScannedMemories(db);
   const candidates_promoted = promoteRepetitionCandidates(db);
