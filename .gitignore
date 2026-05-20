@@ -9,3 +9,4 @@ dist/
 build/
 macos/RecallApp/Generated/
 macos/RecallApp/*.xcodeproj
+benchmark/data/
