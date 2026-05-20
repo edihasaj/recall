@@ -485,8 +485,13 @@ function lexicalRankToScore(rank: number, position: number): number {
 const DEFAULT_LEX_WEIGHT = 0.35;
 const DEFAULT_VEC_WEIGHT = 0.65;
 const DEFAULT_RRF_K = 60;
-const DEFAULT_RRF_LEX_WEIGHT = 1;
-const DEFAULT_RRF_VEC_WEIGHT = 1;
+// Slight lex bias picked by benchmark/fusion-sweep.ts on
+// benchmark/data/recall-lme-e5-n60-tier1.json. With Porter+synonyms+prefix
+// the FTS arm is strong enough to outperform vec on conversational
+// haystacks; on coding rules the modest 1.25/0.75 split keeps vec
+// contributing meaningfully for vague queries. 1:1 is the next-best option.
+const DEFAULT_RRF_LEX_WEIGHT = 1.25;
+const DEFAULT_RRF_VEC_WEIGHT = 0.75;
 
 function readFloat(name: string, fallback: number): number {
   const raw = process.env[name];
