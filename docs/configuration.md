@@ -200,6 +200,35 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `RECALL_SQLITE_STARTUP_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | If the WAL file exceeds this size when the DB is opened, run `wal_checkpoint(TRUNCATE)` once during startup. Heals existing installs after upgrade. Set `0` to disable. |
 | `RECALL_HOOK_LOG_MAX_BYTES` | `1048576` (1 MiB) | Rotates `~/.recall/logs/hook-errors.log` to `hook-errors.log.1` once it reaches this size. Set `0` to keep appending forever. |
 
+## Retrieval tuning
+
+The hybrid search path (FTS5 + sqlite-vec) is opinionated for short
+coding-rule corpora by default, but every knob is exposed for benchmarks
+and conversational-haystack workloads.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `RECALL_FUSION` | `rrf` | `weighted` falls back to the legacy weighted-sum mix of BM25 + cosine. |
+| `RECALL_RRF_K` | `60` | RRF dampening constant. Larger k flattens the top-of-list contribution. |
+| `RECALL_RRF_LEX_WEIGHT` | `1` | Multiplier on the FTS arm's RRF contribution. |
+| `RECALL_RRF_VEC_WEIGHT` | `1` | Multiplier on the vec arm's RRF contribution. |
+| `RECALL_LEX_WEIGHT` | `0.35` | Weighted-sum mode only. |
+| `RECALL_VEC_WEIGHT` | `0.65` | Weighted-sum mode only. |
+| `RECALL_FTS_MODE` | `and` | `or` switches the FTS query joiner — better for natural-language queries where AND-of-terms is too strict. |
+| `RECALL_FTS_PREFIX` | `true` | Set to `false` to disable FTS5 prefix matching on tokens ≥4 chars. |
+| `RECALL_SYNONYMS` | `true` | Set to `false` to skip query-time synonym expansion. |
+| `RECALL_SYNONYMS_PATH` | unset | Optional path to a JSON file with `{ "groups": [["a","b",...], ...] }` to extend the bundled English dictionary. |
+| `RECALL_HYDE` | `false` | Set to `true` to embed a LLM-generated hypothetical answer instead of the question for chat-style queries. Requires a configured provider. |
+| `RECALL_HYDE_MODEL` | provider default | Override the HyDE model (e.g. `gpt-4o-mini`, `claude-haiku-4-5-20251001`). |
+| `RECALL_HYDE_CACHE_PATH` | unset | Persist HyDE results to a JSON file for reproducible benchmarks. |
+| `RECALL_RERANK` | `false` | Set to `true` to cross-encoder re-rank the top-50 hybrid candidates. |
+| `RECALL_RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | Re-ranker model. |
+| `RECALL_RERANK_TOP_K` | `50` | Window pulled into the re-rank stage. |
+
+For chat-haystack benchmarks (e.g. LongMemEval-S) the recommended
+combination is `RECALL_HYDE=true RECALL_RERANK=true`, on top of the
+defaults — see `benchmark/COMPARISON.md` for measured numbers.
+
 ## Verification
 
 ```bash
