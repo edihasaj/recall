@@ -23,7 +23,11 @@ function buildFtsQuery(query: string) {
     .filter(Boolean) ?? [];
 
   if (tokens.length === 0) return null;
-  return tokens.map((token) => `"${token}"`).join(" ");
+  // Default is AND-of-phrase tokens, which is the right call for the short
+  // coding-rule queries we ship for. Set RECALL_FTS_MODE=or for natural-
+  // language haystacks (e.g. LongMemEval) where AND is too strict.
+  const join = process.env.RECALL_FTS_MODE === "or" ? " OR " : " ";
+  return tokens.map((token) => `"${token}"`).join(join);
 }
 
 export function ensureMemoryFtsIndex(db: RecallDb) {

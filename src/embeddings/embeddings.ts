@@ -29,7 +29,18 @@ type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
 
 const EMBEDDING_BATCH_SIZE = 100;
-const MIN_HYBRID_VECTOR_SIMILARITY = 0.7;
+// Lower-bound for accepting a vector match into the hybrid result. Tuned for
+// short coding-rule corpora at 0.7 (rules look very similar embedded so the
+// floor keeps off-topic matches out). For retrieval evals over conversational
+// haystacks (e.g. LongMemEval) cosine similarity sits much lower per chunk;
+// override via RECALL_HYBRID_MIN_SIM.
+const MIN_HYBRID_VECTOR_SIMILARITY = (() => {
+  const raw = process.env.RECALL_HYBRID_MIN_SIM;
+  if (!raw) return 0.7;
+  const parsed = parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) return 0.7;
+  return parsed;
+})();
 const pendingEmbeddingJobs = new Set<Promise<void>>();
 const EMBEDDING_DEFAULTS = {
   nomic: {
