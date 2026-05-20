@@ -184,6 +184,16 @@ async function main() {
     }
   }
 
+  // Mirror longmemeval.ts — production defaults zero out chat-haystack
+  // retrieval; ensure the chat-mode floor is off before any preset runs.
+  for (const [key, value] of Object.entries({
+    RECALL_HYBRID_MIN_SIM: "0",
+    RECALL_SIMILARITY_THRESHOLD: "0",
+    RECALL_FTS_MODE: "or",
+  })) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+
   const datasetPath = fileURLToPath(new URL("./data/longmemeval_s_cleaned.json", import.meta.url));
   if (!existsSync(datasetPath)) {
     console.error(`Dataset not found: ${datasetPath}`);

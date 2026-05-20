@@ -151,6 +151,26 @@ function stratifySample<T extends { question_type: string }>(entries: T[], limit
 async function main() {
   const args = parseArgs(process.argv);
 
+  // LongMemEval-S is a conversational haystack — production defaults (0.7
+  // similarity floor, AND-FTS) are tuned for short coding rules and zero
+  // out every hit. Apply chat-mode env knobs if the caller hasn't, and log
+  // what we changed so the run is reproducible.
+  const chatEnvDefaults: Record<string, string> = {
+    RECALL_HYBRID_MIN_SIM: "0",
+    RECALL_SIMILARITY_THRESHOLD: "0",
+    RECALL_FTS_MODE: "or",
+  };
+  const appliedEnv: string[] = [];
+  for (const [key, value] of Object.entries(chatEnvDefaults)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+      appliedEnv.push(`${key}=${value}`);
+    }
+  }
+  if (appliedEnv.length > 0) {
+    console.log(`auto-applied chat-mode env: ${appliedEnv.join(", ")}`);
+  }
+
   const datasetPath = fileURLToPath(
     new URL("./data/longmemeval_s_cleaned.json", import.meta.url),
   );
