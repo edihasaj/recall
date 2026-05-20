@@ -24,6 +24,7 @@ import {
   syncMemoryFtsIndex,
   verifyMemoryFtsIndex,
 } from "../vector/sqlite-fts.js";
+import { generateHydeText } from "./hyde.js";
 
 type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
@@ -518,11 +519,16 @@ export async function hybridSearch(
     repo: options.repo,
     limit: armLimit,
   });
+  // HyDE: if enabled and the query looks like a chat question, embed a
+  // 1-sentence hypothetical answer instead of the question itself. Lex arm
+  // keeps the original query (still want the original terms in BM25).
+  const hydeText = config ? await generateHydeText(db, query) : null;
+  const vecEmbedQuery = hydeText ?? query;
   const semanticMatches = config
     ? searchMemoryVecIndex(
         db,
         projectEmbeddingToIndex(
-          await generateEmbedding(query, config, "query"),
+          await generateEmbedding(vecEmbedQuery, config, "query"),
           resolveProvider(config).metadata().index_dimensions,
         ),
         { repo: options.repo, limit: armLimit },
