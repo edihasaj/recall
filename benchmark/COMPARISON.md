@@ -44,33 +44,85 @@ Recall optimizes for a *coding-agent workflow*, not chat retrieval:
    activity event, every session, and every contradiction. Users can
    audit *what their agents have learned about them* in one tab.
 
-## Apples-to-apples retrieval — open task
+## Apples-to-apples retrieval — `benchmark/longmemeval.ts`
 
-> 🚧 We have **not yet posted LongMemEval-S numbers** for Recall. That
-> port is tracked in `docs/quality-audit-2026-05-20.md` and will land
-> as `benchmark/longmemeval.ts`. Until then, do not claim Recall beats
-> agentmemory on their benchmark.
+The port is in tree:
 
-Plan when we run it:
+```bash
+mkdir -p benchmark/data
+curl -sL -o benchmark/data/longmemeval_s_cleaned.json \
+  https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
+RECALL_HYBRID_MIN_SIM=0 RECALL_SIMILARITY_THRESHOLD=0 RECALL_FTS_MODE=or \
+  npx tsx benchmark/longmemeval.ts --limit 50 --out benchmark/data/recall-lme.json
+```
 
-- Same dataset (`xiaowu0162/longmemeval-cleaned`, S split, 500
-  questions, 48 sessions each).
-- Same metric (`recall_any@K`, NDCG@10, MRR).
-- Same embedding model (`all-MiniLM-L6-v2`, 384-d, local) so the
-  retrieval head is honest.
-- Per-question fresh sqlite db so haystacks don't cross-contaminate.
+Why those env knobs:
 
-We expect Recall's hybridSearch to land within ±2 pp of agentmemory's
-hybrid number, because the underlying retrieval shape is similar
-(lexical + vector + reciprocal-rank fusion). The interesting numbers
-will be:
+- `RECALL_HYBRID_MIN_SIM=0` — production default is `0.7`, tuned for
+  matching short coding rules to user prompts. Conversational chunks
+  in LongMemEval-S sit much lower in cosine space; the floor was
+  zeroing out every hit before scoring.
+- `RECALL_SIMILARITY_THRESHOLD=0` — same reasoning at the per-match
+  filter inside `hybridSearch`.
+- `RECALL_FTS_MODE=or` — production default is AND-of-phrase tokens,
+  which is correct for short rule queries but never matches a natural-
+  language question like *"How long is my daily commute to work?"*.
+  OR-mode gives the BM25 arm something to work with.
 
-- **Token efficiency under the SessionStart/UserPromptSubmit hook
-  flow** — what fraction of the haystack does Recall inject vs.
-  agentmemory's smart-search?
-- **Per-question type breakdown** for the `single-session-preference`
-  category — that's where agentmemory's hybrid only hits 83.3 % R@5,
-  and Recall's feedback-weighted scoring is well-suited to it.
+What the script does, per question:
+
+1. Build a fresh haystack of ~48 sessions as repo-tagged memories in a
+   temp DB.
+2. Embed each session with Recall's normal embedding provider
+   (`nomic-ai/nomic-embed-text-v1.5` by default, or
+   `RECALL_EMBEDDING_PROVIDER=multilingual-e5` for the 384-d shape
+   closer to agentmemory's `all-MiniLM-L6-v2`).
+3. Mirror each row into `vec_memory_index` (ANN) and
+   `fts_memory_index` (BM25) directly — production sync is async via a
+   queue, the bench needs the rows visible immediately.
+4. Call `hybridSearch(db, normalizeQueryForRetrieval(question), config,
+   { repo, limit: 20 })`.
+5. Map memory IDs back to session IDs, score `recall_any@{5,10,20}`,
+   NDCG@10, MRR.
+
+### Current numbers — 🚧 in progress
+
+> Running on a 50-question subset (n=50 sampled from the 500-question
+> non-abstention set) at the moment. Numbers will land here once the
+> run finishes (~80 min on M-series macOS, single-process,
+> nomic-embed-text-v1.5 512-d).
+
+| System | Subset | R@5 | R@10 | R@20 | NDCG@10 | MRR | Notes |
+|--------|--------|-----|------|------|---------|-----|-------|
+| agentmemory BM25 + vector | full (500) | 95.2 % | 98.6 % | 99.4 % | 87.9 % | 88.2 % | all-MiniLM-L6-v2 (384-d) |
+| agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized+Porter+synonyms |
+| Recall hybridSearch | n=50 (subset) | _running_ | _running_ | _running_ | _running_ | _running_ | nomic-embed-text-v1.5 (512-d), FTS5 OR |
+
+### Honest caveats on the comparison
+
+Numbers won't be apples-to-apples even with the same dataset:
+
+- **Embedding model differs.** Recall ships `nomic-embed-text-v1.5`
+  (512-d index). agentmemory uses `all-MiniLM-L6-v2` (384-d). Both
+  are local. Set `RECALL_EMBEDDING_PROVIDER=multilingual-e5` to put
+  Recall on a 384-d model in the same shape as agentmemory's choice;
+  the *brand* of the model still differs.
+- **BM25 implementation differs.** Recall uses SQLite's built-in FTS5
+  BM25. agentmemory hand-rolled BM25 with Porter stemming, prefix
+  matching, and a tiny synonym table. Theirs is more permissive on
+  natural-language queries.
+- **Coding-tuned defaults.** Recall's production defaults
+  (`MIN_HYBRID_VECTOR_SIMILARITY=0.7`, AND-FTS) would score zero on
+  this benchmark by design — they exist to keep noisy chunks out of
+  the SessionStart/UserPromptSubmit inject path. The env-knobs above
+  loosen them only for the bench.
+
+The intent of running this is not to "win" agentmemory's benchmark.
+It is to publish honest numbers in the same shape so users picking a
+memory layer can compare. If Recall lands within ±5 pp of
+agentmemory's hybrid number on conversational retrieval, we'd consider
+that strong validation — Recall is optimised for *coding-rule
+retrieval and injection*, not chat-haystack recall.
 
 ## Coding-recall — what we can publish today
 
