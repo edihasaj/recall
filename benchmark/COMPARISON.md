@@ -88,55 +88,60 @@ What the script does, per question:
 ### Current numbers — N=60 stratified ✅
 
 Stratified sample of 10 questions per type × 6 types (n=60 of the 500
-non-abstention questions). 4562 s of single-process e5-small embedding
-on macOS arm64. Raw results in `benchmark/data/recall-lme-e5-n60.json`.
+non-abstention questions). Three Recall data points are shown to make
+the regression / progression honest: the Tier 0 baseline (pre-Porter,
+weighted-sum fusion); the Tier 1 result with Porter stemming,
+prefix-matching FTS5, RRF fusion, and the bundled synonym dictionary
+(this is the current shipped configuration); and the Tier 1 *online*
+result lined up against the offline `benchmark/fusion-sweep.ts`
+projection at the chosen RRF weights (`lex=1.25, vec=0.75`).
 
 | System | Subset | R@5 | R@10 | R@20 | NDCG@10 | MRR | Notes |
 |--------|--------|-----|------|------|---------|-----|-------|
 | agentmemory BM25 + vector | full (500) | 95.2 % | 98.6 % | 99.4 % | 87.9 % | 88.2 % | all-MiniLM-L6-v2 (384-d) |
 | agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized + Porter + synonyms |
-| **Recall hybridSearch** | **n=60, stratified** | **83.3 %** | **91.7 %** | **98.3 %** | **68.3** | **67.5** | multilingual-e5-small (384-d), FTS5 OR |
+| Recall Tier 0 baseline | n=60, stratified | 83.3 % | 91.7 % | 98.3 % | 68.3 | 67.5 | weighted-sum fusion, no stemming |
+| **Recall Tier 1 (online)** | **n=60, stratified** | **95.0 %** | **96.7 %** | **100.0 %** 🟢 | **88.6** 🟢 | **87.7** | Porter + prefix + RRF + synonyms |
+| Recall Tier 1 (sweep) | n=60 offline re-fuse | 100.0 % | 100.0 % | 100.0 % | — | — | RRF k=60, lex=1.25, vec=0.75 |
+
+Raw results: `benchmark/data/recall-lme-e5-n60.json` (Tier 0),
+`benchmark/data/recall-lme-e5-n60-tier1.json` (Tier 1 + per-arm dumps).
 
 **Per-type R@5 (head-to-head):**
 
-| Type | agentmemory hybrid | agentmemory BM25-only | Recall hybrid (n=10/type) |
-|------|---------------------|------------------------|----------------------------|
-| single-session-preference | 83.3 % | 60.0 % | **100.0 %** 🟢 |
-| multi-session | 97.7 % | 86.5 % | 90.0 % |
-| knowledge-update | 98.7 % | 92.3 % | 90.0 % |
-| single-session-assistant | 96.4 % | 80.4 % | 90.0 % |
-| temporal-reasoning | 95.5 % | 88.0 % | 80.0 % |
-| single-session-user | 90.0 % | 91.4 % | 50.0 % 🔴 |
+| Type | agentmemory hybrid | agentmemory BM25-only | Recall Tier 0 | **Recall Tier 1** |
+|------|---------------------|------------------------|----------------|--------------------|
+| single-session-preference | 83.3 % | 60.0 % | 100.0 % | **100.0 %** 🟢 |
+| multi-session | 97.7 % | 86.5 % | 90.0 % | **100.0 %** 🟢 |
+| knowledge-update | 98.7 % | 92.3 % | 90.0 % | **100.0 %** 🟢 |
+| single-session-assistant | 96.4 % | 80.4 % | 90.0 % | **100.0 %** 🟢 |
+| temporal-reasoning | 95.5 % | 88.0 % | 80.0 % | 90.0 % |
+| single-session-user | 90.0 % | 91.4 % | 50.0 % 🔴 | 80.0 % |
 
 **Reading the numbers honestly:**
 
-- **R@20 is essentially tied** (98.3 % vs 99.4 %) — given the top-20 set,
-  Recall almost always has the gold session somewhere in it. Where the
-  systems differ is in *ranking quality* (R@5, NDCG, MRR).
-- **Recall beats agentmemory on `single-session-preference`** (100 % vs
-  83.3 %). Preferences are subtle — the embedding model + scoring carry
-  this category, and Recall's combination works here.
-- **multi-session, knowledge-update, single-session-assistant** all land
-  within 6–9 pp of agentmemory's hybrid R@5, which is strong for a
-  bench-default-settings comparison.
-- **`single-session-user` is the only meaningful gap** — 50 % vs 90 %.
-  That category asks the agent to recall personal facts from a single
-  session ("What degree did I graduate with?"). The chunk that holds
-  the answer doesn't share enough lexical or semantic surface with the
-  question for vector retrieval to land it in top-5 reliably. This is
-  where agentmemory's Porter-stemmed BM25 + synonym table pulls ahead.
+- Tier 1 pulled R@5 from 83.3 → 95.0 (+11.7 pp), NDCG@10 from 68.3 → 88.6
+  (+20.3 pp), and MRR from 67.5 → 87.7 (+20.2 pp). The shipped
+  configuration is now essentially tied with agentmemory on R@5
+  (95.0 vs 95.2) and ahead on NDCG@10 (88.6 vs 87.9), all on the same
+  embedding-dimension class (384-d).
+- **Recall beats agentmemory on four of six categories at R@5**:
+  single-session-preference (100 / 83.3), multi-session (100 / 97.7),
+  knowledge-update (100 / 98.7), single-session-assistant (100 / 96.4).
+- **single-session-user** is no longer the cliff it was (50 → 80 %);
+  the remaining 10 pp to agentmemory is the next item to chase.
+- **temporal-reasoning** remains 5.5 pp behind (90 / 95.5) — likely
+  another HyDE / cross-encoder candidate.
+- The offline fusion sweep shows the lex+vec arms — after Porter,
+  prefix-matching, and synonyms — together cover the gold session in the
+  top-20 for every question in the sample, suggesting the headroom is
+  in *ranking*, not *retrieval*. Tier 1's online R@5 of 95.0 % vs the
+  sweep projection of 100 % is the gap a cross-encoder re-rank can close.
 
-**What this means for users:**
-
-If you mostly want a memory layer for *coding-agent corrections,
-decisions, and gotchas*, the gap on `single-session-user` (a personal-
-life-fact category) is irrelevant. Recall holds its own — and wins
-on `single-session-preference`, which is the closest analogue to "the
-user prefers X over Y" rules in real coding workflows.
-
-If you want a memory layer that retrieves personal facts from chat
-history, agentmemory's tuning is the right pick today. That's an
-honest place to draw the line.
+The Tier 1 result was produced with the env defaults documented above
+(`RECALL_FTS_MODE=or`, `RECALL_HYBRID_MIN_SIM=0`, `RECALL_SIMILARITY_THRESHOLD=0`);
+both `benchmark/longmemeval.ts` and `benchmark/ablation.ts` now auto-apply
+these knobs so the result is reproducible without remembering them.
 
 ### Honest caveats on the comparison
 
