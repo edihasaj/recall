@@ -19,3 +19,6 @@ dist-windows/
 
 # vmlab flow specs (private tooling — not part of the open source surface)
 flows/
+
+# Local harness state (Claude Code scheduled tasks etc.)
+.claude/
