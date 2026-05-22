@@ -11,10 +11,11 @@ LongMemEval-S, N=500 non-abstention. Same dataset agentmemory publishes.
 
 | System | R@5 | R@10 | R@20 | NDCG@10 | MRR |
 |---|---|---|---|---|---|
-| agentmemory BM25 + vector | 95.2 % | 98.6 % | 99.4 % | 87.9 | 88.2 |
-| **Recall (Tier 1 shipped)** | **97.4 %** | **99.4 %** | **99.6 %** | **90.1** | **89.5** |
+| agentmemory BM25 + vector | 95.2 % | **98.6 %** | 99.4 % | 87.9 | **88.2** |
+| Recall — same model (all-MiniLM-L6-v2) | **96.6 %** | 97.6 % | **99.8 %** | 87.0 | 86.8 |
+| **Recall shipped (multilingual-e5-small)** | **97.4 %** | **99.4 %** | **99.6 %** | **90.1** | **89.5** |
 
-Full numbers, per-type breakdown, ablation, and methodology → [`COMPARISON.md`](COMPARISON.md).
+The MiniLM row isolates the system contribution (same embedding model agentmemory uses); the e5 row is what Recall actually ships. Full numbers, per-type breakdown, ablation, methodology → [`COMPARISON.md`](COMPARISON.md).
 
 ## Files
 

@@ -131,12 +131,34 @@ function parseArgs(argv: string[]): Args {
   return out;
 }
 
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function stratifySample<T extends { question_type: string }>(entries: T[], limit: number): T[] {
+  // Seeded shuffle inside each type bucket so the same RECALL_STRATIFY_SEED
+  // reproduces the slice and different seeds rotate it. Without this the
+  // round-robin below locks to the dataset's natural ordering.
+  const seed = parseInt(process.env.RECALL_STRATIFY_SEED ?? "42", 10);
+  const rand = mulberry32(Number.isFinite(seed) ? seed : 42);
   const byType = new Map<string, T[]>();
   for (const e of entries) {
     const arr = byType.get(e.question_type) ?? [];
     arr.push(e);
     byType.set(e.question_type, arr);
+  }
+  for (const arr of byType.values()) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+    }
   }
   const buckets = [...byType.values()];
   const picked: T[] = [];
