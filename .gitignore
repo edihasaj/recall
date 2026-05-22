@@ -10,3 +10,6 @@ build/
 macos/RecallApp/Generated/
 macos/RecallApp/*.xcodeproj
 benchmark/data/
+
+# Windows tray build output
+dist-windows/

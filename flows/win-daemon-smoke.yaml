@@ -1,0 +1,12 @@
+name: win-daemon-smoke
+workdir: C:\work\recall
+steps:
+  - name: start daemon in background
+    # detach so vmlab returns; redirect logs to a file we can tail
+    run: start /B "" cmd /c "node dist\daemon.js > C:\work\recall\daemon.log 2>&1"
+  - name: wait for port
+    # poll /health for up to 30s
+    run: powershell -NoProfile -Command "for ($i=0; $i -lt 30; $i++) { try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:7890/health -TimeoutSec 1; if ($r.StatusCode -eq 200) { Write-Host $r.Content; exit 0 } } catch {}; Start-Sleep -Seconds 1 }; Write-Host '--- daemon.log ---'; Get-Content C:\work\recall\daemon.log -Tail 40; exit 1"
+  - name: stop daemon
+    # find node processes listening on 7890 and kill
+    run: powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7890 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; exit 0"
