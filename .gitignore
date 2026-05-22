@@ -16,3 +16,6 @@ dist-windows/
 
 # Artifacts downloaded via `gh run download` for vmlab win-bs3-prebuild-check
 .prebuilds-seed/
+
+# vmlab flow specs (private tooling — not part of the open source surface)
+flows/

@@ -43,18 +43,6 @@ and ship them with recall.
 3. The `windows-11-arm` GitHub-hosted runner makes step 1 free — no
    self-hosted ARM hardware needed.
 
-## Local iteration loop via vmlab
-
-For dev-loop testing on Windows ARM specifically (Mac Studio + Parallels):
-
-```sh
-vmlab run win11-studio flows/win-bs3-prebuild-check.yaml
-```
-
-…confirms whether `pnpm install` (without `--ignore-scripts`) succeeds. Once
-the CI workflow has run at least once and pushed prebuilds to a release,
-this should return green.
-
 ## Quality preservation
 
 No code change to the storage or retrieval layer. The benchmark stays
