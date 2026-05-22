@@ -1,0 +1,115 @@
+name: native-prebuilds
+
+# Build prebuilt better-sqlite3 + sqlite-vec binaries for every (os, arch,
+# node-abi) combo recall targets, then upload to a GitHub release so
+# `prebuild-install` (which better-sqlite3's postinstall runs by default)
+# can fetch them. Without this, win32-arm64 users fall through to a gyp
+# build that needs Python + MSVC — the exact reason recall was effectively
+# unshippable on Windows ARM.
+#
+# Triggers: tag push (real release), manual dispatch (dev iteration). The
+# job is split into two stages so a failed Windows ARM build doesn't block
+# the other artifacts.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      node_versions:
+        description: "Comma-separated node majors (default: 20,22,24)"
+        default: "20,22,24"
+        required: false
+      dry_run:
+        description: "Build but do not upload artifacts to a release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # release upload
+
+jobs:
+  prebuild:
+    name: prebuild ${{ matrix.os }} ${{ matrix.arch }} node${{ matrix.node }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS
+          - { os: darwin,  arch: x64,   runner: macos-13,           node: 20 }
+          - { os: darwin,  arch: x64,   runner: macos-13,           node: 22 }
+          - { os: darwin,  arch: x64,   runner: macos-13,           node: 24 }
+          - { os: darwin,  arch: arm64, runner: macos-14,           node: 20 }
+          - { os: darwin,  arch: arm64, runner: macos-14,           node: 22 }
+          - { os: darwin,  arch: arm64, runner: macos-14,           node: 24 }
+          # Linux
+          - { os: linux,   arch: x64,   runner: ubuntu-22.04,       node: 20 }
+          - { os: linux,   arch: x64,   runner: ubuntu-22.04,       node: 22 }
+          - { os: linux,   arch: x64,   runner: ubuntu-22.04,       node: 24 }
+          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm,   node: 20 }
+          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm,   node: 22 }
+          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm,   node: 24 }
+          # Windows
+          - { os: win32,   arch: x64,   runner: windows-2022,       node: 20 }
+          - { os: win32,   arch: x64,   runner: windows-2022,       node: 22 }
+          - { os: win32,   arch: x64,   runner: windows-2022,       node: 24 }
+          # ← THE one that's missing upstream and bites all our Windows-ARM users.
+          - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 20 }
+          - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 22 }
+          - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 24 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: install (no scripts; we run prebuild manually)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: build better-sqlite3 native binding
+        # `npm rebuild` runs node-gyp against the matrix's node ABI. Python is
+        # preinstalled on every actions/runner image; Windows runners include
+        # Visual Studio Build Tools. So this is reliably the same recipe across
+        # the whole matrix without per-OS branches.
+        working-directory: node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3
+        run: |
+          npm install --ignore-scripts --no-save prebuild
+          npx prebuild --runtime napi --target ${{ matrix.node }} --strip --arch ${{ matrix.arch }} --backend node-gyp -u "${{ secrets.GITHUB_TOKEN }}"
+        shell: bash
+      - name: collect prebuild artifacts
+        run: |
+          mkdir -p prebuilds-out
+          # better-sqlite3 drops them under prebuilds/<platform>-<arch>/
+          cp -r node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3/prebuilds/* prebuilds-out/ || true
+          ls -la prebuilds-out/
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.os }}-${{ matrix.arch }}-node${{ matrix.node }}
+          path: prebuilds-out/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish to release
+    needs: prebuild
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - name: flatten
+        run: |
+          mkdir -p release/
+          find artifacts/ -type f -name "*.tar.gz" -exec cp -v {} release/ \;
+          ls -la release/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          # Same release as the tag — `prebuild-install` looks here by default.
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
