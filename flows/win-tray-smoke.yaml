@@ -3,9 +3,11 @@ workdir: $VMLAB_SYNC_DIR
 steps:
   - name: ship source (includes dist-windows/)
     sync: .
+  - name: stop any running tray so the .exe is overwritable
+    # taskkill returns 128 when the process is absent; swallow.
+    run: taskkill /F /IM recall-tray-arm64.exe /IM recall-tray.exe 2>nul & exit /b 0
   - name: ship binary
-    # robocopy the cross-compiled exe to a local drive; UNC works for
-    # exec but local drive is what an installer would target.
-    run: robocopy %VMLAB_SYNC_DIR%\dist-windows C:\work\recall-tray /MIR /NFL /NDL /NJH /NJS /NC /NS & exit /b 0
+    # /R:1 /W:1 — fail fast instead of robocopy's default million retries.
+    run: robocopy %VMLAB_SYNC_DIR%\dist-windows C:\work\recall-tray /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NC /NS & exit /b 0
   - name: arm64 binary --version
     assert: C:\work\recall-tray\recall-tray-arm64.exe --version

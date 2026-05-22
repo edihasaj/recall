@@ -22,7 +22,12 @@ import (
 	"github.com/edihasaj/recall/windows/tray/internal/dashboard"
 )
 
-//go:embed icon.png
+// Windows tray expects ICO bytes; PNG silently fails to register an HICON
+// (systray returns "unable to set icon: The operation completed successfully"
+// because LoadIconFromMemory rejects PNG headers). Ship a multi-resolution
+// .ico (16/24/32/48/64/128/256) so the icon renders crisp at every DPI.
+//
+//go:embed icon.ico
 var iconBytes []byte
 
 var (
