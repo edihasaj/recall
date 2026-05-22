@@ -1,9 +1,0 @@
-name: ios-sim
-transport: simctl
-tags: [ios, mobile, simulator]
-capabilities:
-  install: true
-  mobile: true
-  screenshot: true
-simctl:
-  udid: "AAA-BBB-CCC"   # xcrun simctl list devices
