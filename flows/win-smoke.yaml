@@ -1,19 +1,27 @@
 name: win-smoke
+# Default cwd for every step: the synced source as visible inside the guest.
+# After the sync step below, $VMLAB_SYNC_DIR resolves to \\Mac\recall on the
+# Windows guest (parallels-guest GuestMount), so we don't hardcode UNC paths.
+workdir: $VMLAB_SYNC_DIR
 steps:
   - name: ensure pnpm
     install:
       windows: npm install -g pnpm@10
   - name: ship source
     sync: .
-  - name: copy to local drive
-    # pnpm install fails on UNC shared folders (.pnpm hard-link store needs a
-    # real disk). Mirror the shared source to C:\work\recall once per run.
-    run: robocopy \\Mac\recall C:\work\recall /MIR /NFL /NDL /NJH /NJS /NC /NS /XD node_modules .git & exit /b 0
+  - name: mirror to local drive
+    # pnpm's hard-link store can't live on a UNC mount, so copy to C:\work.
+    # /MIR mirrors (deletes removed), excludes keep us from copying node_modules.
+    run: robocopy %VMLAB_SYNC_DIR% C:\work\recall /MIR /NFL /NDL /NJH /NJS /NC /NS /XD node_modules .git & exit /b 0
   - name: install deps
-    # %APPDATA%\npm\pnpm.cmd because `npm install -g` doesn't propagate PATH
-    # into subsequent prlctl exec sessions (each exec is a fresh shell).
-    run: cd /d C:\work\recall && "%APPDATA%\npm\pnpm.cmd" install --no-frozen-lockfile
+    # --ignore-scripts skips better-sqlite3's node-gyp build (needs Python +
+    # MSVC, out-of-scope for this loop). The recall CLI itself doesn't import
+    # the native module at top level, so smoke can still verify the entrypoint.
+    run: '"%APPDATA%\npm\pnpm.cmd" install --no-frozen-lockfile --ignore-scripts'
+    workdir: C:\work\recall
   - name: build
-    run: cd /d C:\work\recall && "%APPDATA%\npm\pnpm.cmd" build
+    run: '"%APPDATA%\npm\pnpm.cmd" build'
+    workdir: C:\work\recall
   - name: cli runs
-    assert: cd /d C:\work\recall && node dist\cli.js --version
+    assert: node dist\cli.js --version
+    workdir: C:\work\recall
