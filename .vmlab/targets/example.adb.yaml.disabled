@@ -1,0 +1,12 @@
+name: pixel-7
+transport: adb
+tags: [android, mobile]
+capabilities:
+  shell: true
+  sync: true
+  install: true
+  mobile: true
+  screenshot: true
+adb:
+  serial: "RFNX001"   # adb devices
+  dest: /sdcard/vmlab # default sync destination on the device

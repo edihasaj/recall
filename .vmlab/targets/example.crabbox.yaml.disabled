@@ -1,0 +1,10 @@
+# crabbox is an external SSH manager — delegate auth/host bookkeeping to it.
+name: ubuntu-local
+transport: crabbox
+tags: [linux, vm]
+capabilities:
+  shell: true
+  sync: true
+crabbox:
+  configPath: ~/.crabbox/ubuntu-local.yaml
+  # name: ubuntu-local   # alternative to configPath

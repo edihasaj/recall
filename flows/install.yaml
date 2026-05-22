@@ -1,0 +1,7 @@
+# flows/install.yaml — Node + pnpm starter.
+name: install
+steps:
+  - sync: .
+  - run: pnpm install --frozen-lockfile
+  - run: pnpm build
+  - assert: node -e "console.log('node smoke ok')"

@@ -1,0 +1,13 @@
+# Hetzner Cloud — needs HCLOUD_TOKEN or hetzner.token (op:// supported).
+name: ci-linux
+provider: hetzner
+tags: [linux, cloud]
+hetzner:
+  serverType: cpx21
+  image: ubuntu-24.04
+  location: nbg1
+  sshKeys: [my-key]
+  # token: "op://Personal/hcloud/token"
+disposition:
+  on_success: destroy
+  on_failure: destroy

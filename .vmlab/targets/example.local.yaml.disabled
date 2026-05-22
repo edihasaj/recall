@@ -1,0 +1,8 @@
+# Rename and remove the .disabled suffix to activate, or copy this file to
+# ~/.vmlab/targets/ for a user-level target. Run `vmlab target ls` to confirm.
+name: dev-mac
+transport: local
+tags: [local, mac]
+capabilities:
+  shell: true
+# 'local' has no settings — it shells out on the dev machine itself.

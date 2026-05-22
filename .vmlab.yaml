@@ -1,0 +1,6 @@
+# .vmlab.yaml — repo-level overrides for vmlab.
+# User defaults live in ~/.vmlab/config.yaml. Repo file wins.
+#
+# evidenceRetentionDays: 30
+# defaultMaxParallel: 4
+# runsDir: ./.vmlab-runs   # override where evidence bundles land

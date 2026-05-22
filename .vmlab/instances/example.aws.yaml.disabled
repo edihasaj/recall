@@ -1,0 +1,12 @@
+name: ci-amazonlinux
+provider: aws
+tags: [linux, cloud]
+aws:
+  instanceType: t4g.small
+  image: ami-0xxxxxxxxxxxxxxxx
+  region: eu-central-1
+  keyName: my-key
+  securityGroup: sg-xxxxxxxx
+  subnet: subnet-xxxxxxxx
+disposition:
+  on_success: destroy
