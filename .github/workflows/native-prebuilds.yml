@@ -79,25 +79,33 @@ jobs:
           echo "dir=$BSQ_DIR" >> "$GITHUB_OUTPUT"
           echo "Resolved better-sqlite3 at: $BSQ_DIR"
         shell: bash
-      - name: build better-sqlite3 native binding
-        # node-gyp drives the build. Python is preinstalled on every
-        # actions/runner image; Windows runners include Visual Studio Build
-        # Tools. Same recipe across the whole matrix without per-OS branches.
+      - name: build better-sqlite3 native binding (node-gyp)
+        # better-sqlite3@11 ships `binary: {}` in its package.json and uses
+        # `prebuild-install || node-gyp rebuild` as its install script, i.e.
+        # per-ABI native builds (not napi). So we drive node-gyp directly and
+        # let the matrix's setup-node ABI pick the right NODE_MODULE_VERSION.
+        # Python is preinstalled on every actions/runner image; Windows
+        # runners include Visual Studio Build Tools.
         working-directory: ${{ steps.bsq.outputs.dir }}
-        env:
-          # Tag pushes upload to the release; manual dispatch / dry-run only
-          # builds locally, so the publish job picks the artifacts up later.
-          UPLOAD_FLAG: ${{ (startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run) && format('-u {0}', secrets.GITHUB_TOKEN) || '' }}
         run: |
-          npm install --ignore-scripts --no-save prebuild
-          npx prebuild --runtime napi --target ${{ matrix.node }} --strip --arch ${{ matrix.arch }} --backend node-gyp $UPLOAD_FLAG
+          node-gyp rebuild --release --arch=${{ matrix.arch }}
+          ls -la build/Release/
         shell: bash
-      - name: collect prebuild artifacts
+      - name: package as prebuild-install tarball
+        # prebuild-install fetches tarballs named
+        #   <name>-v<version>-<runtime>-v<abi>-<platform>-<arch>.tar.gz
+        # where the tar contains build/Release/<addon>.node — mirroring
+        # exactly what `prebuild` would have produced. Keeping the format
+        # means a future tag push can upload these to the release and
+        # better-sqlite3's stock prebuild-install picks them up.
+        working-directory: ${{ steps.bsq.outputs.dir }}
         run: |
-          mkdir -p prebuilds-out
-          # better-sqlite3 drops them under prebuilds/<platform>-<arch>/
-          cp -r "${{ steps.bsq.outputs.dir }}"/prebuilds/* prebuilds-out/ || true
-          ls -la prebuilds-out/
+          NODE_ABI=$(node -p "process.versions.modules")
+          VERSION=$(node -p "require('./package.json').version")
+          NAME="better-sqlite3-v${VERSION}-node-v${NODE_ABI}-${{ matrix.os }}-${{ matrix.arch }}"
+          mkdir -p "$GITHUB_WORKSPACE/prebuilds-out"
+          tar -czf "$GITHUB_WORKSPACE/prebuilds-out/${NAME}.tar.gz" build/Release/better_sqlite3.node
+          ls -la "$GITHUB_WORKSPACE/prebuilds-out/"
         shell: bash
       - uses: actions/upload-artifact@v4
         with:
