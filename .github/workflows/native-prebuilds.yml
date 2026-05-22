@@ -69,21 +69,34 @@ jobs:
           version: 10
       - name: install (no scripts; we run prebuild manually)
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: resolve better-sqlite3 module path
+        # GH Actions' `working-directory:` doesn't glob, so pnpm's
+        # node_modules/.pnpm/better-sqlite3@<ver>/... path can't be hard-coded.
+        # Ask node where it actually lives — works on every OS in the matrix.
+        id: bsq
+        run: |
+          BSQ_DIR=$(node -p "require('path').dirname(require.resolve('better-sqlite3/package.json'))")
+          echo "dir=$BSQ_DIR" >> "$GITHUB_OUTPUT"
+          echo "Resolved better-sqlite3 at: $BSQ_DIR"
+        shell: bash
       - name: build better-sqlite3 native binding
-        # `npm rebuild` runs node-gyp against the matrix's node ABI. Python is
-        # preinstalled on every actions/runner image; Windows runners include
-        # Visual Studio Build Tools. So this is reliably the same recipe across
-        # the whole matrix without per-OS branches.
-        working-directory: node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3
+        # node-gyp drives the build. Python is preinstalled on every
+        # actions/runner image; Windows runners include Visual Studio Build
+        # Tools. Same recipe across the whole matrix without per-OS branches.
+        working-directory: ${{ steps.bsq.outputs.dir }}
+        env:
+          # Tag pushes upload to the release; manual dispatch / dry-run only
+          # builds locally, so the publish job picks the artifacts up later.
+          UPLOAD_FLAG: ${{ (startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run) && format('-u {0}', secrets.GITHUB_TOKEN) || '' }}
         run: |
           npm install --ignore-scripts --no-save prebuild
-          npx prebuild --runtime napi --target ${{ matrix.node }} --strip --arch ${{ matrix.arch }} --backend node-gyp -u "${{ secrets.GITHUB_TOKEN }}"
+          npx prebuild --runtime napi --target ${{ matrix.node }} --strip --arch ${{ matrix.arch }} --backend node-gyp $UPLOAD_FLAG
         shell: bash
       - name: collect prebuild artifacts
         run: |
           mkdir -p prebuilds-out
           # better-sqlite3 drops them under prebuilds/<platform>-<arch>/
-          cp -r node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3/prebuilds/* prebuilds-out/ || true
+          cp -r "${{ steps.bsq.outputs.dir }}"/prebuilds/* prebuilds-out/ || true
           ls -la prebuilds-out/
         shell: bash
       - uses: actions/upload-artifact@v4
