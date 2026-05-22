@@ -88,7 +88,9 @@ jobs:
         # runners include Visual Studio Build Tools.
         working-directory: ${{ steps.bsq.outputs.dir }}
         run: |
-          node-gyp rebuild --release --arch=${{ matrix.arch }}
+          # node-gyp ships with npm but isn't on PATH; npx finds the bundled
+          # copy without an extra `npm i -g node-gyp` round-trip.
+          npx --yes node-gyp rebuild --release --arch=${{ matrix.arch }}
           ls -la build/Release/
         shell: bash
       - name: package as prebuild-install tarball
