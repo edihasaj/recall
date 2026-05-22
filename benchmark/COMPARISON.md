@@ -91,28 +91,20 @@ What the script does, per question:
 
 ### Current numbers — N=500 full set ✅
 
-Full LongMemEval-S non-abstention set (n=500). The N=60 stratified slice
-hit a 100 % ceiling on every category, which is informative but
-small-sample. The N=500 confirmation below is the number to cite.
-Three Recall data points are shown to make the progression honest: the
-Tier 0 baseline (pre-Porter, weighted-sum fusion) on the N=60 slice; the
-Tier 1 result with Porter stemming, prefix-matching FTS5, RRF fusion,
-and the bundled synonym dictionary on the N=60 slice; and the Tier 1
-**N=500 full-set** confirmation at the shipped RRF weights
-(`lex=1.25, vec=0.75`).
+Full LongMemEval-S non-abstention set (n=500). The N=500 number is the
+one to cite. The N=60 stratified row is kept as an intermediate
+sanity-check snapshot (RRF 1:1, before the shipped 1.25/0.75 retune).
 
 | System | Subset | R@5 | R@10 | R@20 | NDCG@10 | MRR | Notes |
 |--------|--------|-----|------|------|---------|-----|-------|
 | agentmemory BM25 + vector | full (500) | 95.2 % | 98.6 % | 99.4 % | 87.9 % | 88.2 % | all-MiniLM-L6-v2 (384-d) |
 | agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized + Porter + synonyms |
-| Recall Tier 0 baseline | n=60, stratified | 83.3 % | 91.7 % | 98.3 % | 68.3 | 67.5 | weighted-sum fusion, no stemming |
 | Recall Tier 1 (1:1 RRF) | n=60, stratified | 95.0 % | 96.7 % | 100.0 % | 88.6 | 87.7 | Porter + prefix + synonyms, RRF lex=1, vec=1 |
-| Recall Tier 1 (shipped) | n=60, stratified | 100.0 % | 100.0 % | 100.0 % | — | — | + RRF lex=1.25, vec=0.75 (ceiling effect) |
 | **Recall Tier 1 (shipped)** | **full (500)** | **97.4 %** 🟢 | **99.4 %** 🟢 | **99.6 %** 🟢 | **90.1** 🟢 | **89.5** 🟢 | multilingual-e5-small (384-d), wall ~10.6 h |
 
-Raw results: `benchmark/data/recall-lme-e5-n60.json` (Tier 0),
-`benchmark/data/recall-lme-e5-n60-tier1.json` (Tier 1 n=60 + per-arm
-dumps), `benchmark/data/recall-lme-e5-full500.json` (Tier 1 N=500).
+Raw results: `benchmark/data/recall-lme-e5-n60-tier1.json` (Tier 1 n=60
++ per-arm dumps), `benchmark/data/recall-lme-e5-full500.json` (Tier 1
+N=500).
 
 **Per-type R@5 (head-to-head, full set):**
 

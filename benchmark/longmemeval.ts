@@ -128,13 +128,38 @@ function parseArgs(argv: string[]): Args {
   return out;
 }
 
+// Deterministic small PRNG so the same RECALL_STRATIFY_SEED reproduces the slice
+// while different seeds rotate it. Without this, the round-robin below locks to
+// the dataset's file order — picks the same "easy first 10" of each type every
+// run, which inflates small-N numbers above what a representative slice gives.
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function stratifySample<T extends { question_type: string }>(entries: T[], limit: number): T[] {
   // Round-robin by question_type so a small N still covers every category.
+  // Within each type bucket, shuffle with a seeded PRNG to avoid locking onto
+  // the dataset's natural ordering (override via RECALL_STRATIFY_SEED).
+  const seed = parseInt(process.env.RECALL_STRATIFY_SEED ?? "42", 10);
+  const rand = mulberry32(Number.isFinite(seed) ? seed : 42);
   const byType = new Map<string, T[]>();
   for (const e of entries) {
     const arr = byType.get(e.question_type) ?? [];
     arr.push(e);
     byType.set(e.question_type, arr);
+  }
+  for (const arr of byType.values()) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+    }
   }
   const buckets = [...byType.values()];
   const picked: T[] = [];
