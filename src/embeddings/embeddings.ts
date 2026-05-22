@@ -57,14 +57,23 @@ const EMBEDDING_DEFAULTS = {
     model: "Xenova/bge-small-en-v1.5",
     dimensions: 384,
   },
+  "all-MiniLM-L6-v2": {
+    model: "Xenova/all-MiniLM-L6-v2",
+    dimensions: 384,
+  },
 } as const;
 
 // --- Config ---
 
 export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
   if (process.env.RECALL_EMBEDDINGS_DISABLED === "true") return null;
-  const provider = process.env.RECALL_EMBEDDING_PROVIDER === "multilingual-e5"
+  const requested = process.env.RECALL_EMBEDDING_PROVIDER;
+  const provider: EmbeddingConfig["provider"] = requested === "multilingual-e5"
     ? "multilingual-e5"
+    : requested === "bge-small-en-v1.5"
+    ? "bge-small-en-v1.5"
+    : requested === "all-MiniLM-L6-v2"
+    ? "all-MiniLM-L6-v2"
     : "nomic";
   const defaults = EMBEDDING_DEFAULTS[provider];
   return {

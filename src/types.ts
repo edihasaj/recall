@@ -361,7 +361,7 @@ export type TeamMember = z.infer<typeof TeamMember>;
 // --- Embeddings (Phase 2) ---
 
 export const EmbeddingConfig = z.object({
-  provider: z.enum(["nomic", "multilingual-e5", "bge-small-en-v1.5"]).default("nomic"),
+  provider: z.enum(["nomic", "multilingual-e5", "bge-small-en-v1.5", "all-MiniLM-L6-v2"]).default("nomic"),
   model: z.string().default("nomic-ai/nomic-embed-text-v1.5"),
   dimensions: z.number().default(512),
   version: z.string().default("v1"),
