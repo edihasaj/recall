@@ -145,15 +145,44 @@ The remaining gap is `temporal-reasoning`, which lags agentmemory in
 both Recall configurations — that's the clear next target for the
 date-arithmetic work in Tier 2.
 
-**Ablation — what each Tier 1 component is worth:**
+**Ablation — what each Tier 1 component is worth (N=60, seed=42):**
 
-> Pending rerun against the seed-shuffled N=60 slice
-> (`RECALL_STRATIFY_SEED=42`). The previously-published ablation used
-> the locked-order N=60 slice that also produced the inflated 100 %
-> headline, so its delta numbers are correct in direction but optimistic
-> in absolute level. Rerun in flight (`benchmark/data/recall-lme-ablation-n60-shuffled.json`);
-> the qualitative ordering (RRF >> synonyms > prefix > rerank) is
-> expected to hold per `benchmark/fusion-sweep.ts` on the same slice.
+Measured with `benchmark/ablation.ts --limit 60 --stratify` against the
+shipped configuration on the seed-shuffled stratified slice. Same
+haystack per question, only the toggle changes.
+
+| Config | R@5 | R@10 | R@20 | Δ R@5 vs shipped |
+|--------|-----|------|------|-------------------|
+| baseline (shipped) | 95.00 % | 98.33 % | 98.33 % | — |
+| rerank-on (top-50 ms-marco MiniLM) | 95.00 % | 98.33 % | 98.33 % | 0 |
+| no-prefix-matching | 95.00 % | 98.33 % | 100.00 % | 0 R@5 (+1.7 R@20) |
+| no-synonym-expansion | 98.33 % | 100.00 % | 100.00 % | +3.3 R@5 |
+| weighted-sum fusion (legacy) | 91.67 % | 98.33 % | 98.33 % | −3.3 R@5 |
+
+Reading honestly:
+
+- **RRF still wins**, but the margin is +3.3 pp R@5 on this slice — not
+  the +15 pp the locked-order slice was showing. RRF and the
+  `lex=1.25/vec=0.75` weights remain the most-load-bearing single
+  retrieval change (see `benchmark/fusion-sweep.ts` for the broader
+  sweep that motivated the weights).
+- **Synonyms are slice-dependent.** On this shuffled N=60 slice they
+  cost 3.3 pp R@5; on the previous locked slice they earned 3.3 pp.
+  The full N=500 result (R@5 97.4 %) is what to trust for the shipped
+  configuration — N=60 ± 3 pp of noise either way is expected at this
+  sample size. Synonyms are kept on because they consistently help the
+  `temporal-reasoning` / `single-session-user` tails per the N=500
+  per-type breakdown.
+- **Prefix matching is R@5-neutral on this slice.** It buys 1.7 pp at
+  R@20, consistent with its role: it widens recall for partial-word
+  questions, not top-5 ranking.
+- **Cross-encoder rerank** still contributes nothing on this corpus.
+  Kept behind `RECALL_RERANK=true` as headroom.
+
+Raw ablation JSON:
+`benchmark/data/recall-lme-ablation-n60-shuffled.json` (current,
+seed=42); `benchmark/data/recall-lme-ablation-n60.json` (locked-order
+predecessor, retained for reference).
 
 **Reading the headline numbers honestly:**
 
