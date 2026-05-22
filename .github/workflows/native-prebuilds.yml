@@ -100,16 +100,21 @@ jobs:
         # exactly what `prebuild` would have produced. Keeping the format
         # means a future tag push can upload these to the release and
         # better-sqlite3's stock prebuild-install picks them up.
-        working-directory: ${{ steps.bsq.outputs.dir }}
+        #
+        # Run from $GITHUB_WORKSPACE (default) so the `-f` arg is a relative
+        # path. Windows GNU tar parses absolute `C:\...` paths as `host:file`
+        # and tries scp; bsdtar (macOS) rejects --force-local, so the only
+        # portable workaround is to keep the colon out of -f. `-C <abs path>`
+        # is fine because tar treats that arg differently.
         run: |
           NODE_ABI=$(node -p "process.versions.modules")
-          VERSION=$(node -p "require('./package.json').version")
+          # Reading the path via argv avoids `\b` / `\f` etc. being mangled
+          # when a Windows `C:\...` path is interpolated into a JS string.
+          VERSION=$(node -e "console.log(require(process.argv[1]).version)" "${{ steps.bsq.outputs.dir }}/package.json")
           NAME="better-sqlite3-v${VERSION}-node-v${NODE_ABI}-${{ matrix.os }}-${{ matrix.arch }}"
-          mkdir -p "$GITHUB_WORKSPACE/prebuilds-out"
-          # --force-local: Windows Git Bash tar otherwise parses `C:\...` as
-          # `host:file` and tries to scp. Harmless on macOS/Linux's GNU tar.
-          tar --force-local -czf "$GITHUB_WORKSPACE/prebuilds-out/${NAME}.tar.gz" build/Release/better_sqlite3.node
-          ls -la "$GITHUB_WORKSPACE/prebuilds-out/"
+          mkdir -p prebuilds-out
+          tar -czf "prebuilds-out/${NAME}.tar.gz" -C "${{ steps.bsq.outputs.dir }}" build/Release/better_sqlite3.node
+          ls -la prebuilds-out/
         shell: bash
       - uses: actions/upload-artifact@v4
         with:
