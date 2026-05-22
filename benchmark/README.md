@@ -5,6 +5,17 @@ Load shape + comparison harness for Recall.
 Inspired by `agentmemory/benchmark/load-100k.ts` (https://github.com/rohitg00/agentmemory),
 adapted to Recall's daemon surface.
 
+## Recall vs agentmemory — headline
+
+LongMemEval-S, N=500 non-abstention. Same dataset agentmemory publishes.
+
+| System | R@5 | R@10 | R@20 | NDCG@10 | MRR |
+|---|---|---|---|---|---|
+| agentmemory BM25 + vector | 95.2 % | 98.6 % | 99.4 % | 87.9 | 88.2 |
+| **Recall (Tier 1 shipped)** | **97.4 %** | **99.4 %** | **99.6 %** | **90.1** | **89.5** |
+
+Full numbers, per-type breakdown, ablation, and methodology → [`COMPARISON.md`](COMPARISON.md).
+
 ## Files
 
 - `seed.ts` — Seeds N memories into an isolated SQLite DB. Used as a

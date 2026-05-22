@@ -40,6 +40,17 @@ The bundled web dashboard (open via the menu bar item *Open Dashboard in Browser
 - **Timeline** — filterable feed of every daemon event (compile, query, scan, correction, feedback, tool calls…). Click a row to expand the full request/result JSON; jump straight to the linked memories or pivot into the session view.
 - **Sessions** — every distinct session Recall has seen across MCP, hooks, and CLI traffic, with duration, event count, and type breakdown. Expand a session to see its events inline or hand it off to the Timeline filtered by `session_id`.
 
+## Benchmarks — Recall vs agentmemory
+
+LongMemEval-S, N=500 non-abstention. Same dataset agentmemory publishes.
+
+| System | R@5 | R@10 | R@20 | NDCG@10 | MRR |
+|---|---|---|---|---|---|
+| agentmemory BM25 + vector | 95.2 % | 98.6 % | 99.4 % | 87.9 | 88.2 |
+| **Recall (Tier 1 shipped)** | **97.4 %** | **99.4 %** | **99.6 %** | **90.1** | **89.5** |
+
+Full numbers, per-type breakdown, ablation, and methodology → [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md).
+
 ## Install
 
 ### Homebrew (macOS)
