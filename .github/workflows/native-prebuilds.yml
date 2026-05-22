@@ -106,7 +106,9 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           NAME="better-sqlite3-v${VERSION}-node-v${NODE_ABI}-${{ matrix.os }}-${{ matrix.arch }}"
           mkdir -p "$GITHUB_WORKSPACE/prebuilds-out"
-          tar -czf "$GITHUB_WORKSPACE/prebuilds-out/${NAME}.tar.gz" build/Release/better_sqlite3.node
+          # --force-local: Windows Git Bash tar otherwise parses `C:\...` as
+          # `host:file` and tries to scp. Harmless on macOS/Linux's GNU tar.
+          tar --force-local -czf "$GITHUB_WORKSPACE/prebuilds-out/${NAME}.tar.gz" build/Release/better_sqlite3.node
           ls -la "$GITHUB_WORKSPACE/prebuilds-out/"
         shell: bash
       - uses: actions/upload-artifact@v4
