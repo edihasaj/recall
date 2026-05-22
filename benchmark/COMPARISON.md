@@ -20,11 +20,11 @@ where we can publish them and the framing where we can't yet.
 
 agentmemory's published benchmarks (LongMemEval-S R@5 = 95.2 % BM25+vector,
 86.2 % BM25-only) are excellent on academic chat-style haystacks. Recall
-on the same N=60 stratified slice — with the Tier 1 retrieval changes
-landed in this branch (Porter stemming, prefix matching, RRF fusion,
-query-time synonym expansion) — **lands at R@5 = 100 %, beating
-agentmemory on every per-type category.** Full numbers and ablation in
-the section below.
+on the same N=500 full set — with the Tier 1 retrieval changes landed in
+this branch (Porter stemming, prefix matching, RRF fusion, query-time
+synonym expansion) — **lands at R@5 = 97.4 %, NDCG@10 = 90.1, MRR =
+89.5, beating agentmemory across every headline metric.** Full numbers
+and ablation in the section below.
 
 ## Where Recall is positioned to win
 
@@ -89,16 +89,17 @@ What the script does, per question:
 5. Map memory IDs back to session IDs, score `recall_any@{5,10,20}`,
    NDCG@10, MRR.
 
-### Current numbers — N=60 stratified ✅
+### Current numbers — N=500 full set ✅
 
-Stratified sample of 10 questions per type × 6 types (n=60 of the 500
-non-abstention questions). Three Recall data points are shown to make
-the regression / progression honest: the Tier 0 baseline (pre-Porter,
-weighted-sum fusion); the Tier 1 result with Porter stemming,
-prefix-matching FTS5, RRF fusion, and the bundled synonym dictionary
-(this is the current shipped configuration); and the Tier 1 *online*
-result lined up against the offline `benchmark/fusion-sweep.ts`
-projection at the chosen RRF weights (`lex=1.25, vec=0.75`).
+Full LongMemEval-S non-abstention set (n=500). The N=60 stratified slice
+hit a 100 % ceiling on every category, which is informative but
+small-sample. The N=500 confirmation below is the number to cite.
+Three Recall data points are shown to make the progression honest: the
+Tier 0 baseline (pre-Porter, weighted-sum fusion) on the N=60 slice; the
+Tier 1 result with Porter stemming, prefix-matching FTS5, RRF fusion,
+and the bundled synonym dictionary on the N=60 slice; and the Tier 1
+**N=500 full-set** confirmation at the shipped RRF weights
+(`lex=1.25, vec=0.75`).
 
 | System | Subset | R@5 | R@10 | R@20 | NDCG@10 | MRR | Notes |
 |--------|--------|-----|------|------|---------|-----|-------|
@@ -106,21 +107,27 @@ projection at the chosen RRF weights (`lex=1.25, vec=0.75`).
 | agentmemory BM25-only | full (500) | 86.2 % | 94.6 % | 98.6 % | 73.0 % | 71.5 % | tokenized + Porter + synonyms |
 | Recall Tier 0 baseline | n=60, stratified | 83.3 % | 91.7 % | 98.3 % | 68.3 | 67.5 | weighted-sum fusion, no stemming |
 | Recall Tier 1 (1:1 RRF) | n=60, stratified | 95.0 % | 96.7 % | 100.0 % | 88.6 | 87.7 | Porter + prefix + synonyms, RRF lex=1, vec=1 |
-| **Recall Tier 1 (shipped)** | **n=60, stratified** | **100.0 %** 🟢 | **100.0 %** 🟢 | **100.0 %** 🟢 | — | — | + RRF lex=1.25, vec=0.75 |
+| Recall Tier 1 (shipped) | n=60, stratified | 100.0 % | 100.0 % | 100.0 % | — | — | + RRF lex=1.25, vec=0.75 (ceiling effect) |
+| **Recall Tier 1 (shipped)** | **full (500)** | **97.4 %** 🟢 | **99.4 %** 🟢 | **99.6 %** 🟢 | **90.1** 🟢 | **89.5** 🟢 | multilingual-e5-small (384-d), wall ~10.6 h |
 
 Raw results: `benchmark/data/recall-lme-e5-n60.json` (Tier 0),
-`benchmark/data/recall-lme-e5-n60-tier1.json` (Tier 1 + per-arm dumps).
+`benchmark/data/recall-lme-e5-n60-tier1.json` (Tier 1 n=60 + per-arm
+dumps), `benchmark/data/recall-lme-e5-full500.json` (Tier 1 N=500).
 
-**Per-type R@5 (head-to-head):**
+**Per-type R@5 (head-to-head, full set):**
 
-| Type | agentmemory hybrid | agentmemory BM25-only | Recall Tier 0 | **Recall Tier 1 (shipped)** |
-|------|---------------------|------------------------|----------------|------------------------------|
-| single-session-preference | 83.3 % | 60.0 % | 100.0 % | **100.0 %** 🟢 |
-| multi-session | 97.7 % | 86.5 % | 90.0 % | **100.0 %** 🟢 |
-| knowledge-update | 98.7 % | 92.3 % | 90.0 % | **100.0 %** 🟢 |
-| single-session-assistant | 96.4 % | 80.4 % | 90.0 % | **100.0 %** 🟢 |
-| temporal-reasoning | 95.5 % | 88.0 % | 80.0 % | **100.0 %** 🟢 |
-| single-session-user | 90.0 % | 91.4 % | 50.0 % 🔴 | **100.0 %** 🟢 |
+| Type | n | agentmemory hybrid | agentmemory BM25-only | **Recall Tier 1 (shipped, N=500)** |
+|------|---|---------------------|------------------------|------------------------------------|
+| single-session-preference | 30 | 83.3 % | 60.0 % | **90.0 %** 🟢 |
+| multi-session | 133 | 97.7 % | 86.5 % | **100.0 %** 🟢 |
+| knowledge-update | 78 | 98.7 % | 92.3 % | **100.0 %** 🟢 |
+| single-session-assistant | 56 | 96.4 % | 80.4 % | **100.0 %** 🟢 |
+| temporal-reasoning | 133 | 95.5 % | 88.0 % | 94.0 % 🟡 |
+| single-session-user | 70 | 90.0 % | 91.4 % | **97.1 %** 🟢 |
+
+Five of six per-type categories beat agentmemory's hybrid number; the
+sixth (`temporal-reasoning`, 94.0 % vs 95.5 %) is within 1.5 pp and the
+clear next target for the temporal/date-arithmetic work in Tier 2.
 
 **Ablation — what each Tier 1 component is worth:**
 
@@ -146,17 +153,16 @@ Raw ablation JSON: `benchmark/data/recall-lme-ablation-n60.json`.
 **Reading the headline numbers honestly:**
 
 - Tier 1 (Porter stemming, prefix matching, RRF fusion at lex=1.25/vec=0.75,
-  query-time English synonym expansion) takes the N=60 stratified slice
-  from R@5 = 83.3 % → 100 %. Each component is load-bearing per the
-  ablation above; this isn't a hand-tuned outlier.
-- **All six per-type categories now beat agentmemory.** The two
-  previously-trailing categories — `single-session-user` (50 % → 100 %)
-  and `temporal-reasoning` (80 % → 100 %) — closed completely thanks to
-  the synonym dictionary + permissive FTS matching.
-- This is an N=60 stratified slice (10 of each type) chosen specifically
-  to give every category a vote. The full N=500 run is in
-  `benchmark/data/recall-lme-e5-full500.json` once that bench completes
-  (~10 hours wall on macOS arm64).
+  query-time English synonym expansion) lifts the N=60 stratified slice
+  from R@5 = 83.3 % → 100 % (small-sample ceiling) and the full N=500
+  set to R@5 = 97.4 %, NDCG@10 = 90.1, MRR = 89.5. Each component is
+  load-bearing per the ablation above; this isn't a hand-tuned outlier.
+- **Headline metrics beat agentmemory at full scale.** R@5 +2.2 pp,
+  R@10 +0.8, R@20 +0.2, NDCG@10 +2.2, MRR +1.6 — all on the same N=500
+  non-abstention slice agentmemory publishes.
+- **Per-type: 5 of 6 wins, 1 within 1.5 pp.** The remaining gap is in
+  `temporal-reasoning` (94.0 % vs 95.5 %); this is the target for the
+  date-arithmetic work in Tier 2.
 
 The Tier 1 result was produced with the env defaults documented above
 (`RECALL_FTS_MODE=or`, `RECALL_HYBRID_MIN_SIM=0`, `RECALL_SIMILARITY_THRESHOLD=0`);
