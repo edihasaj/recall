@@ -113,10 +113,25 @@ func onReady() {
 	}
 
 	mOpen.Click(func() {
-		if s.mgr == nil {
+		if s.mgr == nil || s.webui == nil {
 			return
 		}
-		if err := dashboard.Open(s.mgr.DashboardURL()); err != nil {
+		// Daemon at :7890 doesn't serve the SPA; the webui sub-server
+		// at :7891 does. Ensure it's running, then open its URL.
+		st, _ := s.webui.Status()
+		if !st.Running {
+			started, err := s.webui.Start(ctx)
+			if err != nil {
+				log.Printf("webui start (for open) failed: %v", err)
+				return
+			}
+			st = started
+		}
+		if st.URL == "" {
+			log.Printf("webui started but URL is empty")
+			return
+		}
+		if err := dashboard.Open(st.URL); err != nil {
 			log.Printf("dashboard open failed: %v", err)
 		}
 	})

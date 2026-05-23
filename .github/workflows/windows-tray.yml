@@ -1,0 +1,65 @@
+name: windows-tray
+
+# Build the Windows tray binary (Go, system-tray companion that supervises
+# the recall daemon and renders status / dashboard menu in the systray)
+# and attach the result to the matching GitHub Release.
+#
+# The arm64 binary uses windows-11-arm runners; amd64 uses windows-2022.
+# Both produce `recall-tray-<arch>.exe` named for the docs/install.ps1
+# downloader.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach binaries to, for example v0.7.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: windows-2022
+          - arch: arm64
+            runner: windows-11-arm
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: windows/tray/go.sum
+
+      - name: build tray
+        working-directory: windows/tray
+        run: |
+          go build -ldflags "-H windowsgui -X main.version=${{ env.RELEASE_TAG }}" -o ../../recall-tray-${{ matrix.arch }}.exe ./cmd/recall-tray
+
+      - name: upload artifact (build inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: recall-tray-${{ matrix.arch }}
+          path: recall-tray-${{ matrix.arch }}.exe
+
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$env:RELEASE_TAG" "recall-tray-${{ matrix.arch }}.exe" --clobber

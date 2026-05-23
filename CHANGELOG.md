@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Windows support.** New Go-based system-tray companion (`windows/tray`) supervises the recall daemon child, exposes Status / WebUI / Restart / Start at login / Quit menu items, and opens the dashboard in your default browser. PowerShell installer (`scripts/install.ps1`, mirrored at `https://recallmemory.dev/install.ps1`) installs the `@edihasaj/recall` CLI via npm, drops `recall-tray-<arch>.exe` into `%LOCALAPPDATA%\Programs\Recall`, registers per-user autostart, and launches the tray. CI workflow `windows-tray.yml` builds arm64 + amd64 binaries on every tag.
+
+### Fixed
+
+- Daemon ESM import crashes on Windows when spawned from a non-elevated session. tsup now bundles `drizzle-orm` (`noExternal: [/^drizzle-orm(\/|$)/]`) so there's no runtime bare-specifier resolution to trip on pnpm symlinks.
+- Windows tray "Open Dashboard" pointed at `:7890/ui` (which doesn't exist); it now ensures the webui sub-server is started and opens its real URL.
+- Windows tray's `dashboard.Open` used `cmd /c start`, which allocated a console window the user had to close (closing it killed the tray). Replaced with `rundll32 url.dll,FileProtocolHandler` + `CREATE_NO_WINDOW`.
+
 ## 0.7.0 - 2026-05-20
 
 ### Added

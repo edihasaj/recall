@@ -74,6 +74,14 @@ recall daemon install            # launchd on macOS, systemd --user on Linux
 
 On Linux, `recall daemon install` writes `~/.config/systemd/user/recall-daemon.service` and enables it. Logs: `journalctl --user -u recall-daemon`.
 
+### PowerShell (Windows)
+
+```powershell
+irm https://recallmemory.dev/install.ps1 | iex
+```
+
+Installs the `@edihasaj/recall` CLI via npm, downloads the system-tray companion (`recall-tray-<arch>.exe`) into `%LOCALAPPDATA%\Programs\Recall`, registers a per-user Run-key entry for autostart, and launches the tray. Supports `arm64` and `amd64`. Logs land in `%LOCALAPPDATA%\Recall\`.
+
 ### GitHub Releases
 
 Download `Recall.app.zip` from [the latest release](https://github.com/edihasaj/recall/releases/latest), unzip it, move `Recall.app` into `/Applications`, then run setup:
@@ -264,7 +272,7 @@ Start HTTP daemon:
 node dist/daemon.js
 ```
 
-Install as a user service (launchd on macOS, `systemd --user` on Linux):
+Install as a user service (launchd on macOS, `systemd --user` on Linux; on Windows the tray app supervises the daemon — see the PowerShell installer above):
 
 ```bash
 recall daemon install

@@ -14,7 +14,7 @@
     <meta property="og:title" content="Recall" />
     <meta
       property="og:description"
-      content="Local repo memory for coding agents. Corrections, review feedback, quality scoring, MCP, hooks, and a macOS menu bar daemon."
+      content="Local repo memory for coding agents. Corrections, review feedback, quality scoring, MCP, hooks. macOS menu bar app, Linux daemon, and Windows system-tray companion."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://recallmemory.dev/" />
@@ -67,7 +67,7 @@
           <div class="os-tabs" role="tablist" aria-label="Choose your platform">
             <button type="button" role="tab" class="os-tab is-active" data-os="macos" aria-selected="true" aria-controls="install-macos">macOS</button>
             <button type="button" role="tab" class="os-tab" data-os="linux" aria-selected="false" aria-controls="install-linux">Linux</button>
-            <button type="button" role="tab" class="os-tab is-disabled" aria-selected="false" aria-disabled="true" disabled>Windows · soon</button>
+            <button type="button" role="tab" class="os-tab" data-os="windows" aria-selected="false" aria-controls="install-windows">Windows</button>
           </div>
 
           <div id="install-macos" role="tabpanel" aria-label="macOS install commands">
@@ -104,8 +104,19 @@
             </button>
           </div>
 
+          <div class="install-strip" id="install-windows" role="tabpanel" aria-label="Windows install command" hidden>
+            <code data-install-cmd>irm https://recallmemory.dev/install.ps1 | iex</code>
+            <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+
           <p class="requirements">
-            macOS 15+ app or Linux CLI via npm. Windows support is on the roadmap. Free and open source.
+            macOS 15+ menu bar app, Linux CLI via npm, or Windows system-tray companion via PowerShell. Free and open source.
           </p>
         </div>
 
@@ -244,8 +255,9 @@
           <h2>Install. Open. That's it.</h2>
           <p>
             On macOS: one Homebrew command, then click <strong>Install + Start</strong> in Recall.app.
-            On Linux: one npm command, then <code>recall setup --yes</code>. Either path auto-detects
-            supported coding agents and wires MCP + lifecycle hooks for you.
+            On Linux: one npm command, then <code>recall setup --yes</code>.
+            On Windows: one PowerShell line — the installer drops the system-tray companion in <code>%LOCALAPPDATA%</code>, registers autostart, and launches.
+            Every path auto-detects supported coding agents and wires MCP + lifecycle hooks for you.
           </p>
           <p>
             From the next session onward, Recall injects rules and gotchas into your agent's
@@ -261,6 +273,9 @@ brew install --cask edihasaj/tap/recall
 npm i -g @edihasaj/recall
 recall setup --yes
 recall daemon install   # optional: launchd / systemd --user service</code></pre>
+          <pre data-os="windows"><code># Windows — PowerShell installer
+irm https://recallmemory.dev/install.ps1 | iex
+# tray icon appears; right-click → Open Dashboard</code></pre>
           <pre data-os="all"><code># contributors only — build from source
 git clone https://github.com/edihasaj/recall.git
 cd recall
