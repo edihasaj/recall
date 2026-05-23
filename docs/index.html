@@ -6,7 +6,7 @@
     <title>Recall - repo memory for coding agents</title>
     <meta
       name="description"
-      content="Recall is a local repo-memory compiler for coding agents. It learns corrections, scores memory quality, and injects trusted instructions through CLI, MCP, and hooks."
+      content="Recall is a local repo-memory compiler for coding agents on macOS, Linux, and Windows. It learns corrections, scores memory quality, and injects trusted instructions through CLI, MCP, and hooks."
     />
     <meta name="theme-color" content="#2f211a" />
     <link rel="canonical" href="https://recallmemory.dev/" />
@@ -255,7 +255,7 @@
           <h2>Install. Open. That's it.</h2>
           <p>
             On macOS: one Homebrew command, then click <strong>Install + Start</strong> in Recall.app.
-            On Linux: one npm command, then <code>recall setup --yes</code>.
+            On Linux: one <code>curl | bash</code> — the installer runs <code>npm i -g</code> and <code>recall setup --yes</code> for you.
             On Windows: one PowerShell line — the installer drops the system-tray companion in <code>%LOCALAPPDATA%</code>, registers autostart, and launches.
             Every path auto-detects supported coding agents and wires MCP + lifecycle hooks for you.
           </p>
@@ -269,10 +269,11 @@
           <pre data-os="macos"><code># macOS — install &amp; done
 brew install --cask edihasaj/tap/recall
 # open Recall.app → Install + Start → magic</code></pre>
-          <pre data-os="all"><code># macOS or Linux — npm install
-npm i -g @edihasaj/recall
-recall setup --yes
-recall daemon install   # optional: launchd / systemd --user service</code></pre>
+          <pre data-os="linux"><code># Linux — one-liner installer
+curl -fsSL https://recallmemory.dev/install.sh | bash
+# or do it by hand:
+#   npm i -g @edihasaj/recall && recall setup --yes
+#   recall daemon install   # systemd --user service</code></pre>
           <pre data-os="windows"><code># Windows — PowerShell installer
 irm https://recallmemory.dev/install.ps1 | iex
 # tray icon appears; right-click → Open Dashboard</code></pre>
