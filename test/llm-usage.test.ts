@@ -65,15 +65,20 @@ describe("llm usage summary", () => {
 
   it("counts failures separately and preserves recent ordering", () => {
     const db = freshDb();
+    // Anchor to "now" so this test isn't time-sensitive — summarizeUsage's
+    // default since window is now - 30d, so absolute dates rot.
+    const newest = new Date();
+    const mid = new Date(newest.getTime() - 60 * 60 * 1000);
+    const oldest = new Date(newest.getTime() - 2 * 60 * 60 * 1000);
     seed(db, [
-      { ok: true, created_at: "2026-04-22T10:00:00.000Z" },
-      { ok: false, error: "429 rate limit", created_at: "2026-04-22T09:00:00.000Z" },
-      { ok: true, created_at: "2026-04-22T08:00:00.000Z" },
+      { ok: true, created_at: newest.toISOString() },
+      { ok: false, error: "429 rate limit", created_at: mid.toISOString() },
+      { ok: true, created_at: oldest.toISOString() },
     ]);
     const summary = summarizeUsage(db, { recentLimit: 5 });
     expect(summary.ok_calls).toBe(2);
     expect(summary.error_calls).toBe(1);
-    expect(summary.recent[0].created_at).toBe("2026-04-22T10:00:00.000Z");
+    expect(summary.recent[0].created_at).toBe(newest.toISOString());
   });
 
   it("filters by since window", () => {
