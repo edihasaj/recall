@@ -62,6 +62,14 @@ recall setup --yes
 recall doctor
 ```
 
+### Bash one-liner (macOS, Linux)
+
+```bash
+curl -fsSL https://recallmemory.dev/install.sh | bash
+```
+
+Runs `npm i -g @edihasaj/recall` + `recall setup --yes` for you, then prints next steps for the optional background service.
+
 ### npm (macOS, Linux)
 
 ```bash

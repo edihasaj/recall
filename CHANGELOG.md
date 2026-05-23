@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.7.1 - 2026-05-23
 
 ### Added
 
 - **Windows support.** New Go-based system-tray companion (`windows/tray`) supervises the recall daemon child, exposes Status / WebUI / Restart / Start at login / Quit menu items, and opens the dashboard in your default browser. PowerShell installer (`scripts/install.ps1`, mirrored at `https://recallmemory.dev/install.ps1`) installs the `@edihasaj/recall` CLI via npm, drops `recall-tray-<arch>.exe` into `%LOCALAPPDATA%\Programs\Recall`, registers per-user autostart, and launches the tray. CI workflow `windows-tray.yml` builds arm64 + amd64 binaries on every tag.
+- macOS / Linux one-shot installer (`scripts/install.sh`, mirrored at `https://recallmemory.dev/install.sh`) — `curl -fsSL https://recallmemory.dev/install.sh | bash` installs the CLI globally and runs `recall setup --yes`.
 
 ### Fixed
 
