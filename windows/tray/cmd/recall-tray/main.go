@@ -20,6 +20,7 @@ import (
 	"github.com/edihasaj/recall/windows/tray/internal/autostart"
 	"github.com/edihasaj/recall/windows/tray/internal/daemon"
 	"github.com/edihasaj/recall/windows/tray/internal/dashboard"
+	"github.com/edihasaj/recall/windows/tray/internal/webui"
 )
 
 // Windows tray expects ICO bytes; PNG silently fails to register an HICON
@@ -57,12 +58,16 @@ func main() {
 }
 
 // state is the small bundle the tray needs to render itself and respond to
-// menu clicks. Kept tight: just the manager + the menu items we mutate.
+// menu clicks. Kept tight: the daemon supervisor + webui client + the menu
+// items we mutate.
 type state struct {
-	mgr     *daemon.Manager
-	mStatus *systray.MenuItem
-	mAuto   *systray.MenuItem
-	cancel  context.CancelFunc
+	mgr          *daemon.Manager
+	webui        *webui.Manager
+	mStatus      *systray.MenuItem
+	mWebUI       *systray.MenuItem // disabled status row
+	mWebUIToggle *systray.MenuItem // start/stop click target
+	mAuto        *systray.MenuItem
+	cancel       context.CancelFunc
 }
 
 var s state
@@ -75,6 +80,9 @@ func onReady() {
 	mOpen := systray.AddMenuItem("Open Dashboard", "Open the Recall web UI in your browser")
 	s.mStatus = systray.AddMenuItem("Status: starting…", "Daemon health")
 	s.mStatus.Disable()
+	s.mWebUI = systray.AddMenuItem("WebUI: …", "Web UI server state")
+	s.mWebUI.Disable()
+	s.mWebUIToggle = systray.AddMenuItem("Start Dashboard", "Start the local web UI server")
 	systray.AddSeparator()
 	mRestart := systray.AddMenuItem("Restart Daemon", "Stop and start the recall daemon child process")
 	s.mAuto = systray.AddMenuItemCheckbox("Start at login", "Toggle the per-user Run-key entry", currentAutostart())
@@ -99,6 +107,9 @@ func onReady() {
 			log.Printf("daemon start failed: %v", err)
 		}
 		go s.mgr.Watch(ctx, 3*time.Second, repaintHealth)
+		// Webui state tracks the same daemon process on the same port.
+		s.webui = webui.New(fmt.Sprintf("http://localhost:%d", s.mgr.Port))
+		go s.webui.Watch(ctx, 3*time.Second, repaintWebUI)
 	}
 
 	mOpen.Click(func() {
@@ -117,6 +128,7 @@ func onReady() {
 			log.Printf("daemon restart failed: %v", err)
 		}
 	})
+	s.mWebUIToggle.Click(func() { toggleWebUI(ctx) })
 	s.mAuto.Click(toggleAutostart)
 	mQuit.Click(func() {
 		log.Printf("quit requested")
@@ -142,6 +154,57 @@ func repaintHealth(healthy bool) {
 		systray.SetTooltip("Recall — daemon down")
 		s.mStatus.SetTitle("Status: not responding")
 	}
+}
+
+// repaintWebUI mirrors macos/RecallApp/Recall/RecallApp.swift's webui menu:
+// a dot + count for the status row, and a verb-flipping toggle. When the
+// daemon is unreachable we show `WebUI: ?` and disable the toggle so users
+// don't fire requests into the void.
+func repaintWebUI(st webui.Status, ok bool) {
+	if !ok {
+		s.mWebUI.SetTitle("WebUI: ?")
+		s.mWebUIToggle.SetTitle("Start Dashboard")
+		s.mWebUIToggle.Disable()
+		return
+	}
+	s.mWebUIToggle.Enable()
+	if st.Running {
+		if st.ClientCount > 0 {
+			s.mWebUI.SetTitle(fmt.Sprintf("WebUI: ● running (%d live)", st.ClientCount))
+		} else {
+			s.mWebUI.SetTitle("WebUI: ● running")
+		}
+		s.mWebUIToggle.SetTitle("Stop Dashboard")
+	} else {
+		s.mWebUI.SetTitle("WebUI: ○ stopped")
+		s.mWebUIToggle.SetTitle("Start Dashboard")
+	}
+}
+
+func toggleWebUI(ctx context.Context) {
+	if s.webui == nil {
+		return
+	}
+	st, ok := s.webui.Status()
+	if !ok {
+		// Status unknown — refresh once before deciding direction so we
+		// don't accidentally Start a webui that's actually running.
+		st, _ = s.webui.Refresh(ctx)
+	}
+	if st.Running {
+		if _, err := s.webui.Stop(ctx); err != nil {
+			log.Printf("webui stop failed: %v", err)
+			return
+		}
+		repaintWebUI(webui.Status{Running: false}, true)
+		return
+	}
+	st2, err := s.webui.Start(ctx)
+	if err != nil {
+		log.Printf("webui start failed: %v", err)
+		return
+	}
+	repaintWebUI(st2, true)
 }
 
 func currentAutostart() bool {

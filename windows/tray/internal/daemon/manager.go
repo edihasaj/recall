@@ -22,10 +22,10 @@ const defaultPort = 7890
 
 // Manager wraps the child process + health probe loop.
 type Manager struct {
-	NodePath    string // default: "node" (resolved via PATH)
-	DaemonJS    string // absolute path to dist/daemon.js
-	Port        int    // default: 7890
-	LogPath     string // where to tee stdout/stderr
+	NodePath string // default: "node" (resolved via PATH)
+	DaemonJS string // absolute path to dist/daemon.js
+	Port     int    // default: 7890
+	LogPath  string // where to tee stdout/stderr
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -39,6 +39,7 @@ type Manager struct {
 //  2. Resolved via `node -e "console.log(require.resolve('@edihasaj/recall/package.json'))"`,
 //     then sibling dist/daemon.js.
 //  3. Fall back to first match in well-known npm-global locations.
+//
 // Step 2 keeps the tray honest about which install it's binding to.
 func New() (*Manager, error) {
 	m := &Manager{
