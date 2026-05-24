@@ -27,21 +27,36 @@ its own native vector type instead of `sqlite-vec`'s virtual tables), then
 re-running the full benchmark to confirm no regression. Not worth the risk.
 
 Instead: **own the missing prebuilds** via `.github/workflows/native-prebuilds.yml`
-and ship them with recall.
+and host them in a sibling repo that `prebuild-install` can resolve.
 
 ## How it works
 
-1. **CI matrix builds prebuilds** for every (os, arch, node-major) combo we
-   care about:
+1. **CI matrix builds prebuilds** in `edihasaj/recall` for every (os, arch,
+   node-major) combo we care about:
    - darwin x64, darwin arm64
    - linux x64, linux arm64
    - win32 x64, **win32 arm64** ← the previously missing one
    - node 20, 22, 24
-2. **Upload to the GitHub Release** for each tag. `prebuild-install` looks
-   here by default, so the standard `npm install` flow on the user's machine
-   downloads the matching `.node` file with no compiler involved.
-3. The `windows-11-arm` GitHub-hosted runner makes step 1 free — no
+2. **Upload to [`edihasaj/recall-prebuilds`](https://github.com/edihasaj/recall-prebuilds)**,
+   tagged by the *better-sqlite3* version (e.g. `v11.10.0`). The workflow's
+   publish job uses a fine-grained PAT stored as `RECALL_PREBUILDS_TOKEN`
+   secret (default `GITHUB_TOKEN` can't write cross-repo).
+3. **Install scripts set the host mirror**: `install.sh` and `install.ps1`
+   export `npm_config_better_sqlite3_binary_host_mirror=https://github.com/edihasaj/recall-prebuilds/releases/download`
+   before `npm install -g`. `prebuild-install` then constructs the URL as
+   `<host>/v<bsq3-version>/<filename>` and downloads our `.node` file with
+   no compiler involved.
+4. The `windows-11-arm` GitHub-hosted runner makes step 1 free — no
    self-hosted ARM hardware needed.
+
+## Why a sibling repo (not recall's own releases)
+
+`prebuild-install`'s URL template hardcodes the path segment
+`/v<package-version>/<filename>` after the host, with no env override. Since
+the relevant version is *better-sqlite3*'s (not recall's), hosting tarballs
+under recall's own release tag (`v0.7.1`, etc.) makes the URL unresolvable.
+The sibling repo lets us name release tags after the better-sqlite3 version,
+matching what `prebuild-install` expects.
 
 ## Quality preservation
 
