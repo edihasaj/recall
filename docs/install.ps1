@@ -4,7 +4,7 @@
 #   irm https://recallmemory.dev/install.ps1 | iex
 #
 # What it does:
-#   1. Verifies Node.js >=20 is on PATH (offers a winget hint if not).
+#   1. Verifies Node.js >=22 is on PATH (offers a winget hint if not).
 #   2. Installs the @edihasaj/recall CLI globally via npm (provides the
 #      daemon.js the tray supervises).
 #   3. Downloads recall-tray-<arch>.exe into %LOCALAPPDATA%\Programs\Recall.
@@ -45,12 +45,17 @@ function Test-Node {
   }
   $ver = (& node --version) -replace '^v',''
   $major = [int]($ver.Split('.')[0])
-  if ($major -lt 20) { Fail "Node.js $ver is too old; need >= 20." }
+  if ($major -lt 22) { Fail "Node.js $ver is too old; need >= 22 (matches package.json engines)." }
   Write-Ok "Node $ver detected"
 }
 
 function Install-Cli {
   Write-Step 'Installing @edihasaj/recall CLI (provides the daemon)'
+  # Point prebuild-install at edihasaj/recall-prebuilds, where native-prebuilds.yml
+  # publishes our better-sqlite3 binaries. Without this, win32-arm64 falls through
+  # to node-gyp + needs Python + MSVC Build Tools that users don't have.
+  # prebuild-install appends "/v<bsq3-version>/<filename>" to this host.
+  $env:npm_config_better_sqlite3_binary_host_mirror = 'https://github.com/edihasaj/recall-prebuilds/releases/download'
   & npm install -g '@edihasaj/recall' | Out-Host
   if ($LASTEXITCODE -ne 0) { Fail 'npm install failed' }
   Write-Ok 'CLI installed'

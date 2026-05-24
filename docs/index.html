@@ -93,30 +93,54 @@
             </div>
           </div>
 
-          <div class="install-strip" id="install-linux" role="tabpanel" aria-label="Linux install command" hidden>
-            <code data-install-cmd>curl -fsSL https://recallmemory.dev/install.sh | bash</code>
-            <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-              </svg>
-              <span>Copy</span>
-            </button>
+          <div id="install-linux" role="tabpanel" aria-label="Linux install commands" hidden>
+            <div class="install-strip">
+              <code data-install-cmd>curl -fsSL https://recallmemory.dev/install.sh | bash</code>
+              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="install-strip">
+              <code data-install-cmd>npm i -g @edihasaj/recall</code>
+              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
           </div>
 
-          <div class="install-strip" id="install-windows" role="tabpanel" aria-label="Windows install command" hidden>
-            <code data-install-cmd>irm https://recallmemory.dev/install.ps1 | iex</code>
-            <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-              </svg>
-              <span>Copy</span>
-            </button>
+          <div id="install-windows" role="tabpanel" aria-label="Windows install commands" hidden>
+            <div class="install-strip">
+              <code data-install-cmd>irm https://recallmemory.dev/install.ps1 | iex</code>
+              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="install-strip">
+              <code data-install-cmd>npm i -g @edihasaj/recall</code>
+              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
           </div>
 
           <p class="requirements">
-            macOS 15+ menu bar app, Linux CLI via npm, or Windows system-tray companion via PowerShell. Free and open source.
+            macOS 15+ menu bar app, Linux CLI, or Windows system-tray companion. Requires Node.js 22+. Free and open source.
           </p>
         </div>
 
@@ -276,6 +300,8 @@ curl -fsSL https://recallmemory.dev/install.sh | bash
 #   recall daemon install   # systemd --user service</code></pre>
           <pre data-os="windows"><code># Windows — PowerShell installer
 irm https://recallmemory.dev/install.ps1 | iex
+# or do it by hand:
+#   npm i -g @edihasaj/recall &amp;&amp; recall setup --yes
 # tray icon appears; right-click → Open Dashboard</code></pre>
           <pre data-os="all"><code># contributors only — build from source
 git clone https://github.com/edihasaj/recall.git

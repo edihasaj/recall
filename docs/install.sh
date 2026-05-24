@@ -5,7 +5,7 @@
 #   curl -fsSL https://recallmemory.dev/install.sh | bash
 #
 # What it does:
-#   1. Verifies Node.js >= 20 is on PATH (offers a hint if not).
+#   1. Verifies Node.js >= 22 is on PATH (offers a hint if not).
 #   2. Installs the @edihasaj/recall CLI globally via npm.
 #   3. Runs `recall setup --yes` to wire MCP + lifecycle hooks for
 #      detected agent runtimes.
@@ -46,15 +46,15 @@ if ! command -v node >/dev/null 2>&1; then
   if [ "$os" = "darwin" ]; then
     echo "    Install it with:  brew install node"
   else
-    echo "    Install Node.js >= 20 from https://nodejs.org or your distro's package manager."
+    echo "    Install Node.js >= 22 from https://nodejs.org or your distro's package manager."
   fi
   color_fail "Re-run this installer once Node is installed."
 fi
 
 node_ver=$(node --version | sed 's/^v//')
 node_major=${node_ver%%.*}
-if [ "$node_major" -lt 20 ]; then
-  color_fail "Node.js $node_ver is too old; need >= 20."
+if [ "$node_major" -lt 22 ]; then
+  color_fail "Node.js $node_ver is too old; need >= 22 (matches package.json engines)."
 fi
 color_ok "Node $node_ver detected"
 
@@ -63,6 +63,13 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 color_step "Installing @edihasaj/recall globally"
+# Point prebuild-install at edihasaj/recall-prebuilds, where native-prebuilds.yml
+# publishes our better-sqlite3 binaries. Without this, prebuild-install looks at
+# WiseLibs/better-sqlite3 releases (which don't ship win32-arm64 / linux-arm64)
+# and falls through to node-gyp — which needs Python + a C++ toolchain users
+# don't have. prebuild-install appends "/v<bsq3-version>/<filename>" to this host,
+# so the host stops at "/releases/download" (no version segment).
+export npm_config_better_sqlite3_binary_host_mirror="https://github.com/edihasaj/recall-prebuilds/releases/download"
 if ! npm install -g @edihasaj/recall; then
   color_fail "npm install failed. Check the output above."
 fi

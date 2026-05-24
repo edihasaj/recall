@@ -124,11 +124,28 @@ jobs:
           retention-days: 7
 
   publish:
-    name: publish to release
+    name: publish to edihasaj/recall-prebuilds
     needs: prebuild
     if: startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: resolve better-sqlite3 version
+        # The prebuilds repo uses one release per better-sqlite3 version (tag
+        # = v<bsq3-version>). prebuild-install constructs URLs as
+        # <host>/v<bsq3-version>/<filename>, so the release tag must match.
+        id: bsq
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          BSQ_VERSION=$(node -p "require('better-sqlite3/package.json').version")
+          echo "version=$BSQ_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved better-sqlite3 version: $BSQ_VERSION"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
@@ -140,6 +157,12 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*
-          # Same release as the tag — `prebuild-install` looks here by default.
-          tag_name: ${{ github.ref_name }}
+          tag_name: v${{ steps.bsq.outputs.version }}
+          repository: edihasaj/recall-prebuilds
+          # Requires a fine-grained PAT with contents:write on edihasaj/recall-prebuilds.
+          # Set as repo secret RECALL_PREBUILDS_TOKEN; the default GITHUB_TOKEN can't write cross-repo.
+          token: ${{ secrets.RECALL_PREBUILDS_TOKEN }}
           fail_on_unmatched_files: true
+          # If the release already exists (multiple recall versions can ship
+          # the same better-sqlite3 binary), upsert new files; don't error.
+          make_latest: 'false'
