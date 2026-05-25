@@ -20,6 +20,8 @@ export interface CaptureCorrectionInput {
 export interface CaptureCorrectionResult {
   ids: string[];
   session_id: string;
+  /** Set when the LLM-primary path enqueued the prompt for background extraction. */
+  pendingTaskId?: string;
 }
 
 export interface SignalOutcomeInput {
@@ -54,7 +56,7 @@ export async function captureCorrectionFallback(
   source: ActivitySource,
 ): Promise<CaptureCorrectionResult> {
   const sessionId = input.session_id ?? `${source}-capture`;
-  const ids = await processCorrection(db, input.text, {
+  const { ids, pendingTaskId } = await processCorrection(db, input.text, {
     sessionId,
     repo: input.repo,
     path: input.path,
@@ -79,12 +81,14 @@ export async function captureCorrectionFallback(
     result: {
       created: ids,
       created_count: ids.length,
+      pending_task_id: pendingTaskId ?? null,
     },
   });
 
   return {
     ids,
     session_id: sessionId,
+    pendingTaskId,
   };
 }
 

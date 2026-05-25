@@ -289,6 +289,16 @@ tool(
     }, mcpSource());
 
     if (result.ids.length === 0) {
+      if (result.pendingTaskId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Enqueued for LLM extraction (task ${result.pendingTaskId.slice(0, 16)}). The candidate memory will appear once the dispatcher processes the prompt.`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
@@ -341,6 +351,16 @@ tool(
     }, mcpSource());
 
     if (result.ids.length === 0) {
+      if (result.pendingTaskId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Enqueued for LLM extraction (task ${result.pendingTaskId.slice(0, 16)}). The candidate memory will appear once the dispatcher processes the prompt.`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {

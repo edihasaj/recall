@@ -305,8 +305,8 @@ describe("capture-time fragment filter", () => {
 
     // Both phrases match detectCorrections (start with always/never) but fail
     // the quality filter — should not enter the candidate queue.
-    const idsA = await processCorrection(db, "must stay", { sessionId: "s1", repo: "r" });
-    const idsB = await processCorrection(db, "never downtime?", { sessionId: "s2", repo: "r" });
+    const { ids: idsA } = await processCorrection(db, "must stay", { sessionId: "s1", repo: "r" });
+    const { ids: idsB } = await processCorrection(db, "never downtime?", { sessionId: "s2", repo: "r" });
     expect(idsA).toEqual([]);
     expect(idsB).toEqual([]);
 
@@ -317,7 +317,7 @@ describe("capture-time fragment filter", () => {
   it("still captures well-formed corrections", async () => {
     const { processCorrection } = await import("../src/capture/correction.js");
     const db = freshDb();
-    const ids = await processCorrection(db, "always use pnpm not npm", {
+    const { ids } = await processCorrection(db, "always use pnpm not npm", {
       sessionId: "s1",
       repo: "r",
     });

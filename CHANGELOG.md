@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 - 2026-05-25
+
+### Fixed
+
+- `report_correction` / `capture_correction` MCP tools reported "No correction pattern detected" even when the LLM-primary capture path had successfully enqueued the prompt for background extraction. `processCorrection` discarded the enqueued task id and returned an empty array, so the MCP layer (and `recall correct` CLI, and daemon `/correct` endpoint) lied about the outcome whenever an LLM provider was configured. The function now returns `{ ids, pendingTaskId }`; callers surface a clear "Enqueued for LLM extraction" message and persist the task id on the activity event.
+
 ## 0.7.1 - 2026-05-23
 
 ### Added

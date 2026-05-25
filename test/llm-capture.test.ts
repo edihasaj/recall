@@ -123,6 +123,30 @@ describe("processCorrection LLM enqueue", () => {
 
     expect(peekTasks(db, { kinds: ["extract_rules_from_prompt"] })).toHaveLength(1);
   });
+
+  it("surfaces pendingTaskId so callers can distinguish enqueue from 'no pattern'", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "false";
+    const db = freshDb();
+
+    const first = await processCorrection(db, "always use pnpm in this repo", {
+      sessionId: "s1",
+      repo: "test/repo",
+      agent: "codex",
+    });
+    expect(first.ids).toEqual([]);
+    expect(first.pendingTaskId).toBeTruthy();
+
+    // Same prompt again hits the idempotent dedupe path; pendingTaskId still
+    // surfaces (as a dedup sentinel) so callers don't misreport "no pattern".
+    const second = await processCorrection(db, "always use pnpm in this repo", {
+      sessionId: "s1",
+      repo: "test/repo",
+      agent: "codex",
+    });
+    expect(second.ids).toEqual([]);
+    expect(second.pendingTaskId).toBeTruthy();
+  });
 });
 
 describe("applyExtractRulesFromPrompt", () => {

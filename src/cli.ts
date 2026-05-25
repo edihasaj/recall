@@ -791,7 +791,7 @@ program
   .option("-s, --session <id>", "Session ID", "cli")
   .action(async (text: string, opts) => {
     const db = initDb();
-    const ids = await processCorrection(db, text, {
+    const { ids, pendingTaskId } = await processCorrection(db, text, {
       sessionId: opts.session,
       repo: opts.repo,
       path: opts.path,
@@ -804,10 +804,15 @@ program
       event_type: "correction",
       memory_ids: ids,
       request: { text },
-      result: { created: ids },
+      result: { created: ids, pending_task_id: pendingTaskId ?? null },
     });
 
     if (ids.length === 0) {
+      if (pendingTaskId) {
+        console.log(`Enqueued for LLM extraction (task ${pendingTaskId.slice(0, 16)}).`);
+        console.log("The candidate memory will appear once the dispatcher processes the prompt.");
+        return;
+      }
       console.log("No correction pattern detected.");
       console.log(
         'Try: "don\'t use X, use Y", "always do Z", "let\'s use editorconfig defaults", or "review said to use W"',

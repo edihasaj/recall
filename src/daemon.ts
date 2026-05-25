@@ -662,7 +662,7 @@ const server = createServer(async (req, res) => {
     if (path === "/correct" && method === "POST") {
       const body = await parseBody(req);
       const repo = resolveRepo(body);
-      const ids = await processCorrection(db, body.text, {
+      const { ids, pendingTaskId } = await processCorrection(db, body.text, {
         sessionId: body.session_id ?? "hook",
         repo,
         path: body.path,
@@ -675,7 +675,7 @@ const server = createServer(async (req, res) => {
         event_type: "correction",
         memory_ids: ids,
         request: { text: body.text },
-        result: { created: ids },
+        result: { created: ids, pending_task_id: pendingTaskId ?? null },
       });
       for (const id of ids) {
         safeIngestMemory(id);
@@ -685,7 +685,7 @@ const server = createServer(async (req, res) => {
           source: "correction",
         });
       }
-      return send(res, 200, { created: ids });
+      return send(res, 200, { created: ids, pending_task_id: pendingTaskId ?? null });
     }
 
     // Report review feedback

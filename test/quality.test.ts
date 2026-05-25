@@ -260,7 +260,7 @@ describe("review feedback maturity gate", () => {
     for (let i = 0; i < 15; i++) makeActive(db, `rule ${i}`);
 
     // Create a candidate via correction
-    const ids1 = await processCorrection(db, "always use strict mode", {
+    const { ids: ids1 } = await processCorrection(db, "always use strict mode", {
       sessionId: "s1",
       repo: "test/repo",
     });

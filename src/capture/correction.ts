@@ -341,11 +341,21 @@ function isDurableDecision(segment: string, first: string, second?: string): boo
   return DURABLE_DECISION_HINT.test(haystack);
 }
 
+export interface ProcessCorrectionResult {
+  ids: string[];
+  /**
+   * Set when the LLM-primary path enqueues a background extraction task instead
+   * of producing candidate memories synchronously. Lets callers distinguish
+   * "no pattern detected" (both fields empty) from "queued for LLM extraction".
+   */
+  pendingTaskId?: string;
+}
+
 export async function processCorrection(
   db: RecallDb,
   text: string,
   ctx: CorrectionContext,
-): Promise<string[]> {
+): Promise<ProcessCorrectionResult> {
   text = redactSensitiveText(text);
 
   // LLM-primary path: when a provider is configured and the prompt passes
@@ -372,12 +382,14 @@ export async function processCorrection(
     // Best-effort wake-up; missing daemon is fine, the timer-based cycle
     // will still run.
     wakeDispatcherBestEffort();
-    return taskId ? [] : [];
+    // taskId is null when the same prompt was already enqueued (idempotent dedupe);
+    // we still surface a pending sentinel so callers don't misreport "no pattern detected".
+    return { ids: [], pendingTaskId: taskId ?? `dedup:${promptId}` };
   }
 
   // --- Fallback: regex path (used when no LLM provider configured) ---
   const corrections = detectCorrections(text);
-  if (corrections.length === 0) return [];
+  if (corrections.length === 0) return { ids: [] };
   const profile = getRepoQualityProfile(db, ctx.repo);
 
   const ids: string[] = [];
@@ -498,7 +510,7 @@ export async function processCorrection(
     ids.push(id);
   }
 
-  return ids;
+  return { ids };
 }
 
 function stablePromptId(sessionId: string, repo: string | undefined, text: string): string {

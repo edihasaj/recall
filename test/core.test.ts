@@ -348,7 +348,7 @@ ${"x".repeat(1_300)}
 
   it("drops incomplete rule fragments", async () => {
     const db = freshDb();
-    const ids = await processCorrection(db, "must be eunify-platform with", {
+    const { ids } = await processCorrection(db, "must be eunify-platform with", {
       sessionId: "s1",
       repo: "test/repo",
     });
@@ -411,7 +411,7 @@ ${"x".repeat(1_300)}
       return [0, 1, 0];
     });
 
-    const seedIds = await processCorrection(db, "always remove plugins from settings", {
+    const { ids: seedIds } = await processCorrection(db, "always remove plugins from settings", {
       sessionId: "s0",
       repo: "r",
     });
@@ -422,7 +422,7 @@ ${"x".repeat(1_300)}
 
     // Paraphrase: different words, same intent. Lexical Jaccard ~0 (no shared
     // tokens beyond "from"/"the"); semantic vector matches.
-    const paraphraseIds = await processCorrection(db, "always delete extensions from the config", {
+    const { ids: paraphraseIds } = await processCorrection(db, "always delete extensions from the config", {
       sessionId: "s1",
       repo: "r",
     });
@@ -432,7 +432,7 @@ ${"x".repeat(1_300)}
   it("phase E1 — every new candidate enqueues a verify_capture maintenance task", async () => {
     const { memoryMaintenanceTasks } = await import("../src/db/schema.js");
     const db = freshDb();
-    const ids = await processCorrection(db, "always run pnpm lint before pushing", {
+    const { ids } = await processCorrection(db, "always run pnpm lint before pushing", {
       sessionId: "s1",
       repo: "r",
     });
@@ -461,7 +461,7 @@ ${"x".repeat(1_300)}
     rejectMemory(db, rejId);
 
     // Near-identical phrasing — Jaccard ≥ 0.7 — should be filtered out.
-    const ids = await processCorrection(db, "always style consistently the buttons", {
+    const { ids } = await processCorrection(db, "always style consistently the buttons", {
       sessionId: "s1",
       repo: "r",
     });
@@ -480,7 +480,7 @@ ${"x".repeat(1_300)}
     });
     rejectMemory(db, rejId);
 
-    const ids = await processCorrection(db, "always run pnpm lint before pushing", {
+    const { ids } = await processCorrection(db, "always run pnpm lint before pushing", {
       sessionId: "s1",
       repo: "r",
     });
@@ -537,7 +537,7 @@ ${"x".repeat(1_300)}
 
   it("processes correction into DB", async () => {
     const db = freshDb();
-    const ids = await processCorrection(db, "never use any types in this repo", {
+    const { ids } = await processCorrection(db, "never use any types in this repo", {
       sessionId: "test-session",
       repo: "test/repo",
     });
@@ -557,7 +557,7 @@ ${"x".repeat(1_300)}
     });
 
     // Same correction again → should promote existing
-    const ids2 = await processCorrection(db, "always use strict mode", {
+    const { ids: ids2 } = await processCorrection(db, "always use strict mode", {
       sessionId: "s2",
       repo: "test/repo",
     });
@@ -569,7 +569,7 @@ ${"x".repeat(1_300)}
   it("stores soft decisions as lower-confidence candidates", async () => {
     const db = freshDb();
 
-    const ids = await processCorrection(db, "let's use editorconfig defaults for indentation", {
+    const { ids } = await processCorrection(db, "let's use editorconfig defaults for indentation", {
       sessionId: "s1",
       repo: "test/repo",
     });
@@ -589,13 +589,13 @@ ${"x".repeat(1_300)}
       text.toLowerCase().includes("pnpm") ? [1, 0, 0] : [0, 0, 1]
     ));
 
-    const ids1 = await processCorrection(db, "don't use npm, use pnpm", {
+    const { ids: ids1 } = await processCorrection(db, "don't use npm, use pnpm", {
       sessionId: "s1",
       repo: "test/repo",
     });
     await flushEmbeddingJobs();
 
-    const ids2 = await processCorrection(db, "don't use npm. use pnpm instead", {
+    const { ids: ids2 } = await processCorrection(db, "don't use npm. use pnpm instead", {
       sessionId: "s2",
       repo: "test/repo",
     });

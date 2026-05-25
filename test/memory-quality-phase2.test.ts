@@ -20,7 +20,7 @@ function freshDb() {
 describe("memory quality phase 2 rich context", () => {
   it("persists capture_context and improves scope inference from recent tool calls", async () => {
     const db = freshDb();
-    const ids = await processCorrection(db, "always use the correct pattern here", {
+    const { ids } = await processCorrection(db, "always use the correct pattern here", {
       sessionId: "sess-1",
       repo: "edihasaj/recall",
       agent: "codex",

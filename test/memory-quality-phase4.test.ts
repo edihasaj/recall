@@ -19,14 +19,14 @@ describe("memory quality phase 4 promotion-on-repetition", () => {
   it("increments repetition_count on repeated cross-session correction and promotes on threshold", async () => {
     const db = freshDb();
 
-    const ids1 = await processCorrection(db, "always use strict mode", {
+    const { ids: ids1 } = await processCorrection(db, "always use strict mode", {
       sessionId: "s1",
       repo: "test/repo",
     });
     const first = getMemory(db, ids1[0])!;
     expect(first.repetition_count).toBe(0);
 
-    const ids2 = await processCorrection(db, "always use strict mode", {
+    const { ids: ids2 } = await processCorrection(db, "always use strict mode", {
       sessionId: "s2",
       repo: "test/repo",
     });
@@ -71,12 +71,12 @@ describe("memory quality phase 4 promotion-on-repetition", () => {
     recordFeedback(db, siblingId, "s2", true, "followed");
     recordFeedback(db, siblingId, "s3", true, "followed");
 
-    const candidateIds = processCorrection(db, "always use bun as the runtime", {
+    const candidateResult = processCorrection(db, "always use bun as the runtime", {
       sessionId: "s4",
       repo: "test/repo",
     });
 
-    return candidateIds.then((ids) => {
+    return candidateResult.then(({ ids }) => {
       const candidate = getMemory(db, ids[0])!;
       expect(candidate.status).toBe("active");
     });
