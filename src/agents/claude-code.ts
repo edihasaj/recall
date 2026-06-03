@@ -20,13 +20,16 @@ const MANAGED_TAG = "recall:managed:claude-code";
 
 // Bumped whenever the managed CLAUDE.md block content changes. recall doctor
 // uses this to detect stale blocks and report them as "out of date".
-const CLAUDE_MD_BLOCK_VERSION = 2;
-const CLAUDE_MD_BEGIN = `<!-- recall:managed:claude-md:begin v${CLAUDE_MD_BLOCK_VERSION} -->`;
-const CLAUDE_MD_END = "<!-- recall:managed:claude-md:end -->";
+const CLAUDE_MD_BLOCK_VERSION = 3;
+const CLAUDE_MD_BEGIN = `<!-- recall:managed:memory:begin v${CLAUDE_MD_BLOCK_VERSION} -->`;
+const CLAUDE_MD_END = "<!-- recall:managed:memory:end -->";
+// Detect any managed begin marker — current `memory` name plus the legacy
+// `claude-md` name so older installs migrate cleanly on next setup.
+const CLAUDE_MD_BEGIN_NAME_RE = /recall:managed:(?:memory|claude-md):begin/;
 // Matches any version of the begin marker so we can replace older blocks
 // in place without leaving stale copies behind.
 const CLAUDE_MD_BLOCK_RE =
-  /<!--\s*recall:managed:claude-md:begin(?:\s+v\d+)?\s*-->[\s\S]*?<!--\s*recall:managed:claude-md:end\s*-->\n?/g;
+  /<!--\s*recall:managed:(?:memory|claude-md):begin(?:\s+v\d+)?\s*-->[\s\S]*?<!--\s*recall:managed:(?:memory|claude-md):end\s*-->\n?/g;
 const SESSION_START_MATCHER = "startup|resume|clear|compact";
 const SESSION_END_MATCHER =
   "clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other";
@@ -495,7 +498,7 @@ export function checkClaudeCodeMemoryOverride(
     return { status: "absent_no_file", config_path: targetPath };
   }
   const content = readFileSync(targetPath, "utf-8");
-  if (!content.includes("recall:managed:claude-md:begin")) {
+  if (!CLAUDE_MD_BEGIN_NAME_RE.test(content)) {
     return { status: "missing", config_path: targetPath };
   }
   return {
