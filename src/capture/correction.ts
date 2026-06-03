@@ -99,6 +99,65 @@ export function isHighRiskRule(text: string): boolean {
   return isDestructiveRisky(text) || isTriggerTemplateRule(text);
 }
 
+// --- Non-user / adversarial capture-context guard ---
+//
+// Some turns must never be mined for durable memory because they are not Edi
+// expressing a preference. Two classes:
+//
+//   1. SYSTEM SCAFFOLDING — harness-generated text that gets re-fed into a turn:
+//      SessionStart history blocks, task notifications, hook-activity recaps,
+//      maintenance/compaction summaries. Mining these produced junk like
+//      "[correction_summary] ..." and "always on PATH)".
+//
+//   2. AGENT-DIRECTED / PROMPT-INJECTION ARTIFACTS — task specs aimed at a model
+//      under test ("required exact reply: ...", "Required generated files: ...",
+//      "use private/runtime state for this answer instead"). These flooded the
+//      oktapod scope while running an agent-scorecard eval: the benchmark's
+//      adversarial prompts were captured as if they were Edi's rules, then
+//      re-injected into unrelated sessions — a self-inflicted prompt-injection
+//      channel.
+//
+// This enforces in CODE the long-standing intent that previously lived only as
+// an (un-enforced) memory: "Never extract memory from cron, subagent,
+// compaction, flush, or system repair contexts if those appear in the turn
+// text." Patterns are precision-tuned: bare `flush`/`cron` are deliberately
+// omitted (they occur in legitimate rules like "always flush the cache"); the
+// retained markers effectively never appear in a genuine durable preference.
+
+const SYSTEM_SCAFFOLD_RE =
+  /(?:<\/?task-notification>|task-notification|hook activity|\[correction_summary\]|correction_summary|session(?:start| start| end) hook|stop hook|<system-reminder>|<\/?command-(?:name|message)>|recent_tool_calls)/i;
+
+const NON_USER_CONTEXT_RE =
+  /\b(?:sub-?agents?|compaction|compacting|system repair|self[- ]repair|repair context|cron context)\b/i;
+
+const INJECTION_ARTIFACT_RE = new RegExp(
+  [
+    "ignore (?:all |any |the )?(?:previous|prior|above|earlier) (?:instructions|prompts?|messages?|rules?)",
+    "disregard (?:all |any |the )?(?:previous|prior|above|earlier)\\b",
+    "\\bexact reply\\b",
+    "reply (?:with )?exactly\\b",
+    "use (?:private|runtime|internal)(?:/[a-z]+)* state for this answer",
+    "do not use tools\\b[^.]*\\b(?:answer|state|reply|instead)",
+    "required generated files?\\b",
+    "verify the generated (?:scorecard|artifact|output|file)",
+    "must preserve the visible labels?\\b",
+    "promised\\b[^.]*\\bactions\\b[^.]*\\bexecuted",
+    "\\bACP actions\\b",
+  ].join("|"),
+  "i",
+);
+
+// True when a turn carries non-user/system or adversarial markers and must be
+// excluded from memory capture entirely. Operates on the FULL turn text, so a
+// single injection marker quarantines every fragment in that turn.
+export function isNonUserCaptureContext(text: string): boolean {
+  return (
+    SYSTEM_SCAFFOLD_RE.test(text) ||
+    NON_USER_CONTEXT_RE.test(text) ||
+    INJECTION_ARTIFACT_RE.test(text)
+  );
+}
+
 // Multi-language pre-screen for the LLM-primary capture path. Cheap regex
 // asking "is this prompt worth showing to the LLM at all?" — most coding
 // prompts are pure code requests with zero rule content. We only forward to
@@ -167,6 +226,7 @@ export function detectCorrections(text: string): CorrectionMatch[] {
   const normalizedText = text.trim();
   if (QUESTION_ONLY.test(normalizedText)) return [];
   if (looksLikePastedTranscript(normalizedText)) return [];
+  if (isNonUserCaptureContext(normalizedText)) return [];
 
   const matches: CorrectionMatch[] = [];
   const segments = correctionCandidateSegments(normalizedText);
@@ -357,6 +417,12 @@ export async function processCorrection(
   ctx: CorrectionContext,
 ): Promise<ProcessCorrectionResult> {
   text = redactSensitiveText(text);
+
+  // Quarantine non-user / adversarial turns before ANY capture path runs. This
+  // covers the LLM-primary path (which bypasses detectCorrections) and the
+  // direct MCP capture_correction/report_correction tools — the regex path is
+  // additionally guarded inside detectCorrections.
+  if (isNonUserCaptureContext(text)) return { ids: [] };
 
   // LLM-primary path: when a provider is configured and the prompt passes
   // the cheap multi-language pre-screen, hand the raw prompt to the LLM via

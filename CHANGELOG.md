@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.3 - 2026-06-03
+
+### Fixed
+
+- **Capture no longer mines non-user or adversarial turns.** Running an agent-eval benchmark inside a repo poisoned that repo's memory: the benchmark's adversarial prompts (task specs aimed at the model under test, e.g. `required exact reply: ...`, `Required generated files: ...`, `use private/runtime state for this answer`) were captured as if they were durable user rules, then re-injected into unrelated sessions — a self-inflicted prompt-injection channel. The long-standing intent *"never extract memory from cron, subagent, compaction, flush, or system repair contexts"* existed only as an un-enforced memory. It is now enforced in code: a new `isNonUserCaptureContext` guard at the `processCorrection` chokepoint (and inside `detectCorrections`) quarantines turns carrying system-scaffolding markers (`<task-notification>`, `[correction_summary]`, hook-activity, `<system-reminder>`), non-user execution contexts (`subagent`, `compaction`, `system repair`), or prompt-injection artifacts before any capture path (regex, MCP `capture_correction`/`report_correction`, or LLM-primary) runs. The LLM capture-judge prompt gains a matching reject rule as defense-in-depth. Precision-tuned so legitimate rules ("always flush the cache", "the cron job runs nightly") are untouched.
+
 ## 0.7.2 - 2026-05-25
 
 ### Fixed
