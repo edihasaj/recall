@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 - 2026-06-05
+
+### Added
+
+- **`recall ump` — serve the Universal Memory Protocol over Recall's engine.** Recall is now a conforming UMP provider: any MCP host (Claude Code, Codex, other agents) can `ump.recall` / `ump.remember` / `ump.get` / `ump.revise` / `ump.forget` / `ump.feedback` against Recall's SQLite + sqlite-vec store, over MCP (stdio) and an optional HTTP binding (`--http <port>`). Writes store directly as active memories (faithful, round-trip by id) and preserve all five UMP kinds; the server warms a local embedding model on startup so retrieval is real semantic search (RRF fusion of the sqlite-vec vector arm and a BM25 lexical arm), with a `--smart` flag to route writes through Recall's capture/judgement pipeline instead. Built on the published [`@universalmemoryprotocol/core`](https://www.npmjs.com/package/@universalmemoryprotocol/core).
+
 ## 0.7.3 - 2026-06-03
 
 ### Fixed
