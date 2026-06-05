@@ -1,3 +1,5 @@
+minimumReleaseAgeExclude:
+  - '@universalmemoryprotocol/core@0.1.0'
 onlyBuiltDependencies:
   - '"'
   - '['
