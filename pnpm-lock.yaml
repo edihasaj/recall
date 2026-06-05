@@ -8,15 +8,15 @@ importers:
 
   .:
     dependencies:
-      '@amp/core':
-        specifier: link:../agent-memory-protocol
-        version: link:../agent-memory-protocol
       '@huggingface/transformers':
         specifier: ^4.1.0
         version: 4.1.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.29.0(zod@3.25.76)
+      '@ump/core':
+        specifier: link:../universal-memory-protocol
+        version: link:../universal-memory-protocol
       better-sqlite3:
         specifier: ^11.8.1
         version: 11.10.0

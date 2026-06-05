@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { initDb, getDbPath, resetDb } from "./db/client.js";
-import { runAmpServer } from "./amp/serve.js";
+import { runUmpServer } from "./ump/serve.js";
 import {
   listMemories,
   listRepos,
@@ -552,15 +552,15 @@ hookCmd
     }
   });
 
-// --- amp (Agent Memory Protocol provider) ---
+// --- ump (Universal Memory Protocol provider) ---
 
 program
-  .command("amp")
-  .description("Serve the Agent Memory Protocol (AMP) over Recall's engine")
-  .option("--http <port>", "Serve the AMP HTTP binding on this port")
-  .option("--stdio", "Serve the AMP MCP binding over stdio (default)")
+  .command("ump")
+  .description("Serve the Universal Memory Protocol (UMP) over Recall's engine")
+  .option("--http <port>", "Serve the UMP HTTP binding on this port")
+  .option("--stdio", "Serve the UMP MCP binding over stdio (default)")
   .action(async (opts) => {
-    await runAmpServer({
+    await runUmpServer({
       http: opts.http ? parseInt(opts.http, 10) : undefined,
       stdio: opts.stdio,
     });

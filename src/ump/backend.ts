@@ -1,8 +1,8 @@
 /**
- * Recall backend for the Agent Memory Protocol adapter (@amp/core).
+ * Recall backend for the Universal Memory Protocol adapter (@ump/core).
  *
- * Bridges Recall's native modules to the AMP `RecallBackend` interface so a
- * `recall amp` server can serve AMP over Recall's engine. Reads map faithfully;
+ * Bridges Recall's native modules to the UMP `RecallBackend` interface so a
+ * `recall ump` server can serve UMP over Recall's engine. Reads map faithfully;
  * writes flow into Recall's capture pipeline (text -> candidate memory).
  */
 
@@ -11,7 +11,7 @@ import { getMemory, queryMemories } from "../models/memory.js";
 import { compileContextHybrid } from "../compiler/context.js";
 import { processCorrection } from "../capture/correction.js";
 import type { MemoryItem } from "../types.js";
-import type { RecallBackend, RecallMemory } from "@amp/core/adapters/recall";
+import type { RecallBackend, RecallMemory } from "@ump/core/adapters/recall";
 
 function toRecallMemory(m: MemoryItem): RecallMemory {
   return {
@@ -78,7 +78,7 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
 
     capture: async ({ text, repo, path }) => {
       const res = await processCorrection(db, text, {
-        sessionId: "amp",
+        sessionId: "ump",
         repo,
         path,
       });

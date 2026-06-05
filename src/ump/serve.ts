@@ -1,41 +1,41 @@
 /**
- * `recall amp` - serve the Agent Memory Protocol over Recall's engine.
+ * `recall ump` - serve the Universal Memory Protocol over Recall's engine.
  *
- * Recall becomes a conforming AMP provider: any MCP host (Claude Code, Codex,
- * other agents) can `amp.recall` / `amp.get` the memories Recall has learned,
- * and `amp.remember` routes corrections back into Recall's capture pipeline.
+ * Recall becomes a conforming UMP provider: any MCP host (Claude Code, Codex,
+ * other agents) can `ump.recall` / `ump.get` the memories Recall has learned,
+ * and `ump.remember` routes corrections back into Recall's capture pipeline.
  *
- * This is a read-focused provider (L1): Recall owns memory lifecycle, so AMP
+ * This is a read-focused provider (L1): Recall owns memory lifecycle, so UMP
  * `revise`/`forget` map to Recall's own supersession/prune rather than verbatim
- * record edits. Reads (`recall`/`get`) return Recall memories as AMP records.
+ * record edits. Reads (`recall`/`get`) return Recall memories as UMP records.
  */
 
 import {
-  AmpServer,
+  UmpServer,
   generateKeyPair,
   createHttpServer,
   createMcpServer,
-} from "@amp/core";
-import { RecallStore } from "@amp/core/adapters/recall";
+} from "@ump/core";
+import { RecallStore } from "@ump/core/adapters/recall";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { initDb } from "../db/client.js";
 import { makeRecallBackend } from "./backend.js";
 
-export interface AmpServeOptions {
+export interface UmpServeOptions {
   /** Serve the HTTP binding on this port. */
   http?: number;
   /** Serve the MCP binding over stdio (default when no http port given). */
   stdio?: boolean;
 }
 
-export async function runAmpServer(opts: AmpServeOptions = {}): Promise<void> {
+export async function runUmpServer(opts: UmpServeOptions = {}): Promise<void> {
   const db = initDb();
   const key = generateKeyPair();
   const owner = key.did;
 
-  const server = new AmpServer({
+  const server = new UmpServer({
     name: "recall",
-    version: "amp-0.1",
+    version: "ump-0.1",
     conformance: "L1",
     store: new RecallStore(makeRecallBackend(db), { owner }),
     key,
@@ -44,13 +44,13 @@ export async function runAmpServer(opts: AmpServeOptions = {}): Promise<void> {
   if (opts.http) {
     createHttpServer(server, { wellKnown: { owner } }).listen(opts.http, () => {
       process.stderr.write(
-        `[recall amp] HTTP binding on :${opts.http} (owner ${owner})\n`,
+        `[recall ump] HTTP binding on :${opts.http} (owner ${owner})\n`,
       );
     });
   }
 
   if (opts.stdio ?? !opts.http) {
     await createMcpServer(server).connect(new StdioServerTransport());
-    process.stderr.write(`[recall amp] MCP binding on stdio (owner ${owner})\n`);
+    process.stderr.write(`[recall ump] MCP binding on stdio (owner ${owner})\n`);
   }
 }
