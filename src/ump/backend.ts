@@ -7,7 +7,7 @@
  */
 
 import type { RecallDb } from "../db/client.js";
-import { getMemory, queryMemories } from "../models/memory.js";
+import { createMemory, getMemory, queryMemories } from "../models/memory.js";
 import { compileContextHybrid } from "../compiler/context.js";
 import { processCorrection } from "../capture/correction.js";
 import type { MemoryItem } from "../types.js";
@@ -75,6 +75,16 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         .sort((a, b) => b.score - a.score)
         .slice(0, cap);
     },
+
+    storeDirect: async ({ text, type, scope, repo, confidence }) =>
+      createMemory(db, {
+        type,
+        text,
+        scope,
+        repo: repo ?? null,
+        source: "user_correction",
+        confidence,
+      }),
 
     capture: async ({ text, repo, path }) => {
       const res = await processCorrection(db, text, {

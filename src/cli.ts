@@ -559,10 +559,12 @@ program
   .description("Serve the Universal Memory Protocol (UMP) over Recall's engine")
   .option("--http <port>", "Serve the UMP HTTP binding on this port")
   .option("--stdio", "Serve the UMP MCP binding over stdio (default)")
+  .option("--smart", "Route writes through Recall's capture/judgement pipeline")
   .action(async (opts) => {
     await runUmpServer({
       http: opts.http ? parseInt(opts.http, 10) : undefined,
       stdio: opts.stdio,
+      smart: opts.smart,
     });
   });
 
