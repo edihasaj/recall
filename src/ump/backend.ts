@@ -8,8 +8,14 @@
 
 import type { RecallDb } from "../db/client.js";
 import { createMemory, getMemory, queryMemories, rejectMemory } from "../models/memory.js";
-import { compileContextHybrid } from "../compiler/context.js";
+import { flushEmbeddingJobs, semanticSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { searchMemoryFtsIndex } from "../vector/sqlite-fts.js";
 import { processCorrection } from "../capture/correction.js";
+
+// Lower than Recall's dedup threshold (0.8): retrieval wants paraphrase recall,
+// not exact-duplicate precision. Tune with UMP_RECALL_MIN_SIM.
+const SEARCH_MIN_SIM = parseFloat(process.env.UMP_RECALL_MIN_SIM ?? "0.3");
+const RRF_K = 60;
 import type { MemoryItem } from "../types.js";
 import type { RecallBackend, RecallMemory } from "@ump/core/adapters/recall";
 
@@ -56,19 +62,41 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
 
     compileHybrid: async ({ query, repo, limit }) => {
       const cap = limit ?? 8;
+      const window = Math.max(cap * 5, 30);
+      // Reciprocal-rank fusion of a semantic arm (vector index, paraphrase-aware)
+      // and a lexical arm (BM25 FTS). Both are index-backed, so this scales.
+      const rrf = new Map<string, number>();
+      const add = (id: string, rank: number) => rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + rank));
 
-      // Repo-scoped query: use Recall's hybrid compiler, then resolve ids.
-      if (repo) {
-        const ctx = await compileContextHybrid(db, { repo, query_text: query });
+      const cfg = loadEmbeddingConfigFromEnv();
+      if (cfg) {
+        try {
+          const sem = await semanticSearch(
+            db,
+            query,
+            { ...cfg, similarity_threshold: SEARCH_MIN_SIM },
+            { repo, limit: window },
+          );
+          sem.forEach((s, i) => add(s.memory.id, i));
+        } catch { /* embeddings unavailable; lexical still applies */ }
+      }
+      try {
+        searchMemoryFtsIndex(db, query, { repo, limit: window }).forEach((l, i) => add(l.memory_id, i));
+      } catch { /* fts unavailable */ }
+
+      if (rrf.size > 0) {
         const out: Array<{ memory: RecallMemory; score: number }> = [];
-        ctx.memories_included.slice(0, cap).forEach((id, i) => {
+        for (const [id, score] of [...rrf.entries()].sort((a, b) => b[1] - a[1])) {
           const m = getMemory(db, id);
-          if (m) out.push({ memory: toRecallMemory(m), score: Math.max(0.1, 1 - i * 0.05) });
-        });
+          if (m && (m.status === "active" || m.status === "candidate")) {
+            out.push({ memory: toRecallMemory(m), score });
+            if (out.length >= cap) break;
+          }
+        }
         if (out.length > 0) return out;
       }
 
-      // No repo (or empty hybrid result): lexical fallback over active memories.
+      // Last-resort lexical scan (e.g. embeddings + FTS both empty).
       return queryMemories(db, {})
         .filter((m) => m.status === "active" || m.status === "candidate")
         .map((m) => ({ memory: toRecallMemory(m), score: tokenOverlap(query, m.text) }))
@@ -77,8 +105,8 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         .slice(0, cap);
     },
 
-    storeDirect: async ({ text, type, scope, repo, confidence, kind }) =>
-      createMemory(db, {
+    storeDirect: async ({ text, type, scope, repo, confidence, kind }) => {
+      const id = createMemory(db, {
         type,
         text,
         scope,
@@ -86,7 +114,12 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         source: "user_correction",
         confidence,
         capture_context: { ump_kind: kind } as never,
-      }),
+      });
+      // createMemory queues the embedding sync; flush so the new memory is
+      // immediately retrievable by semantic (vector) search.
+      await flushEmbeddingJobs();
+      return id;
+    },
 
     tombstone: (id) => rejectMemory(db, id),
 

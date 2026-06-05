@@ -17,6 +17,11 @@ import {
 import { RecallStore } from "@ump/core/adapters/recall";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { initDb } from "../db/client.js";
+import {
+  loadEmbeddingConfigFromEnv,
+  ensureEmbeddingProviderReady,
+  bootstrapEmbeddings,
+} from "../embeddings/embeddings.js";
 import { makeRecallBackend } from "./backend.js";
 
 export interface UmpServeOptions {
@@ -32,6 +37,23 @@ export async function runUmpServer(opts: UmpServeOptions = {}): Promise<void> {
   const db = initDb();
   const key = generateKeyPair();
   const owner = key.did;
+
+  // Warm the local embedding model and index existing memories so `ump.recall`
+  // does real semantic (vector + FTS) retrieval, not lexical fallback. Disable
+  // with RECALL_EMBEDDINGS_DISABLED=true.
+  const embedCfg = loadEmbeddingConfigFromEnv();
+  if (embedCfg) {
+    try {
+      process.stderr.write(`[recall ump] loading embedding model ${embedCfg.model}...\n`);
+      await ensureEmbeddingProviderReady(embedCfg);
+      const n = await bootstrapEmbeddings(db, embedCfg);
+      process.stderr.write(`[recall ump] semantic search ready (${n} memories indexed)\n`);
+    } catch (e) {
+      process.stderr.write(
+        `[recall ump] embeddings unavailable (${e instanceof Error ? e.message : String(e)}); using lexical search\n`,
+      );
+    }
+  }
 
   const server = new UmpServer({
     name: "recall",
