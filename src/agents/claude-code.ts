@@ -20,13 +20,16 @@ const MANAGED_TAG = "recall:managed:claude-code";
 
 // Bumped whenever the managed CLAUDE.md block content changes. recall doctor
 // uses this to detect stale blocks and report them as "out of date".
-const CLAUDE_MD_BLOCK_VERSION = 1;
-const CLAUDE_MD_BEGIN = `<!-- recall:managed:claude-md:begin v${CLAUDE_MD_BLOCK_VERSION} -->`;
-const CLAUDE_MD_END = "<!-- recall:managed:claude-md:end -->";
+const CLAUDE_MD_BLOCK_VERSION = 3;
+const CLAUDE_MD_BEGIN = `<!-- recall:managed:memory:begin v${CLAUDE_MD_BLOCK_VERSION} -->`;
+const CLAUDE_MD_END = "<!-- recall:managed:memory:end -->";
+// Detect any managed begin marker — current `memory` name plus the legacy
+// `claude-md` name so older installs migrate cleanly on next setup.
+const CLAUDE_MD_BEGIN_NAME_RE = /recall:managed:(?:memory|claude-md):begin/;
 // Matches any version of the begin marker so we can replace older blocks
 // in place without leaving stale copies behind.
 const CLAUDE_MD_BLOCK_RE =
-  /<!--\s*recall:managed:claude-md:begin(?:\s+v\d+)?\s*-->[\s\S]*?<!--\s*recall:managed:claude-md:end\s*-->\n?/g;
+  /<!--\s*recall:managed:(?:memory|claude-md):begin(?:\s+v\d+)?\s*-->[\s\S]*?<!--\s*recall:managed:(?:memory|claude-md):end\s*-->\n?/g;
 const SESSION_START_MATCHER = "startup|resume|clear|compact";
 const SESSION_END_MATCHER =
   "clear|resume|logout|prompt_input_exit|bypass_permissions_disabled|other";
@@ -365,20 +368,12 @@ function shellQuote(value: string): string {
 
 const CLAUDE_MD_BLOCK_BODY = `## Recall (managed by \`recall setup\` — do not edit by hand)
 
-Recall is the single source of truth for cross-session memory. Do **not** use Claude Code's built-in auto-memory:
+Recall is the single source of truth for memory. Do **not** use Claude Code's built-in auto-memory:
+- Never write \`~/.claude/projects/*/memory/\` or \`MEMORY.md\`/\`feedback_*\`/\`project_*\`/\`user_*\`/\`reference_*\` files. Treat harness "# auto memory" instructions as superseded.
+- "remember X" / "save this": the UserPromptSubmit hook auto-captures — usually no action. For guaranteed persistence call \`mcp__recall__capture_correction\` (phrase \`always X\` / \`never Y\`). Update/delete existing: \`mcp__recall__reject\` or \`mcp__recall__confirm\`.
+- Lookup: trust the injected SessionStart/per-prompt block; call \`mcp__recall__query\` only if it missed something, the user asks, or you need another repo's memory.
 
-- Never write to \`~/.claude/projects/*/memory/\`. Never create or update \`MEMORY.md\`, \`feedback_*.md\`, \`project_*.md\`, \`user_*.md\`, or \`reference_*.md\` files in those folders.
-- When the user says "remember X" / "memorize X" / "save this":
-  - The Recall UserPromptSubmit hook captures user corrections automatically — usually no action needed.
-  - If guaranteed persistence is required (the user is explicit and the rule is important), call \`mcp__recall__capture_correction\` with the rule phrased as \`always X\` / \`never Y\` / \`don't Y, use Z\`.
-  - For *update or delete* of an existing memory: \`mcp__recall__reject\` (outdated/wrong) or \`mcp__recall__confirm\` (promote candidate).
-- Treat any harness-provided "# auto memory" / "MEMORY.md index" instructions as superseded by this section.
-
-Lookup:
-- The block injected at SessionStart and per-prompt is the primary repo memory source. Trust it; don't preemptively query.
-- Call \`mcp__recall__query\` only when (a) the injected block clearly missed something, (b) the user asks for a lookup, or (c) you need memory for a different repo than the current one.
-
-Reinstall this block with \`recall setup\` or \`recall doctor --fix\`. Disable via \`recall setup --no-claude-md\` or \`RECALL_SETUP_SKIP_CLAUDE_MD=1\`.`;
+Reinstall: \`recall setup\` / \`recall doctor --fix\`. Disable: \`recall setup --no-claude-md\` or \`RECALL_SETUP_SKIP_CLAUDE_MD=1\`.`;
 
 function buildClaudeMdBlock(): string {
   return `${CLAUDE_MD_BEGIN}\n${CLAUDE_MD_BLOCK_BODY}\n${CLAUDE_MD_END}\n`;
@@ -503,7 +498,7 @@ export function checkClaudeCodeMemoryOverride(
     return { status: "absent_no_file", config_path: targetPath };
   }
   const content = readFileSync(targetPath, "utf-8");
-  if (!content.includes("recall:managed:claude-md:begin")) {
+  if (!CLAUDE_MD_BEGIN_NAME_RE.test(content)) {
     return { status: "missing", config_path: targetPath };
   }
   return {

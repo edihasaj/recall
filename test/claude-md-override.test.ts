@@ -24,8 +24,8 @@ describe("installClaudeCodeMemoryOverride", () => {
     expect(result.ok).toBe(true);
     expect(result.changed).toBe(true);
     const content = readFileSync(target, "utf-8");
-    expect(content).toContain("recall:managed:claude-md:begin");
-    expect(content).toContain("recall:managed:claude-md:end");
+    expect(content).toContain("recall:managed:memory:begin");
+    expect(content).toContain("recall:managed:memory:end");
     expect(content).toContain("Recall is the single source of truth");
   });
 
@@ -36,7 +36,7 @@ describe("installClaudeCodeMemoryOverride", () => {
     const content = readFileSync(target, "utf-8");
     expect(content).toContain("# My existing CLAUDE.md");
     expect(content).toContain("Some user notes here.");
-    expect(content).toContain("recall:managed:claude-md:begin");
+    expect(content).toContain("recall:managed:memory:begin");
   });
 
   it("is idempotent — second install returns changed=false", () => {
@@ -61,7 +61,7 @@ describe("installClaudeCodeMemoryOverride", () => {
     expect(content).not.toContain("old body");
     expect(content).toContain("Recall is the single source of truth");
     // Only one managed block remains.
-    const beginCount = (content.match(/recall:managed:claude-md:begin/g) ?? []).length;
+    const beginCount = (content.match(/recall:managed:memory:begin/g) ?? []).length;
     expect(beginCount).toBe(1);
   });
 
@@ -84,7 +84,7 @@ describe("uninstallClaudeCodeMemoryOverride", () => {
     const content = readFileSync(target, "utf-8");
     expect(content).toContain("# My CLAUDE.md");
     expect(content).toContain("User stuff.");
-    expect(content).not.toContain("recall:managed:claude-md");
+    expect(content).not.toContain("recall:managed:memory");
   });
 
   it("is a no-op when no managed block exists", () => {
