@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { initDb, getDbPath, resetDb } from "./db/client.js";
+import { runUmpServer } from "./ump/serve.js";
 import {
   listMemories,
   listRepos,
@@ -549,6 +550,22 @@ hookCmd
         `${row.agent.padEnd(12)} ${row.event.padEnd(16)} total=${row.total_calls} ok=${row.ok_calls} err=${row.error_calls} avg=${row.avg_duration_ms.toFixed(1)}ms max=${row.max_duration_ms}ms last=${row.last_called_at}`,
       );
     }
+  });
+
+// --- ump (Universal Memory Protocol provider) ---
+
+program
+  .command("ump")
+  .description("Serve the Universal Memory Protocol (UMP) over Recall's engine")
+  .option("--http <port>", "Serve the UMP HTTP binding on this port")
+  .option("--stdio", "Serve the UMP MCP binding over stdio (default)")
+  .option("--smart", "Route writes through Recall's capture/judgement pipeline")
+  .action(async (opts) => {
+    await runUmpServer({
+      http: opts.http ? parseInt(opts.http, 10) : undefined,
+      stdio: opts.stdio,
+      smart: opts.smart,
+    });
   });
 
 // --- scan ---
