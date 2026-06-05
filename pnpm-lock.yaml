@@ -14,7 +14,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.29.0(zod@3.25.76)
-      '@ump/core':
+      '@universalmemoryprotocol/core':
         specifier: link:../universal-memory-protocol
         version: link:../universal-memory-protocol
       better-sqlite3:

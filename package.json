@@ -52,7 +52,7 @@
   "dependencies": {
     "@huggingface/transformers": "^4.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@ump/core": "link:../universal-memory-protocol",
+    "@universalmemoryprotocol/core": "link:../universal-memory-protocol",
     "better-sqlite3": "^11.8.1",
     "commander": "^13.1.0",
     "drizzle-orm": "^0.45.2",

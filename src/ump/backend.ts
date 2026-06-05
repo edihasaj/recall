@@ -1,5 +1,5 @@
 /**
- * Recall backend for the Universal Memory Protocol adapter (@ump/core).
+ * Recall backend for the Universal Memory Protocol adapter (@universalmemoryprotocol/core).
  *
  * Bridges Recall's native modules to the UMP `RecallBackend` interface so a
  * `recall ump` server can serve UMP over Recall's engine. Reads map faithfully;
@@ -17,7 +17,7 @@ import { processCorrection } from "../capture/correction.js";
 const SEARCH_MIN_SIM = parseFloat(process.env.UMP_RECALL_MIN_SIM ?? "0.3");
 const RRF_K = 60;
 import type { MemoryItem } from "../types.js";
-import type { RecallBackend, RecallMemory } from "@ump/core/adapters/recall";
+import type { RecallBackend, RecallMemory } from "@universalmemoryprotocol/core/adapters/recall";
 
 function toRecallMemory(m: MemoryItem): RecallMemory {
   return {

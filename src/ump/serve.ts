@@ -13,8 +13,8 @@ import {
   generateKeyPair,
   createHttpServer,
   createMcpServer,
-} from "@ump/core";
-import { RecallStore } from "@ump/core/adapters/recall";
+} from "@universalmemoryprotocol/core";
+import { RecallStore } from "@universalmemoryprotocol/core/adapters/recall";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { initDb } from "../db/client.js";
 import {
