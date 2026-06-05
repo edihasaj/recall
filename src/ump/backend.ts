@@ -7,7 +7,7 @@
  */
 
 import type { RecallDb } from "../db/client.js";
-import { createMemory, getMemory, queryMemories } from "../models/memory.js";
+import { createMemory, getMemory, queryMemories, rejectMemory } from "../models/memory.js";
 import { compileContextHybrid } from "../compiler/context.js";
 import { processCorrection } from "../capture/correction.js";
 import type { MemoryItem } from "../types.js";
@@ -32,6 +32,7 @@ function toRecallMemory(m: MemoryItem): RecallMemory {
       ref: (e as { ref?: string }).ref,
       context: (e as { context?: string }).context,
     })),
+    capture_context: (m.capture_context as { ump_kind?: string } | null) ?? null,
   };
 }
 
@@ -76,7 +77,7 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         .slice(0, cap);
     },
 
-    storeDirect: async ({ text, type, scope, repo, confidence }) =>
+    storeDirect: async ({ text, type, scope, repo, confidence, kind }) =>
       createMemory(db, {
         type,
         text,
@@ -84,7 +85,10 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         repo: repo ?? null,
         source: "user_correction",
         confidence,
+        capture_context: { ump_kind: kind } as never,
       }),
+
+    tombstone: (id) => rejectMemory(db, id),
 
     capture: async ({ text, repo, path }) => {
       const res = await processCorrection(db, text, {
