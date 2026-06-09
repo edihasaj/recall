@@ -92,18 +92,27 @@ export function createStandaloneDb(dbPath: string): { db: RecallDb; sqlite: Data
   return { db, sqlite };
 }
 
-export function initDb(dbPath?: string): RecallDb {
-  const db = getDb(dbPath);
+// Migrate only when user_version is behind. migrate() and the user_version
+// pragma both take a write lock, and hooks calling initDb concurrently with
+// daemon maintenance died with SQLITE_BUSY; when the schema is already
+// current the init path must stay read-only.
+function migrateIfNeeded(db: RecallDb) {
+  const current = Number(db.$client.pragma("user_version", { simple: true }) ?? 0);
+  if (current === RECALL_DB_USER_VERSION) return;
   migrate(db, { migrationsFolder: getMigrationsPath() });
   setDbUserVersion(db.$client);
+}
+
+export function initDb(dbPath?: string): RecallDb {
+  const db = getDb(dbPath);
+  migrateIfNeeded(db);
   return db;
 }
 
 /** Init a standalone DB (for tests — no module-level singleton). */
 export function initStandaloneDb(dbPath: string): RecallDb {
-  const { db, sqlite } = createStandaloneDb(dbPath);
-  migrate(db, { migrationsFolder: getMigrationsPath() });
-  setDbUserVersion(sqlite);
+  const { db } = createStandaloneDb(dbPath);
+  migrateIfNeeded(db);
   return db;
 }
 
