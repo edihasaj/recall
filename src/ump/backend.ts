@@ -52,6 +52,7 @@ function tokenOverlap(query: string, text: string): number {
 }
 
 export function makeRecallBackend(db: RecallDb): RecallBackend {
+  const umpSessionId = `ump:${process.pid}:${Date.now().toString(36)}`;
   return {
     queryMemories: (f) => queryMemories(db, { repo: f.repo }).map(toRecallMemory),
 
@@ -125,9 +126,13 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
 
     capture: async ({ text, repo, path }) => {
       const res = await processCorrection(db, text, {
-        sessionId: "ump",
+        // Unique per server process: a constant "ump" session id made
+        // stablePromptId() dedupe identical rule text forever, so a rule
+        // re-sent in a later UMP session was silently never re-extracted.
+        sessionId: umpSessionId,
         repo,
         path,
+        agent: "ump",
       });
       return { ids: res.ids ?? [] };
     },

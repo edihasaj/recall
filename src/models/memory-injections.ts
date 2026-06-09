@@ -107,8 +107,11 @@ export function listToolCallsSince(
 }
 
 export function pathMatchesMemory(mem: MemoryItem, targetPath?: string): boolean {
-  if (!targetPath) return mem.scope === "repo" || mem.scope === "team";
-  if (mem.scope === "repo" || mem.scope === "team") return true;
+  // Keep in sync with compiler/context.ts pathMatches(): repo, team, and
+  // global memories are path-independent. Omitting global here meant global
+  // rules could never resolve as followed/relevant after injection.
+  if (!targetPath) return mem.scope === "repo" || mem.scope === "team" || mem.scope === "global";
+  if (mem.scope === "repo" || mem.scope === "team" || mem.scope === "global") return true;
   if (!mem.path_scope) return true;
 
   const pattern = mem.path_scope;
@@ -133,7 +136,7 @@ export function toolCallTouchesMemory(
     const inferredPath = extractPath(toolCall.input_summary);
     if (inferredPath && pathMatchesMemory(mem, inferredPath)) return true;
   }
-  return mem.scope === "repo" || mem.scope === "team";
+  return mem.scope === "repo" || mem.scope === "team" || mem.scope === "global";
 }
 
 function rowToMemoryInjection(row: MemoryInjectionRow): MemoryInjection {
