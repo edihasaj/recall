@@ -36,7 +36,7 @@ function makeConfigDir() {
 }
 
 describe("Codex hooks.json adapter", () => {
-  it("writes hooks.json with SessionStart, UserPromptSubmit, and PostToolUse entries", () => {
+  it("writes hooks.json with SessionStart, UserPromptSubmit, PostToolUse, and Stop entries", () => {
     const { configPath, hooksPath } = makeConfigDir();
 
     const result = installCodexHooks({
@@ -55,11 +55,37 @@ describe("Codex hooks.json adapter", () => {
     expect(Object.keys(parsed.hooks).sort()).toEqual([
       "PostToolUse",
       "SessionStart",
+      "Stop",
       "UserPromptSubmit",
     ]);
     expect(parsed.hooks.UserPromptSubmit[0].hooks[0].command).toContain("--codex-stdin");
     expect(parsed.hooks.UserPromptSubmit[0].hooks[0].command).toContain("recall:managed:codex:prompt");
     expect(parsed.hooks.PostToolUse[0].matcher).toBe("Bash");
+    // Codex has no SessionEnd event — session-end rides on Stop.
+    expect(parsed.hooks.Stop[0].hooks[0].command).toContain("hook session-end --agent codex --codex-stdin");
+    expect(parsed.hooks.Stop[0].hooks[0].command).toContain("recall:managed:codex:session-end");
+  });
+
+  it("treats the canonical renamed `hooks = true` flag as already set", () => {
+    const { configPath, hooksPath } = makeConfigDir();
+    // Codex >= 0.137 rewrites config.toml with the canonical flag name.
+    writeFileSync(
+      configPath,
+      `${readFileSync(fixturePath, "utf-8")}\n[features]\nhooks = true\n`,
+    );
+
+    installCodexHooks({
+      configPath,
+      hooksPath,
+      nodePath: "/opt/recall/node",
+      cliPath: "/opt/recall/dist/cli.js",
+      forceHooks: true,
+    });
+
+    const config = readFileSync(configPath, "utf-8");
+    // must not add a duplicate legacy alias next to the canonical flag
+    expect(config).not.toMatch(/codex_hooks\s*=\s*true/);
+    expect(config).toMatch(/^hooks\s*=\s*true/m);
   });
 
   it("enables codex_hooks feature flag under [features] when already present", () => {

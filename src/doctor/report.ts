@@ -335,7 +335,9 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
   if (existsSync(configPath)) {
     const raw = readFileSync(configPath, "utf-8");
     mcp = /\[mcp_servers\.recall\]/.test(raw);
-    const featureFlagSet = /^\s*codex_hooks\s*=\s*true\b/m.test(raw);
+    // Codex >= 0.137 renamed the flag to `hooks` and rewrites config.toml with
+    // the canonical name; accept either spelling.
+    const featureFlagSet = /^\s*(?:codex_)?hooks\s*=\s*true\b/m.test(raw);
     const managedHooksJson =
       existsSync(hooksPath) && readFileSync(hooksPath, "utf-8").includes("recall:managed:codex");
     hooks = featureFlagSet && managedHooksJson;
@@ -349,7 +351,7 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
         "Legacy notify bridge present — install the new hooks.json path to enable per-turn memory injection",
       );
     }
-    if (!featureFlagSet) notes.push("codex_hooks = true missing from [features]");
+    if (!featureFlagSet) notes.push("hooks = true (or legacy codex_hooks = true) missing from [features]");
     if (!managedHooksJson) notes.push("No Recall-managed entries in ~/.codex/hooks.json");
   } else if (detected) {
     notes.push("Codex CLI detected but config.toml missing");

@@ -64,7 +64,7 @@ export const codexAdapter: AgentAdapter = {
   },
   capabilities() {
     return {
-      supports: ["prompt_submitted", "tool_invoked", "session_ended"],
+      supports: ["session_started", "prompt_submitted", "tool_invoked", "session_ended"],
       supports_hook_install: true,
       supports_mcp_fallback: true,
     };
@@ -417,6 +417,18 @@ function buildCodexManagedGroups(
     ];
   }
 
+  if (installedEvents.size === 0 || installedEvents.has("session_ended")) {
+    // Codex has no SessionEnd event; Stop (end of each agent turn) is the
+    // closest proxy. The session-end handler only resolves injections that
+    // were observably followed and leaves the rest pending, so firing it per
+    // turn is safe — without it codex sessions never resolve outcomes.
+    groups.Stop = [
+      {
+        hooks: [commandHook(`${commandPrefix} hook session-end --agent codex --codex-stdin`, "session-end")],
+      },
+    ];
+  }
+
   return groups;
 }
 
@@ -481,10 +493,16 @@ function cloneCodexHooks(file: CodexHooksFile): CodexHooksFile {
   return JSON.parse(JSON.stringify(file)) as CodexHooksFile;
 }
 
+// Codex >= 0.137 renamed the feature flag from `codex_hooks` to `hooks` and
+// rewrites config.toml with the canonical name (dropping our managed comment).
+// The legacy alias still parses on new CLIs, so we keep writing `codex_hooks`
+// but must treat either spelling as "flag already set".
+export const CODEX_HOOKS_FLAG_PATTERN = /^\s*(?:codex_)?hooks\s*=\s*true\b/m;
+
 function ensureCodexHooksFeatureFlag(targetConfigPath: string): InstallResult {
   const existing = existsSync(targetConfigPath) ? readFileSync(targetConfigPath, "utf-8") : "";
 
-  if (/^\s*codex_hooks\s*=\s*true\b/m.test(existing)) {
+  if (CODEX_HOOKS_FLAG_PATTERN.test(existing)) {
     return { ok: true, changed: false, config_path: targetConfigPath, message: "" };
   }
 
@@ -510,7 +528,7 @@ function removeCodexHooksFeatureFlag(targetConfigPath: string): InstallResult {
   }
   const existing = readFileSync(targetConfigPath, "utf-8");
   const managedLine = new RegExp(
-    `^\\s*codex_hooks\\s*=\\s*true\\s*${escapeRegExp(MANAGED_FEATURE_FLAG)}\\s*$\\n?`,
+    `^\\s*(?:codex_)?hooks\\s*=\\s*true\\s*${escapeRegExp(MANAGED_FEATURE_FLAG)}\\s*$\\n?`,
     "m",
   );
   if (!managedLine.test(existing)) {
