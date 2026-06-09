@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Hooks no longer die with `database is locked` under daemon write contention.** `initDb()` ran `migrate()` plus a `user_version` write pragma on every hook invocation; both take a write lock, so hooks racing daemon maintenance (vec/FTS rebuilds) failed and silently dropped capture/recall events. Init is now read-only when the schema is already current, and a regression test pins `RECALL_DB_USER_VERSION` to the drizzle migration journal length.
+- **Codex ≥ 0.137 flag rename no longer breaks doctor/setup.** Codex renamed `[features].codex_hooks` to `hooks` and rewrites config.toml with the canonical name, which dropped Recall's managed comment and made `recall doctor` report hooks as missing. Doctor and the installer now accept either spelling.
+- **Codex sessions finally resolve injection outcomes.** Codex has no `SessionEnd` hook event, so `hook session-end` never fired (3 session_ended vs 1,198 session_started calls observed) and injected memories never earned `followed` signals. The installer now registers session-end on `Stop`; firing per turn is safe because the resolver only marks observably-followed injections and leaves the rest pending.
+- **Global-scope memories can earn outcome signals.** `pathMatchesMemory`/`toolCallTouchesMemory` predated `scope='global'` and never matched global rules, so they could not resolve as followed/relevant after injection — a demotion bias. Now aligned with the compiler's `pathMatches`.
+- **UMP capture no longer dedupes rules forever.** The UMP backend hardcoded `sessionId: "ump"`, so `stablePromptId` treated identical rule text as a duplicate across all future UMP sessions and silently skipped re-extraction; it also passed no agent context. Capture now uses a per-process session id and `agent: "ump"`.
+
 ## 0.8.0 - 2026-06-05
 
 ### Added
