@@ -9,6 +9,12 @@ export default defineConfig({
     // tasks instead of writing memories synchronously.
     env: {
       RECALL_LLM_CAPTURE_DISABLED: "true",
+      // Hermetic repo discovery: without this, session-start bootstrap walks
+      // ~/Projects on the dev machine, finds the real checkout matching the
+      // test's repo slug, scans it, and seeds memories into "fresh" test DBs
+      // (tests then fail locally but pass in CI, which has no ~/Projects).
+      // Tests that exercise discovery pass explicit searchRoots.
+      RECALL_REPO_ROOTS: "/nonexistent-recall-test-repo-roots",
     },
   },
 });
