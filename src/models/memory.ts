@@ -64,7 +64,12 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
     if (existing) return existing.id;
   }
 
-  db.insert(memories)
+  // onConflictDoNothing closes the TOCTOU window between the pre-check SELECT
+  // and this INSERT: when two writers race (e.g. concurrent Claude + Codex
+  // session-start scans bootstrapping the same repo), both pass the SELECT
+  // above, then one INSERT wins and the other previously threw
+  // "UNIQUE constraint failed: memories.dedupe_key", crashing the whole hook.
+  const result = db.insert(memories)
     .values({
       id,
       type: input.type,
@@ -87,7 +92,18 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       override_count: 0,
       repetition_count: 0,
     })
+    .onConflictDoNothing({ target: memories.dedupe_key })
     .run();
+
+  if (dedupeKey && result.changes === 0) {
+    // Lost the race (or a stale rejected row still holds the key): return the
+    // existing memory's id rather than the uninserted one, and don't queue an
+    // embedding for a row that was never written.
+    const winner = db.select().from(memories)
+      .where(eq(memories.dedupe_key, dedupeKey))
+      .get();
+    if (winner) return winner.id;
+  }
 
   queueMemoryEmbeddingSync(db, id);
   return id;
