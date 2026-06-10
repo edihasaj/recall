@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2 - 2026-06-10
+
+### Fixed
+
+- **Session-start no longer crashes under concurrent agents.** When two agents (e.g. Claude Code and Codex) opened sessions in the same repo at once, both bootstrap scans passed `createMemory`'s pre-check `SELECT` and then raced on the `INSERT`, so one threw `UNIQUE constraint failed: memories.dedupe_key` and the entire session-start hook aborted — no memory injection for that session. `createMemory` now inserts with `ON CONFLICT(dedupe_key) DO NOTHING` and returns the winning row's id, making capture idempotent and race-safe.
+
 ## 0.8.1 - 2026-06-10
 
 ### Fixed
