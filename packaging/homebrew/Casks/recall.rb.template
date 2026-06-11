@@ -7,7 +7,7 @@ cask "recall" do
   desc "Local repo-memory compiler for coding agents"
   homepage "https://recallmemory.dev/"
 
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "Recall.app"
 

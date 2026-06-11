@@ -19,7 +19,7 @@ console.log(`cask "recall" do
   desc "Local repo-memory compiler for coding agents"
   homepage "${homepage}"
 
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "Recall.app"
 
