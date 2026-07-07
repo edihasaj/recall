@@ -110,13 +110,19 @@ export function Graph3DView({
   }, [entities, relations, selectedId]);
 
   // Orbit controls: left-drag rotates, middle-drag pans, right-drag also pans,
-  // scroll wheel zooms.
+  // scroll wheel zooms. Also enables an ambient auto-rotate that idles the
+  // camera around the graph and pauses while the user is interacting, plus
+  // exponential fog for depth cueing (distant nodes fade into the background).
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
     const controls = fg.controls() as unknown as {
       mouseButtons?: { LEFT?: number; MIDDLE?: number; RIGHT?: number };
       enablePan?: boolean;
+      autoRotate?: boolean;
+      autoRotateSpeed?: number;
+      addEventListener?: (type: string, cb: () => void) => void;
+      removeEventListener?: (type: string, cb: () => void) => void;
     } | null;
     if (!controls) return;
     controls.enablePan = true;
@@ -124,6 +130,35 @@ export function Graph3DView({
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.PAN,
       RIGHT: THREE.MOUSE.PAN,
+    };
+
+    // Depth cueing: fog matched to the background so far-away nodes/links
+    // dissolve into it rather than staying crisp at every distance.
+    const scene = fg.scene();
+    if (scene) scene.fog = new THREE.FogExp2(0x0b0c0f, 0.0016);
+
+    // Ambient idle orbit — react-force-graph calls controls.update() every
+    // frame, so OrbitControls.autoRotate animates for free. Pause the moment
+    // the user grabs the camera and resume a short beat after they let go.
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.6;
+    let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+    const onStart = () => {
+      controls.autoRotate = false;
+      if (resumeTimer) clearTimeout(resumeTimer);
+    };
+    const onEnd = () => {
+      if (resumeTimer) clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(() => {
+        controls.autoRotate = true;
+      }, 2500);
+    };
+    controls.addEventListener?.("start", onStart);
+    controls.addEventListener?.("end", onEnd);
+    return () => {
+      if (resumeTimer) clearTimeout(resumeTimer);
+      controls.removeEventListener?.("start", onStart);
+      controls.removeEventListener?.("end", onEnd);
     };
   }, []);
 
@@ -153,7 +188,7 @@ export function Graph3DView({
         position: "relative",
         height: "calc(100vh - 240px)",
         minHeight: 480,
-        background: "#0b0c0f",
+        background: "radial-gradient(ellipse at center, #141a24 0%, #0b0c0f 68%)",
         borderRadius: 8,
         overflow: "hidden",
       }}
@@ -162,7 +197,7 @@ export function Graph3DView({
         ref={fgRef}
         graphData={data}
         controlType="orbit"
-        backgroundColor="#0b0c0f"
+        backgroundColor="rgba(0,0,0,0)"
         nodeId="id"
         nodeLabel={(n) => `${n.kind} · ${n.name} (×${n.mentionCount})`}
         nodeColor={(n) => KIND_COLORS[n.kind] ?? "#888"}

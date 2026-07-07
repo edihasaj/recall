@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3 - 2026-07-07
+
+### Changed
+
+- **Knowledge graph 3D view reads with more depth.** The web UI's 3D graph now sits on a radial-gradient background with exponential scene fog, so distant nodes and links fade into the dark edge instead of staying crisp at every distance. An ambient auto-rotate idles the camera around the graph and pauses the moment you grab it, resuming a couple of seconds after you let go.
+
 ## 0.8.2 - 2026-06-10
 
 ### Fixed
