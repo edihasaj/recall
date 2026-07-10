@@ -198,6 +198,27 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `RECALL_EMBEDDINGS_DISABLED` | `false` | Set to `true` to skip embedding generation entirely (hybrid retrieval still works with FTS-only ranking). |
 | `RECALL_SQLITE_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | WAL size at which the maintenance loop escalates `wal_checkpoint(PASSIVE)` to `TRUNCATE` to keep `recall.db-wal` from growing unbounded under concurrent writers. Set `0` to never truncate. |
 | `RECALL_SQLITE_STARTUP_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | If the WAL file exceeds this size when the DB is opened, run `wal_checkpoint(TRUNCATE)` once during startup. Heals existing installs after upgrade. Set `0` to disable. |
+| `SENTRY_DSN` | _(empty — disabled)_ | **Opt-in, off by default.** When set to a Sentry DSN, the CLI, daemon, MCP server, and sync server report **errors and crashes only** (no tracing, no profiling, no replay, no PII). Empty/unset is a hard no-op — Sentry never initializes and nothing is sent off-box. See below. |
+| `RECALL_ENV` | `production` | Only used to tag the Sentry `environment` when `SENTRY_DSN` is set. Falls back to `NODE_ENV`, then `production`. |
+
+## Error reporting (Sentry) — opt-in, off by default
+
+Recall is open source and **never phones home by default**. There is no telemetry, no analytics, and no crash reporting unless _you_, the operator, explicitly turn it on.
+
+Error reporting is disabled unless the `SENTRY_DSN` environment variable is set:
+
+- **Unset / empty (the default):** a hard no-op. `Sentry.init` is never called, no network requests are made — nothing leaves your machine.
+- **Set to a DSN:** the CLI, daemon, MCP server, and sync server report **errors and crashes only**. Performance tracing is off (`tracesSampleRate: 0`), profiling and session replay are off, and `sendDefaultPii` is `false` (no IP address, cookies, or user identity attached).
+
+The DSN is **not** baked into the source or committed anywhere — it comes only from the environment. To enable it on your own instance, set it wherever the process reads its environment (e.g. `~/.zshrc` / `~/.bashrc`, or under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.plist`, then `recall daemon restart`):
+
+```bash
+# Optional, opt-in error reporting. Project applifyer/recall.
+# Leave empty to disable (default). Only the operator enables this.
+SENTRY_DSN=
+# Owner's instance uses:
+# SENTRY_DSN=https://26ec00513792f62bf5765b33f88ae152@o4510266463813632.ingest.de.sentry.io/4511711476318288
+```
 | `RECALL_HOOK_LOG_MAX_BYTES` | `1048576` (1 MiB) | Rotates `~/.recall/logs/hook-errors.log` to `hook-errors.log.1` once it reaches this size. Set `0` to keep appending forever. |
 
 ## Retrieval tuning

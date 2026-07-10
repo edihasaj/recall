@@ -14,6 +14,9 @@
  * Storage: separate SQLite DB for the sync server.
  */
 
+// Sentry error reporting first (no-op unless SENTRY_DSN is set).
+import "../observability/instrument.js";
+import { Sentry } from "../observability/sentry.js";
 import { createServer } from "node:http";
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
@@ -282,6 +285,8 @@ const server = createServer(async (req, res) => {
 
     send(res, 404, { error: "not found" });
   } catch (err: any) {
+    // Report the unhandled request failure (no-op unless SENTRY_DSN is set).
+    Sentry.captureException(err);
     send(res, 500, { error: err.message });
   }
 });

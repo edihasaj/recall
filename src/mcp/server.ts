@@ -1,3 +1,5 @@
+// Sentry error reporting first (no-op unless SENTRY_DSN is set).
+import "../observability/instrument.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createRecallMcpServer } from "./factory.js";
 

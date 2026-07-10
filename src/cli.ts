@@ -1,3 +1,5 @@
+// Sentry error reporting first (no-op unless SENTRY_DSN is set).
+import "./observability/instrument.js";
 import { Command } from "commander";
 import { resolve } from "node:path";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";

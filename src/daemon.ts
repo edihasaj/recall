@@ -1,3 +1,6 @@
+// Sentry error reporting first (no-op unless SENTRY_DSN is set).
+import "./observability/instrument.js";
+import { Sentry } from "./observability/sentry.js";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import type { RecallDb } from "./db/client.js";
@@ -1116,6 +1119,8 @@ const server = createServer(async (req, res) => {
 
     send(res, 404, { error: "not found" });
   } catch (err: any) {
+    // Report the unhandled request failure (no-op unless SENTRY_DSN is set).
+    Sentry.captureException(err);
     send(res, 500, { error: err.message });
   }
 });

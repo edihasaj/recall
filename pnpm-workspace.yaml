@@ -1,5 +1,10 @@
 minimumReleaseAgeExclude:
   - '@universalmemoryprotocol/core@0.1.0'
+  - '@sentry/core@10.65.0'
+  - '@sentry/node-core@10.65.0'
+  - '@sentry/node@10.65.0'
+  - '@sentry/opentelemetry@10.65.0'
+  - '@sentry/server-utils@10.65.0'
 onlyBuiltDependencies:
   - '"'
   - '['
