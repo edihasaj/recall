@@ -25,6 +25,7 @@ import { peekTasks } from "../maintenance/tasks.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { hookCallDedupeKey } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
+import { detectAndRecordRetrievalMisses } from "../models/memory-value.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 25;
@@ -297,7 +298,16 @@ export async function handlePromptHook(
       recentToolCalls,
     );
 
-    if (detectCorrections(text).length > 0) {
+    const correctionMatches = detectCorrections(text);
+    if (correctionMatches.length > 0) {
+      detectAndRecordRetrievalMisses(db, {
+        correction_texts: correctionMatches.map((match) => match.text),
+        prompt_text: text,
+        session_id: sessionId,
+        repo,
+        path: input.path,
+        source,
+      });
       await captureCorrectionFallback(db, {
         text,
         repo: repo ?? undefined,

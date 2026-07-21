@@ -756,6 +756,7 @@ program
       ? await compileContextHybrid(db, {
           repo: opts.repo,
           path: opts.path,
+          session_id: opts.session,
           query_text: opts.query,
           config: {
             ...(opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {}),
@@ -765,6 +766,7 @@ program
       : compileContext(db, {
           repo: opts.repo,
           path: opts.path,
+          session_id: opts.session,
           config: opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {},
         });
     createActivityEvent(db, {

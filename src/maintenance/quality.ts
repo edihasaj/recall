@@ -2,6 +2,7 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { feedbackEvents, historyInjections, memories, memoryInjections, qualitySnapshots } from "../db/schema.js";
+import { computeMemoryValueReport, type MemoryValueReport } from "../models/memory-value.js";
 
 export interface QualityReport {
   window_start: string;
@@ -21,6 +22,7 @@ export interface QualityReport {
     total: number;
     unique_snippets: number;
   };
+  value: MemoryValueReport;
 }
 
 export function computeQualityReport(
@@ -94,6 +96,7 @@ export function computeQualityReport(
       total: Number(historyRow?.total ?? 0),
       unique_snippets: Number(historyRow?.unique_snippets ?? 0),
     },
+    value: computeMemoryValueReport(db, { sinceIso: start }),
   };
 }
 
@@ -198,6 +201,22 @@ export function formatQualityReport(r: QualityReport): string {
   lines.push(`  total:        ${r.feedback_events.total}`);
   for (const [k, v] of Object.entries(r.feedback_events.by_outcome)) {
     lines.push(`    ${k.padEnd(12)} ${v}`);
+  }
+  lines.push("");
+  lines.push("Value:");
+  lines.push(`  events:       ${r.value.events_total}`);
+  lines.push(`  injections:   ${r.value.injections}`);
+  lines.push(`  misses:       ${r.value.retrieval_misses}`);
+  lines.push(`  injected tok: ~${r.value.injected_tokens_estimate}`);
+  lines.push(`  saved tok:    ~${r.value.saved_tokens_estimate}`);
+  lines.push(`  net tok:      ~${r.value.net_tokens_estimate}`);
+  if (r.value.top_savers.length > 0) {
+    lines.push("  top savers:");
+    for (const saver of r.value.top_savers.slice(0, 3)) {
+      lines.push(
+        `    ${saver.memory_id.slice(0, 8)} ~${saver.saved_tokens_estimate} tok (${saver.followed} followed) ${saver.text.slice(0, 80)}`,
+      );
+    }
   }
   lines.push("");
   lines.push("History injections:");

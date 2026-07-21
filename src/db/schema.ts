@@ -150,6 +150,32 @@ export const memoryInjections = sqliteTable("memory_injections", {
   uniqueIndex("uq_memory_injections_memory_session").on(table.memory_id, table.session_id),
 ]));
 
+export const memoryValueEvents = sqliteTable("memory_value_events", {
+  id: text("id").primaryKey(),
+  memory_id: text("memory_id")
+    .references(() => memories.id, { onDelete: "set null" }),
+  injection_id: text("injection_id")
+    .references(() => memoryInjections.id, { onDelete: "set null" }),
+  feedback_id: text("feedback_id")
+    .references(() => feedbackEvents.id, { onDelete: "set null" }),
+  session_id: text("session_id").notNull(),
+  repo: text("repo"),
+  event_type: text("event_type", {
+    enum: ["injected", "followed", "overridden", "ignored", "contradicted", "retrieval_miss"],
+  }).notNull(),
+  source: text("source").notNull(),
+  injected_tokens_estimate: integer("injected_tokens_estimate").notNull().default(0),
+  saved_tokens_estimate: integer("saved_tokens_estimate").notNull().default(0),
+  evidence: text("evidence", { mode: "json" }).notNull().default("{}"),
+  created_at: text("created_at").notNull(),
+}, (table) => ([
+  index("idx_memory_value_memory").on(table.memory_id),
+  index("idx_memory_value_session").on(table.session_id),
+  index("idx_memory_value_repo").on(table.repo),
+  index("idx_memory_value_event").on(table.event_type),
+  index("idx_memory_value_created").on(table.created_at),
+]));
+
 // Session/query activity log
 export const activityEvents = sqliteTable("activity_events", {
   id: text("id").primaryKey(),

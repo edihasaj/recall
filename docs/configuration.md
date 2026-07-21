@@ -166,6 +166,13 @@ The daemon records a `quality_snapshots` row weekly so trends in injection
 followed-rate, active-rule count, and candidate backlog become visible via
 `recall maintenance quality --history` over time.
 
+`recall maintenance quality` also reports the value ledger for the same window:
+injected memory count, estimated injection tokens, estimated tokens saved when
+memories were followed, retrieval misses where a repeated correction matched
+memory that had not been injected, and top memories by saved-token estimate.
+Saved-token estimates are conservative: they use the memory text the user did
+not have to repeat, not a vendor billing claim.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `RECALL_QUALITY_SNAPSHOT_ENABLED` | `true` | Set to `false` to disable automatic snapshots. |
@@ -179,9 +186,16 @@ recall maintenance usage --since 2026-04-01    # custom window
 recall maintenance usage --json                # machine-readable
 recall maintenance stats                       # task backlog counts
 recall maintenance list                        # pending tasks
+recall maintenance quality                     # injection outcomes + value ledger
 ```
 
 Every LLM call the dispatcher makes lands in the `llm_usage` table with provider, model, task kind, tokens, cost estimate, duration, and ok/error. No row is written when the dispatcher has nothing to run or no API key is configured.
+
+Every injected memory and resolved memory outcome lands in
+`memory_value_events`, linked back to the memory, injection row, feedback row,
+session, and repo when available. `ump.feedback` is wired into the same path, so
+UMP clients can report `followed | overridden | ignored | contradicted` and
+still improve Recall's rankings and value report.
 
 ### Clearing a key
 

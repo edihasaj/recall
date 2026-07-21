@@ -62,4 +62,13 @@ describe("memory quality phase 1 schema", () => {
 
     expect(rows).toEqual([{ name: "memory_injections" }]);
   });
+
+  it("creates the memory_value_events table in migrated databases", () => {
+    const db = freshDb();
+    const rows = db.$client
+      .prepare("select name from sqlite_master where type = 'table' and name = 'memory_value_events'")
+      .all() as Array<{ name: string }>;
+
+    expect(rows).toEqual([{ name: "memory_value_events" }]);
+  });
 });

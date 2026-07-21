@@ -14,7 +14,7 @@ import {
   createHttpServer,
   createMcpServer,
 } from "@universalmemoryprotocol/core";
-import { RecallStore } from "@universalmemoryprotocol/core/adapters/recall";
+import { RecallStore, fromAmpId } from "@universalmemoryprotocol/core/adapters/recall";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { initDb } from "../db/client.js";
 import {
@@ -23,6 +23,8 @@ import {
   bootstrapEmbeddings,
 } from "../embeddings/embeddings.js";
 import { makeRecallBackend } from "./backend.js";
+import { signalOutcomeFallback } from "../mcp/fallback.js";
+import type { RecallDb } from "../db/client.js";
 
 export interface UmpServeOptions {
   /** Serve the HTTP binding on this port. */
@@ -33,10 +35,33 @@ export interface UmpServeOptions {
   smart?: boolean;
 }
 
-export async function runUmpServer(opts: UmpServeOptions = {}): Promise<void> {
-  const db = initDb();
+export function createRecallUmpServer(
+  db: RecallDb,
+  opts: Pick<UmpServeOptions, "smart"> = {},
+): { server: UmpServer; owner: string } {
   const key = generateKeyPair();
   const owner = key.did;
+  const server = new UmpServer({
+    name: "recall",
+    version: "ump-0.1",
+    conformance: "L1",
+    store: new RecallStore(makeRecallBackend(db), { owner, smart: opts.smart }),
+    key,
+    onFeedback: async (req) => {
+      signalOutcomeFallback(db, {
+        memory_id: fromAmpId(req.id),
+        session_id: req.session ?? `ump:${process.pid}`,
+        injected: true,
+        outcome: req.outcome,
+        context: "ump.feedback",
+      }, "mcp:ump");
+    },
+  });
+  return { server, owner };
+}
+
+export async function runUmpServer(opts: UmpServeOptions = {}): Promise<void> {
+  const db = initDb();
 
   // Warm the local embedding model and index existing memories so `ump.recall`
   // does real semantic (vector + FTS) retrieval, not lexical fallback. Disable
@@ -55,13 +80,7 @@ export async function runUmpServer(opts: UmpServeOptions = {}): Promise<void> {
     }
   }
 
-  const server = new UmpServer({
-    name: "recall",
-    version: "ump-0.1",
-    conformance: "L1",
-    store: new RecallStore(makeRecallBackend(db), { owner, smart: opts.smart }),
-    key,
-  });
+  const { server, owner } = createRecallUmpServer(db, opts);
 
   if (opts.http) {
     createHttpServer(server, { wellKnown: { owner } }).listen(opts.http, () => {

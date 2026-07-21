@@ -64,6 +64,13 @@
       "when": 1779057164161,
       "tag": "0008_premium_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784655320000,
+      "tag": "0009_memory_value_events",
+      "breakpoints": true
     }
   ]
 }
