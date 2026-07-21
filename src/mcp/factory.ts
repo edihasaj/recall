@@ -50,7 +50,7 @@ import {
   type RelationType,
 } from "../graph/store.js";
 import { loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
-import { recordCompletionUseValueEvents } from "../models/memory-value.js";
+import { recordCompletionUseValueEventsSemantic } from "../models/memory-value.js";
 
 export function createRecallMcpServer(db: RecallDb = initDb()) {
 const activityEventTypes = [
@@ -569,7 +569,7 @@ tool(
     memory_ids: z.array(z.string()).optional().describe("Injected memory IDs explicitly used by this completion."),
   },
   async ({ session_id, completion_text, repo, memory_ids }) => {
-    const result = recordCompletionUseValueEvents(db, {
+    const result = await recordCompletionUseValueEventsSemantic(db, {
       session_id,
       completion_text,
       repo: repo ?? null,

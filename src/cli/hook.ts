@@ -25,7 +25,10 @@ import { peekTasks } from "../maintenance/tasks.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { hookCallDedupeKey } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
-import { detectAndRecordRetrievalMisses, recordCompletionUseValueEvents } from "../models/memory-value.js";
+import {
+  detectAndRecordRetrievalMissesSemantic,
+  recordCompletionUseValueEventsSemantic,
+} from "../models/memory-value.js";
 import { textMatches } from "../text/match.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
@@ -336,7 +339,7 @@ export async function handlePromptHook(
 
     const correctionMatches = detectCorrections(text);
     if (correctionMatches.length > 0) {
-      detectAndRecordRetrievalMisses(db, {
+      await detectAndRecordRetrievalMissesSemantic(db, {
         correction_texts: correctionMatches.map((match) => match.text),
         prompt_text: text,
         session_id: sessionId,
@@ -472,7 +475,7 @@ export async function handleAssistantCompletionHook(
     const sessionId = input.session_id?.trim() || "hook";
     const repo = resolveRepo(input.repo, input.repo_path);
     const source = resolveHookSource(opts.source, input.agent);
-    const value = recordCompletionUseValueEvents(db, {
+    const value = await recordCompletionUseValueEventsSemantic(db, {
       session_id: sessionId,
       completion_text: text,
       repo,

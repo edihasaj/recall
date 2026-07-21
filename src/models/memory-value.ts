@@ -6,6 +6,12 @@ import type { ActivitySource, FeedbackOutcome, MemoryItem } from "../types.js";
 import { getMemory, queryMemories, promoteMemory } from "./memory.js";
 import { listInjectedMemoryIdsForSession } from "./memory-injections.js";
 import { textMatchScore } from "../text/match.js";
+import {
+  cosineSimilarity,
+  generateEmbedding,
+  loadEmbedding,
+  loadEmbeddingConfigFromEnv,
+} from "../embeddings/embeddings.js";
 
 export type MemoryValueEventType =
   | "injected"
@@ -21,6 +27,7 @@ export interface MemoryValueEvidence {
   explicit_memory_ids?: string[];
   prompt_path?: string;
   reason?: string;
+  semantic_similarity?: number;
   matched_memory_text?: string;
   injected_memory_ids?: string[];
   pack_tokens_estimate?: number;
@@ -188,10 +195,88 @@ export function recordCompletionUseValueEvents(
 
   const explicitIds = new Set(input.memory_ids ?? []);
   const candidates = injectedMemoriesForCompletionUse(db, input.session_id, input.memory_ids);
+  return recordCompletionUseForCandidates(db, input, candidates, (candidate) => {
+    if (explicitIds.has(candidate.id)) {
+      return {
+        matched: true,
+        reason: "agent explicitly reported using this injected memory",
+      };
+    }
+    if (completionUsesMemory(completionText, candidate.text)) {
+      return {
+        matched: true,
+        reason: "assistant completion overlapped an injected memory",
+      };
+    }
+    return { matched: false };
+  });
+}
+
+export async function recordCompletionUseValueEventsSemantic(
+  db: RecallDb,
+  input: {
+    session_id: string;
+    completion_text: string;
+    repo?: string | null;
+    memory_ids?: readonly string[];
+    source: ActivitySource;
+  },
+): Promise<CompletionUseResult> {
+  const completionText = input.completion_text.trim();
+  if (!completionText) return { recorded: 0, memory_ids: [] };
+
+  const explicitIds = new Set(input.memory_ids ?? []);
+  const candidates = injectedMemoriesForCompletionUse(db, input.session_id, input.memory_ids);
+  const semanticScores = await semanticScoresForMemories(db, completionText, candidates);
+  return recordCompletionUseForCandidates(db, input, candidates, (candidate) => {
+    if (explicitIds.has(candidate.id)) {
+      return {
+        matched: true,
+        reason: "agent explicitly reported using this injected memory",
+      };
+    }
+    if (completionUsesMemory(completionText, candidate.text)) {
+      return {
+        matched: true,
+        reason: "assistant completion overlapped an injected memory",
+      };
+    }
+    const semantic = semanticScores.get(candidate.id);
+    if (semantic != null && semantic >= semanticValueThreshold()) {
+      return {
+        matched: true,
+        reason: "assistant completion semantically matched an injected memory",
+        semantic_similarity: semantic,
+      };
+    }
+    return { matched: false };
+  });
+}
+
+function recordCompletionUseForCandidates(
+  db: RecallDb,
+  input: {
+    session_id: string;
+    completion_text: string;
+    repo?: string | null;
+    memory_ids?: readonly string[];
+    source: ActivitySource;
+  },
+  candidates: readonly MemoryItem[],
+  matcher: (candidate: MemoryItem) => { matched: boolean; reason?: string; semantic_similarity?: number },
+): CompletionUseResult {
+  const completionText = input.completion_text.trim();
+  const explicitIds = new Set(input.memory_ids ?? []);
   const selected = new Map<string, MemoryItem>();
+  const evidenceById = new Map<string, { reason?: string; semantic_similarity?: number }>();
   for (const candidate of candidates) {
-    if (explicitIds.has(candidate.id) || completionUsesMemory(completionText, candidate.text)) {
+    const match = matcher(candidate);
+    if (match.matched) {
       selected.set(candidate.id, candidate);
+      evidenceById.set(candidate.id, {
+        reason: match.reason,
+        semantic_similarity: match.semantic_similarity,
+      });
     }
   }
   if (selected.size === 0) return { recorded: 0, memory_ids: [] };
@@ -209,6 +294,7 @@ export function recordCompletionUseValueEvents(
   let recorded = 0;
   for (const memory of selected.values()) {
     if (alreadyRecorded.has(memory.id)) continue;
+    const evidence = evidenceById.get(memory.id);
     const injection = db.select()
       .from(memoryInjections)
       .where(and(
@@ -228,9 +314,10 @@ export function recordCompletionUseValueEvents(
         completion_excerpt: excerpt(completionText),
         explicit_memory_ids: input.memory_ids ? [...input.memory_ids] : undefined,
         matched_memory_text: memory.text,
-        reason: explicitIds.has(memory.id)
+        reason: evidence?.reason ?? (explicitIds.has(memory.id)
           ? "agent explicitly reported using this injected memory"
-          : "assistant completion overlapped an injected memory",
+          : "assistant completion overlapped an injected memory"),
+        semantic_similarity: evidence?.semantic_similarity,
       },
     });
     recorded += 1;
@@ -270,36 +357,102 @@ export function detectAndRecordRetrievalMisses(
       continue;
     }
 
-    let promoted = false;
-    if (match.memory.status === "candidate") {
-      promoted = promoteMemory(db, match.memory.id, "repeat_correction", {
-        type: "repeated_correction",
-        count: match.memory.repetition_count + 1,
-        sessions: [input.session_id],
-        timestamp: new Date().toISOString(),
-      });
+    out.push(recordRetrievalMissForMatch(db, {
+      ...input,
+      correction_text: correctionText,
+      injected_memory_ids: [...injected],
+      memory: match.memory,
+      semantic_similarity: undefined,
+    }));
+  }
+
+  return out;
+}
+
+function recordRetrievalMissForMatch(
+  db: RecallDb,
+  input: {
+    correction_text: string;
+    prompt_text: string;
+    session_id: string;
+    repo?: string | null;
+    path?: string;
+    source: ActivitySource;
+    injected_memory_ids: string[];
+    memory: MemoryItem;
+    semantic_similarity?: number;
+  },
+): RetrievalMissResult {
+  let promoted = false;
+  if (input.memory.status === "candidate") {
+    promoted = promoteMemory(db, input.memory.id, "repeat_correction", {
+      type: "repeated_correction",
+      count: input.memory.repetition_count + 1,
+      sessions: [input.session_id],
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  recordMemoryValueEvent(db, {
+    memory_id: input.memory.id,
+    session_id: input.session_id,
+    repo: input.memory.repo ?? input.repo ?? null,
+    event_type: "retrieval_miss",
+    source: input.source,
+    saved_tokens_estimate: 0,
+    evidence: {
+      correction_text: input.correction_text,
+      query_text: input.prompt_text,
+      prompt_path: input.path,
+      matched_memory_text: input.memory.text,
+      injected_memory_ids: input.injected_memory_ids,
+      semantic_similarity: input.semantic_similarity,
+      reason: promoted
+        ? "matching candidate was repeated but not injected; promoted for future turns"
+        : input.semantic_similarity != null
+          ? "matching memory semantically matched a repeated correction but was not injected"
+          : "matching memory existed but was not injected before the correction repeated",
+    },
+  });
+
+  return { recorded: true, memory_id: input.memory.id, promoted };
+}
+
+export async function detectAndRecordRetrievalMissesSemantic(
+  db: RecallDb,
+  input: {
+    correction_texts: readonly string[];
+    prompt_text: string;
+    session_id: string;
+    repo?: string | null;
+    path?: string;
+    source: ActivitySource;
+  },
+): Promise<RetrievalMissResult[]> {
+  if (input.correction_texts.length === 0) return [];
+
+  const injected = listInjectedMemoryIdsForSession(db, input.session_id);
+  const candidates = candidateMemoriesForMissDetection(db, input.repo ?? null);
+  const out: RetrievalMissResult[] = [];
+
+  for (const correctionText of input.correction_texts) {
+    const lexical = bestTextMatch(correctionText, candidates);
+    const semantic = await bestSemanticMatch(db, correctionText, candidates);
+    const match = betterMatch(lexical, semantic);
+    if (!match || match.score < 0.62) continue;
+    if (injected.has(match.memory.id)) {
+      out.push({ recorded: false, memory_id: match.memory.id, promoted: false });
+      continue;
     }
 
-    recordMemoryValueEvent(db, {
-      memory_id: match.memory.id,
-      session_id: input.session_id,
-      repo: match.memory.repo ?? input.repo ?? null,
-      event_type: "retrieval_miss",
-      source: input.source,
-      saved_tokens_estimate: 0,
-      evidence: {
-        correction_text: correctionText,
-        query_text: input.prompt_text,
-        prompt_path: input.path,
-        matched_memory_text: match.memory.text,
-        injected_memory_ids: [...injected],
-        reason: promoted
-          ? "matching candidate was repeated but not injected; promoted for future turns"
-          : "matching memory existed but was not injected before the correction repeated",
-      },
+    const result = recordRetrievalMissForMatch(db, {
+      ...input,
+      correction_text: correctionText,
+      injected_memory_ids: [...injected],
+      memory: match.memory,
+      semantic_similarity: match.semantic ? match.score : undefined,
     });
-
-    out.push({ recorded: true, memory_id: match.memory.id, promoted });
+    out.push(result);
   }
 
   return out;
@@ -438,6 +591,30 @@ function completionUsesMemory(completionText: string, memoryText: string): boole
   return match.score >= 0.62 || (match.intersection >= 3 && match.containment >= 0.6);
 }
 
+async function bestSemanticMatch(
+  db: RecallDb,
+  text: string,
+  memoriesToCheck: readonly MemoryItem[],
+): Promise<{ memory: MemoryItem; score: number; semantic: true } | null> {
+  const scores = await semanticScoresForMemories(db, text, memoriesToCheck);
+  let best: { memory: MemoryItem; score: number; semantic: true } | null = null;
+  for (const memory of memoriesToCheck) {
+    const score = scores.get(memory.id);
+    if (score == null) continue;
+    if (!best || score > best.score) best = { memory, score, semantic: true };
+  }
+  return best && best.score >= semanticValueThreshold() ? best : null;
+}
+
+function betterMatch(
+  lexical: { memory: MemoryItem; score: number } | null,
+  semantic: { memory: MemoryItem; score: number; semantic: true } | null,
+): { memory: MemoryItem; score: number; semantic?: true } | null {
+  if (!lexical) return semantic;
+  if (!semantic) return lexical;
+  return semantic.score > lexical.score ? semantic : lexical;
+}
+
 function bestTextMatch(
   text: string,
   memoriesToCheck: readonly MemoryItem[],
@@ -448,6 +625,35 @@ function bestTextMatch(
     if (!best || score > best.score) best = { memory, score };
   }
   return best;
+}
+
+async function semanticScoresForMemories(
+  db: RecallDb,
+  text: string,
+  memoriesToCheck: readonly MemoryItem[],
+): Promise<Map<string, number>> {
+  const config = loadEmbeddingConfigFromEnv();
+  if (!config || memoriesToCheck.length === 0) return new Map();
+
+  try {
+    const query = await generateEmbedding(text, config, "query");
+    const scores = new Map<string, number>();
+    for (const memory of memoriesToCheck) {
+      const stored = loadEmbedding(db, memory.id);
+      if (!stored || stored.length !== query.length) continue;
+      scores.set(memory.id, cosineSimilarity(query, stored));
+    }
+    return scores;
+  } catch {
+    return new Map();
+  }
+}
+
+function semanticValueThreshold(): number {
+  const raw = process.env.RECALL_VALUE_SEMANTIC_THRESHOLD;
+  if (!raw) return 0.78;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.78;
 }
 
 function excerpt(text: string): string {

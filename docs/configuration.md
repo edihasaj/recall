@@ -178,6 +178,7 @@ not have to repeat, not a vendor billing claim.
 |---|---|---|
 | `RECALL_QUALITY_SNAPSHOT_ENABLED` | `true` | Set to `false` to disable automatic snapshots. |
 | `RECALL_QUALITY_SNAPSHOT_INTERVAL_SECONDS` | `604800` | Minimum age before a new snapshot is recorded. Daemon checks hourly. |
+| `RECALL_VALUE_SEMANTIC_THRESHOLD` | `0.78` | Minimum cosine similarity for embedding-backed value matching. Used when Recall decides whether a repeated correction or assistant completion semantically matches an existing injected/candidate memory. Lexical matching still works when embeddings are disabled. |
 
 ### Observability
 

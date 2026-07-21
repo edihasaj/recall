@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,6 +9,8 @@ import { createHistorySnippet } from "../src/history/snippets.js";
 import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
 import { handleAssistantCompletionHook, handlePromptHook, handleToolHook } from "../src/cli/hook.js";
 import { computeMemoryValueReport, recordCompletionUseValueEvents } from "../src/models/memory-value.js";
+import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
+import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
 let dbCounter = 0;
 
@@ -18,6 +20,33 @@ function freshDb() {
   const dir = mkdtempSync(join(tmpdir(), "recall-memory-quality-p3-"));
   return initStandaloneDb(join(dir, `test-${dbCounter++}.db`));
 }
+
+function enableSemanticMock() {
+  delete process.env.RECALL_EMBEDDINGS_DISABLED;
+  process.env.RECALL_EMBEDDING_DIMS = "3";
+  process.env.RECALL_EMBEDDING_VERSION = "semantic-value-test";
+  installMockEmbeddingProvider((text) => {
+    const normalized = text.toLowerCase();
+    if (
+      normalized.includes("full gate") ||
+      normalized.includes("complete verification") ||
+      normalized.includes("verification suite")
+    ) {
+      return [1, 0, 0];
+    }
+    return [0, 1, 0];
+  });
+}
+
+afterEach(async () => {
+  await flushEmbeddingJobs();
+  vi.restoreAllMocks();
+  delete process.env.RECALL_EMBEDDING_DIMS;
+  delete process.env.RECALL_EMBEDDING_VERSION;
+  delete process.env.RECALL_VALUE_SEMANTIC_THRESHOLD;
+  process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+  process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+});
 
 describe("memory quality phase 3 outcome-after-injection", () => {
   it("tracks injected memories once per memory/session", () => {
@@ -216,6 +245,43 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     });
 
     expect(result).toMatchObject({ recorded: 1, memory_ids: [memoryId] });
+  });
+
+  it("infers completion-use evidence semantically when lexical overlap is weak", async () => {
+    const db = freshDb();
+    enableSemanticMock();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Always run the full gate before handoff.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    await flushEmbeddingJobs();
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-used-semantic",
+    });
+
+    await handleAssistantCompletionHook(
+      {
+        session_id: "sess-used-semantic",
+        repo: "edihasaj/recall",
+        text: "I executed the complete verification suite before delivery.",
+        agent: "codex",
+      },
+      { db, source: "cli" },
+    );
+
+    const rows = db.$client
+      .prepare("select event_type, evidence from memory_value_events where session_id = ? and memory_id = ? and event_type = 'used'")
+      .all("sess-used-semantic", memoryId) as Array<{ event_type: string; evidence: string }>;
+    expect(rows).toHaveLength(1);
+    const evidence = JSON.parse(rows[0].evidence);
+    expect(evidence.reason).toBe("assistant completion semantically matched an injected memory");
+    expect(evidence.semantic_similarity).toBeGreaterThanOrEqual(0.99);
   });
 
   it("does not infer completion-use from one shared low-information token", async () => {
@@ -428,6 +494,39 @@ describe("memory quality phase 3 outcome-after-injection", () => {
       .prepare("select event_type, memory_id from memory_value_events where session_id = ? and event_type = 'retrieval_miss'")
       .all("sess-miss-paraphrase") as Array<{ event_type: string; memory_id: string }>;
     expect(rows).toEqual([{ event_type: "retrieval_miss", memory_id: memoryId }]);
+  });
+
+  it("records a retrieval miss semantically when lexical overlap is weak", async () => {
+    const db = freshDb();
+    enableSemanticMock();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Always run the full gate before handoff.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    await flushEmbeddingJobs();
+
+    await handlePromptHook(
+      {
+        session_id: "sess-miss-semantic",
+        repo: "edihasaj/recall",
+        text: "always execute the complete verification suite before delivery",
+        agent: "codex",
+      },
+      { db, source: "cli" },
+    );
+
+    const rows = db.$client
+      .prepare("select event_type, memory_id, evidence from memory_value_events where session_id = ? and event_type = 'retrieval_miss'")
+      .all("sess-miss-semantic") as Array<{ event_type: string; memory_id: string; evidence: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].memory_id).toBe(memoryId);
+    const evidence = JSON.parse(rows[0].evidence);
+    expect(evidence.reason).toBe("matching memory semantically matched a repeated correction but was not injected");
+    expect(evidence.semantic_similarity).toBeGreaterThanOrEqual(0.99);
   });
 
   it("promotes a candidate memory when a missed matching correction repeats", async () => {
