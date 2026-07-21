@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.7 - 2026-07-21
+
+### Added
+
+- **Assistant completions now become usefulness evidence.** `recall hook assistant`, daemon assistant hooks, and UMP feedback can record when an injected memory was actually used, adding conservative saved-token value without changing memory confidence.
+- **Value telemetry can evaluate retrieval.** `recall eval value-retrieval` synthesizes retrieval eval cases from recent `retrieval_miss` and `used` events, then reports recall@k, MRR, override rate, and provider comparisons against Recall's hybrid retrieval.
+- **Quality snapshots now track value-recall trends.** Weekly daemon snapshots and `recall eval value-retrieval --snapshot` persist generated value-eval cases, hybrid pass count, recall@k, MRR, override rate, and skipped events so `recall maintenance quality --history` shows whether Recall is finding valuable memories more reliably over time.
+- **Memory-use matching is more forgiving.** Completion-use and retrieval-miss detection now share normalized lexical/paraphrase matching plus optional embedding-backed semantic matching, so small wording changes are less likely to hide repeated instructions.
+
 ## 0.8.6 - 2026-07-21
 
 ### Fixed
