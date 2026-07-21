@@ -142,11 +142,12 @@ The dispatcher handles all LLM-needing task kinds: `extract_rules_from_prompt` (
 ### Cleanup env vars
 
 The deterministic cleanup loop (no LLM required) merges exact-text duplicates,
-rejects voice/typing fragments captured as user_correction candidates, and
-auto-promotes high-signal corrections. Every action lands in
-`maintenance_cleanup_log` with before/after snapshots.
+rejects voice/typing fragments captured as user_correction candidates, rejects
+known benchmark/tooling artifacts, drops temp-path scoped memories, hides repos
+that only contain rejected rows, and auto-promotes high-signal corrections.
+Every action lands in `maintenance_cleanup_log` with before/after snapshots.
 
-Fragment-rejection signals: `too_short` (<20 chars), `too_long` (>300 chars), `bare_modal`, `trailing_question`, `trailing_double_dot`, `trailing_dash`, `dangling_connector`, `filler_prefix`, `embedded_question`, `no_verb`. The list is intentionally strict — under the regex-fallback path it's the only quality gate; under the LLM-primary path the LLM is the real judge and these signals just keep obvious garbage out of the candidate pool when the LLM is unavailable.
+Fragment-rejection signals: `too_short` (<20 chars), `too_long` (>300 chars), `bare_modal`, `trailing_question`, `trailing_double_dot`, `trailing_dash`, `dangling_connector`, `filler_prefix`, `vague_speech_fragment`, `workspace_only_runtime_rule`, `benchmark_artifact_rule`, `tool_embargo_task_rule`, `embedded_question`, `no_verb`. The list is intentionally strict — under the regex-fallback path it's the only quality gate; under the LLM-primary path the LLM is the real judge and these signals just keep obvious garbage out of the candidate pool when the LLM is unavailable.
 
 | Variable | Default | Effect |
 |---|---|---|

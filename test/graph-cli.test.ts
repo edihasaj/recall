@@ -8,13 +8,13 @@ import { createMemory } from "../src/models/memory.js";
 import { ingestMemoryHeuristic } from "../src/graph/ingest.js";
 import { syncMemoryFtsIndex } from "../src/vector/sqlite-fts.js";
 
-const tsxBin = resolve(process.cwd(), "node_modules/.bin/tsx");
+const tsxEntry = resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
 const cliEntry = resolve(process.cwd(), "src/cli.ts");
 
 let dataDir = "";
 
 function runCli(args: string[]) {
-  const r = spawnSync(tsxBin, [cliEntry, ...args], {
+  const r = spawnSync(process.execPath, [tsxEntry, cliEntry, ...args], {
     env: {
       ...process.env,
       RECALL_DATA_DIR: dataDir,

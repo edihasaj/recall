@@ -2266,9 +2266,9 @@ maintenanceCmd
 
 maintenanceCmd
   .command("cleanup")
-  .description("Run deterministic, LLM-free cleanup: exact-text dedupe, fragment rejection, repeat-correction promotion")
+  .description("Run deterministic, LLM-free cleanup for duplicate, low-quality, stale, and mis-scoped memories")
   .option("--apply", "Persist changes (default is dry-run)")
-  .option("--only <action>", "Restrict to one action: dedupe_exact_merge|reject_fragment_candidate|promote_repeat_correction")
+  .option("--only <action>", "Restrict to one action: dedupe_exact_merge|reject_fragment_candidate|promote_repeat_correction|suppress_unproductive_command|globalize_cross_repo|reject_test_fixture_repo|reject_invalid_scope")
   .option("--revert <run-id>", "Revert a previous cleanup run (id or 8-char prefix)")
   .option("--list", "List recent cleanup runs")
   .option("--json", "Emit the raw JSON report")

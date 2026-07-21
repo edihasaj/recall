@@ -6,6 +6,21 @@ app_dir="$root_dir/macos/RecallApp"
 runtime_dir="$app_dir/Generated/Runtime"
 derived_data="$root_dir/build/DerivedData"
 project_path="$app_dir/RecallApp.xcodeproj"
+node_bin="${RECALL_NODE_PATH:-}"
+
+if [[ -z "$node_bin" && -x "/Applications/Recall.app/Contents/Resources/Runtime/bin/node" ]]; then
+  node_bin="/Applications/Recall.app/Contents/Resources/Runtime/bin/node"
+fi
+if [[ -z "$node_bin" ]]; then
+  node_bin="$(command -v node)"
+fi
+
+node_major="$("$node_bin" -p "process.versions.node.split('.')[0]")"
+if [[ "$node_major" != "22" ]]; then
+  echo "Recall.app must embed Node 22; got $("$node_bin" -v) at $node_bin" >&2
+  echo "Set RECALL_NODE_PATH to a Node 22 binary or run nvm use." >&2
+  exit 1
+fi
 
 cd "$root_dir"
 rm -rf "$root_dir/dist"
@@ -14,7 +29,7 @@ npm run build
 rm -rf "$runtime_dir"
 mkdir -p "$runtime_dir/bin"
 
-cp "$(command -v node)" "$runtime_dir/bin/node"
+cp "$node_bin" "$runtime_dir/bin/node"
 chmod +x "$runtime_dir/bin/node"
 
 rsync -a "$root_dir/dist/" "$runtime_dir/dist/"
@@ -24,7 +39,7 @@ cp "$root_dir/package.json" "$runtime_dir/package.json"
 
 xcodegen generate --spec "$app_dir/project.yml"
 
-pkg_version="$(node -p "require('$root_dir/package.json').version")"
+pkg_version="$("$node_bin" -p "require('$root_dir/package.json').version")"
 build_number="${RECALL_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 
 xcodebuild \

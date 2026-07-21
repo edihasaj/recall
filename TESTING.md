@@ -4,6 +4,18 @@ All commands below assume:
 
 ```bash
 cd ~/Projects/recall
+nvm use
+```
+
+Use Node 22 for source tests. The macOS app embeds Node 22; running tests under
+a different shell Node can trip `better-sqlite3` native ABI errors until
+dependencies are reinstalled for that Node version.
+
+When rebuilding the macOS app from a shell using a different Node, pass the app
+runtime explicitly:
+
+```bash
+RECALL_NODE_PATH=/Applications/Recall.app/Contents/Resources/Runtime/bin/node npm run build:app
 ```
 
 Use `recall` directly if it is on your PATH.

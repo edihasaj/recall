@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
-import { createMemory, getMemory } from "../src/models/memory.js";
+import { createMemory, getMemory, listRepos } from "../src/models/memory.js";
 import {
   listCleanupRuns,
   planDedupeExact,
   planPromoteRepeats,
   planRejectFragments,
+  planRejectInvalidScopes,
   revertCleanupRun,
   runDeterministicCleanup,
 } from "../src/maintenance/cleanup.js";
@@ -158,6 +159,107 @@ describe("maintenance cleanup — rejectFragmentCandidates", () => {
       source: "config_parse", confidence: 0.9,
     });
     expect(planRejectFragments(db)).toHaveLength(0);
+  });
+
+  it("rejects active vague speech fragments observed in production", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Do not use or whatever but rules. Use this or do that then do this and stuff like that to show more power to it! instead.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.95,
+    });
+
+    const plan = planRejectFragments(db);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].memory_id).toBe(id);
+    expect(plan[0].reasons).toContain("vague_speech_fragment");
+
+    runDeterministicCleanup(db, { dryRun: false, only: "reject_fragment_candidate" });
+    expect(getMemory(db, id)?.status).toBe("rejected");
+  });
+
+  it("does not reject active memories for weak no_verb-only reasons", () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "Present the assistant as an eUnifier assistant and do not claim to be an external service.",
+      scope: "repo",
+      repo: "eunify",
+      source: "user_correction",
+      confidence: 0.95,
+    });
+
+    expect(planRejectFragments(db)).toHaveLength(0);
+  });
+
+  it("rejects workspace-only runtime guard spam", () => {
+    const db = freshDb();
+    for (const text of [
+      "Keep all edits inside the current workspace.",
+      "Keep all edits inside the workspace at /tmp/oktapod-openclaw-live-qa/task/work.",
+      "Keep all edits inside the specified workspace.",
+    ]) {
+      createMemory(db, {
+        type: "rule",
+        text,
+        scope: "global",
+        repo: null,
+        source: "user_correction",
+        confidence: 0.5,
+      });
+    }
+
+    const plan = planRejectFragments(db);
+    expect(plan).toHaveLength(3);
+    expect(plan.every((item) => item.reasons.includes("workspace_only_runtime_rule"))).toBe(true);
+  });
+
+  it("rejects old benchmark artifact instructions captured as memory", () => {
+    const db = freshDb();
+    for (const text of [
+      "Build every required file, run the analyzer, verify that data/agent-scorecard.json exists, and then stop.",
+      "Use the coding runtime for benchmark tasks.",
+      "Keep source labels Oktapod and OpenClaw intact in generated outputs.",
+      "Do not compare GitHub repositories and do not add Hermes.",
+    ]) {
+      createMemory(db, {
+        type: "rule",
+        text,
+        scope: "global",
+        repo: null,
+        source: "user_correction",
+        confidence: 0.5,
+      });
+    }
+
+    const plan = planRejectFragments(db);
+    expect(plan).toHaveLength(4);
+    expect(plan.every((item) => item.reasons.includes("benchmark_artifact_rule"))).toBe(true);
+  });
+
+  it("rejects task-local browser/devtools embargoes", () => {
+    const db = freshDb();
+    for (const text of [
+      "Do not open browser, screenshot, or devtools tools.",
+      "Do not open browser, screenshot, or devtools tools during the task.",
+      "Do not open browser, take screenshots, or use devtools tools during the task.",
+    ]) {
+      createMemory(db, {
+        type: "rule",
+        text,
+        scope: "global",
+        repo: null,
+        source: "user_correction",
+        confidence: 0.5,
+      });
+    }
+
+    const plan = planRejectFragments(db);
+    expect(plan).toHaveLength(3);
+    expect(plan.every((item) => item.reasons.includes("tool_embargo_task_rule"))).toBe(true);
   });
 });
 
@@ -552,5 +654,129 @@ describe("maintenance cleanup — memory_injections re-pointing", () => {
     const loserInj = db.select().from(memoryInjections)
       .where(eq(memoryInjections.memory_id, loserId)).all();
     expect(loserInj).toHaveLength(0);
+  });
+});
+
+describe("maintenance cleanup — test fixture repo hygiene", () => {
+  it("rejects accidental test fixture repos from the production memory set", () => {
+    const db = freshDb();
+    const fixture = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm not npm",
+      scope: "repo",
+      repo: "test/recall-codex-phase4-repo-Ab12Cd",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const real = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm not npm",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    const report = runDeterministicCleanup(db, { dryRun: false, only: "reject_test_fixture_repo" });
+    expect(report.counts.test_fixture_rejections).toBe(1);
+    expect(getMemory(db, fixture)?.status).toBe("rejected");
+    expect(getMemory(db, real)?.status).toBe("active");
+  });
+
+  it("hides repos that only contain rejected memories", () => {
+    const db = freshDb();
+    const fixture = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm not npm",
+      scope: "repo",
+      repo: "test/recall-codex-phase4-repo-Ab12Cd",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "Always use uv for Python",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    db.update(memories).set({ status: "rejected" }).where(eq(memories.id, fixture)).run();
+
+    expect(listRepos(db)).toEqual(["edihasaj/recall"]);
+  });
+});
+
+describe("maintenance cleanup — invalid scope hygiene", () => {
+  it("rejects user corrections anchored to temp paths or impossible path scopes", () => {
+    const db = freshDb();
+    const missingPath = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm not npm.",
+      scope: "path",
+      repo: null,
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const tempPath = createMemory(db, {
+      type: "rule",
+      text: "Always write deterministic output.",
+      scope: "path",
+      repo: null,
+      path_scope: "/tmp/oktapod-openclaw-live-qa/task/work/file.ts",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const tempRepoPath = createMemory(db, {
+      type: "rule",
+      text: "Always verify generated files exist.",
+      scope: "repo",
+      repo: null,
+      path_scope: "/tmp/oktapod-openclaw-live-qa/task/work",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const workspaceAlias = createMemory(db, {
+      type: "rule",
+      text: "Always keep app settings auditable.",
+      scope: "repo",
+      repo: "Projects",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const realGlobal = createMemory(db, {
+      type: "rule",
+      text: "Always use uv for Python projects.",
+      scope: "global",
+      repo: null,
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    const realRepo = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm not npm.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    const plan = planRejectInvalidScopes(db);
+    expect(plan.map((item) => item.memory_id).sort()).toEqual([
+      missingPath,
+      tempPath,
+      tempRepoPath,
+      workspaceAlias,
+    ].sort());
+
+    const report = runDeterministicCleanup(db, { dryRun: false, only: "reject_invalid_scope" });
+    expect(report.counts.invalid_scope_rejections).toBe(4);
+    expect(getMemory(db, missingPath)?.status).toBe("rejected");
+    expect(getMemory(db, tempPath)?.status).toBe("rejected");
+    expect(getMemory(db, tempRepoPath)?.status).toBe("rejected");
+    expect(getMemory(db, workspaceAlias)?.status).toBe("rejected");
+    expect(getMemory(db, realGlobal)?.status).toBe("active");
+    expect(getMemory(db, realRepo)?.status).toBe("active");
   });
 });

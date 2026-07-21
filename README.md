@@ -104,10 +104,16 @@ recall doctor
 ```bash
 git clone https://github.com/edihasaj/recall.git
 cd recall
+nvm use
 npm ci
 npm run build
 npm link
 ```
+
+Source development expects Node 22, matching the bundled app runtime. If tests
+fail with a `NODE_MODULE_VERSION` error from `better-sqlite3`, switch to Node
+22 and reinstall dependencies so the native module ABI matches the test
+runtime.
 
 ## Build macOS App From Source
 
@@ -116,6 +122,10 @@ Build the macOS app bundle:
 ```bash
 npm run build:app
 ```
+
+`scripts/build-app.sh` embeds Node 22. It prefers
+`RECALL_NODE_PATH=/path/to/node` when set, otherwise the Node runtime from the
+currently installed `/Applications/Recall.app`, then your shell `node`.
 
 Install it into `/Applications`:
 

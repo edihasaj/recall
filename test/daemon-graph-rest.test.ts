@@ -43,9 +43,9 @@ beforeAll(async () => {
   port = await getFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
   dataDir = mkdtempSync(join(tmpdir(), "recall-daemon-graph-"));
-  const tsxBin = resolve(process.cwd(), "node_modules/.bin/tsx");
+  const tsxEntry = resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
   const daemonEntry = resolve(process.cwd(), "src/daemon.ts");
-  daemon = spawn(tsxBin, [daemonEntry], {
+  daemon = spawn(process.execPath, [tsxEntry, daemonEntry], {
     env: {
       ...process.env,
       RECALL_PORT: String(port),

@@ -165,7 +165,9 @@ export function listMemories(
 
 export function listRepos(db: RecallDb): string[] {
   return [...new Set(
-    db.select({ repo: memories.repo }).from(memories).all()
+    db.select({ repo: memories.repo }).from(memories)
+      .where(sql`${memories.status} != 'rejected'`)
+      .all()
       .map((row) => row.repo)
       .filter((repo): repo is string => Boolean(repo)),
   )].sort();

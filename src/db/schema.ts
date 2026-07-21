@@ -506,6 +506,8 @@ export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
       "promote_repeat_correction",
       "suppress_unproductive_command",
       "globalize_cross_repo",
+      "reject_test_fixture_repo",
+      "reject_invalid_scope",
     ],
   }).notNull(),
   memory_id: text("memory_id").notNull(),
