@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.11 - 2026-07-21
+
+### Fixed
+
+- **Generic package-script memory cleanup.** Scanner intake and deterministic cleanup now reject generic config-derived scripts/tooling facts such as `build: ...`, `typecheck: ...`, `lint: ...`, `check: ...`, and `Linting/formatting: ...`, keeping them out of durable memory while preserving real package-manager choices.
+
 ## 0.8.10 - 2026-07-21
 
 ### Added
