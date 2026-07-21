@@ -71,4 +71,19 @@ describe("memory quality phase 1 schema", () => {
 
     expect(rows).toEqual([{ name: "memory_value_events" }]);
   });
+
+  it("adds value retrieval metrics to quality snapshots", () => {
+    const db = freshDb();
+    const rows = db.$client
+      .prepare("pragma table_info(quality_snapshots)")
+      .all() as Array<{ name: string }>;
+    const names = rows.map((row) => row.name);
+
+    expect(names).toContain("value_eval_cases");
+    expect(names).toContain("value_eval_hybrid_passed");
+    expect(names).toContain("value_eval_recall_at_k");
+    expect(names).toContain("value_eval_mrr");
+    expect(names).toContain("value_eval_override_rate");
+    expect(names).toContain("value_eval_skipped_events");
+  });
 });

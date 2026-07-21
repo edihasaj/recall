@@ -117,13 +117,29 @@ export interface QualitySnapshotRow {
   candidate_correction_count: number;
   history_injections_total: number;
   history_snippets_injected: number;
+  value_eval_cases: number;
+  value_eval_hybrid_passed: number;
+  value_eval_recall_at_k: number;
+  value_eval_mrr: number;
+  value_eval_override_rate: number;
+  value_eval_skipped_events: number;
   notes: string | null;
+}
+
+export interface ValueRetrievalSnapshotMetrics {
+  generated_cases: number;
+  skipped_events: number;
+  hybrid_passed: number;
+  recall_at_k: number;
+  mrr: number;
+  override_rate: number;
 }
 
 export function recordQualitySnapshot(
   db: RecallDb,
   report: QualityReport,
   notes?: string,
+  valueEval?: ValueRetrievalSnapshotMetrics,
 ): QualitySnapshotRow {
   const counts = report.injections.by_outcome;
   const ruleRow = db.select({ n: sql<number>`count(*)` }).from(memories)
@@ -150,6 +166,12 @@ export function recordQualitySnapshot(
     candidate_correction_count: candRow?.n ?? 0,
     history_injections_total: report.history_injections.total,
     history_snippets_injected: report.history_injections.unique_snippets,
+    value_eval_cases: valueEval?.generated_cases ?? 0,
+    value_eval_hybrid_passed: valueEval?.hybrid_passed ?? 0,
+    value_eval_recall_at_k: valueEval?.recall_at_k ?? 0,
+    value_eval_mrr: valueEval?.mrr ?? 0,
+    value_eval_override_rate: valueEval?.override_rate ?? 0,
+    value_eval_skipped_events: valueEval?.skipped_events ?? 0,
     notes: notes ?? null,
   };
 
@@ -177,6 +199,10 @@ export function diffQualitySnapshots(prev: QualitySnapshotRow, curr: QualitySnap
     candidate_delta: curr.candidate_correction_count - prev.candidate_correction_count,
     history_injections_delta: curr.history_injections_total - prev.history_injections_total,
     history_snippets_delta: curr.history_snippets_injected - prev.history_snippets_injected,
+    value_eval_cases_delta: curr.value_eval_cases - prev.value_eval_cases,
+    value_eval_recall_at_k_delta_pp: (curr.value_eval_recall_at_k - prev.value_eval_recall_at_k) * 100,
+    value_eval_mrr_delta: curr.value_eval_mrr - prev.value_eval_mrr,
+    value_eval_override_rate_delta_pp: (curr.value_eval_override_rate - prev.value_eval_override_rate) * 100,
   };
 }
 

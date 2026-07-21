@@ -10,9 +10,11 @@ import {
   formatValueRetrievalEvalReport,
   runRetrievalEval,
   runValueRetrievalEval,
+  summarizeValueRetrievalEval,
 } from "../src/eval/retrieval.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 import { recordMemoryValueEvent } from "../src/models/memory-value.js";
+import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
 
 let dbCounter = 0;
 
@@ -227,5 +229,48 @@ describe("retrieval eval runner", () => {
     expect(text).toContain("- nomic:");
     expect(text).toContain("- multilingual-e5:");
     expect(text).toContain("- bge-small-en-v1.5:");
+  });
+
+  it("persists value retrieval eval metrics into quality snapshots", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "command",
+      text: "Run pytest -q",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: memoryId,
+      session_id: "sess-value-snapshot",
+      repo: "test/repo",
+      event_type: "used",
+      source: "cli",
+      evidence: {
+        completion_excerpt: "Ran pytest -q.",
+        matched_memory_text: "Run pytest -q",
+      },
+    });
+
+    const evalReport = await runValueRetrievalEval(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+    });
+    const qualityReport = computeQualityReport(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+    });
+    const snapshot = recordQualitySnapshot(
+      db,
+      qualityReport,
+      "value-eval",
+      summarizeValueRetrievalEval(evalReport),
+    );
+
+    expect(snapshot.value_eval_cases).toBe(1);
+    expect(snapshot.value_eval_hybrid_passed).toBe(1);
+    expect(snapshot.value_eval_recall_at_k).toBe(1);
+    expect(snapshot.value_eval_mrr).toBe(1);
+    expect(snapshot.value_eval_override_rate).toBe(0);
+    expect(snapshot.value_eval_skipped_events).toBe(0);
   });
 });

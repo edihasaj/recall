@@ -29,6 +29,7 @@ import {
   loadRetrievalEvalFile,
   runRetrievalEval,
   runValueRetrievalEval,
+  summarizeValueRetrievalEval,
 } from "./eval/retrieval.js";
 import {
   bootstrapEmbeddings,
@@ -1190,6 +1191,8 @@ evalCmd
   .option("--since <iso>", "Window start (default: last 14 days)")
   .option("--limit <n>", "Max value events to inspect", "50")
   .option("-p, --provider <providers>", "Providers to compare (comma-separated: current,nomic,multilingual-e5,bge-small-en-v1.5)", "current")
+  .option("--snapshot", "Persist this value retrieval eval into quality snapshot history")
+  .option("--note <text>", "Optional note attached to a snapshot")
   .option("--json", "Emit raw JSON report")
   .action(async (opts) => {
     const db = initDb();
@@ -1203,13 +1206,28 @@ evalCmd
       limit: parseInt(opts.limit, 10),
       providers,
     });
+    let snapshot = null;
+    if (opts.snapshot) {
+      const { computeQualityReport, recordQualitySnapshot } = await import("./maintenance/quality.js");
+      const qualityReport = computeQualityReport(db, { sinceIso: report.since });
+      snapshot = recordQualitySnapshot(
+        db,
+        qualityReport,
+        opts.note ?? "value-retrieval",
+        summarizeValueRetrievalEval(report),
+      );
+    }
 
     if (opts.json) {
-      console.log(JSON.stringify(report, null, 2));
+      console.log(JSON.stringify(snapshot ? { snapshot, report } : report, null, 2));
       return;
     }
 
     console.log(formatValueRetrievalEvalReport(report));
+    if (snapshot) {
+      console.log("");
+      console.log(`Recorded quality snapshot ${snapshot.id.slice(0, 8)} value_recall=${(snapshot.value_eval_recall_at_k * 100).toFixed(1)}% at ${snapshot.taken_at.slice(0, 19)}`);
+    }
   });
 
 // --- Phase 1: embeddings ---
@@ -2395,6 +2413,7 @@ maintenanceCmd
   .description("Show injection outcome distribution and followed-rate over a window")
   .option("--since <iso>", "Window start (default: last 14 days)")
   .option("--snapshot", "Persist this report as a baseline for later comparison")
+  .option("--value-eval", "Include telemetry-derived retrieval eval metrics when snapshotting")
   .option("--note <text>", "Optional note attached to a snapshot")
   .option("--history", "List recent snapshots and the diff against the latest one")
   .option("--json", "Emit raw JSON")
@@ -2420,7 +2439,8 @@ maintenanceCmd
       }
       for (const s of snaps) {
         const rate = s.followed_rate_resolved != null ? `${(s.followed_rate_resolved * 100).toFixed(1)}%` : "n/a";
-        console.log(`${s.taken_at.slice(0, 19)}  followed=${rate}  resolved=${s.injections_resolved}  history=${s.history_injections_total}  rules=${s.active_rule_count}  cand=${s.candidate_correction_count}${s.notes ? `  (${s.notes})` : ""}`);
+        const valueRecall = `${(s.value_eval_recall_at_k * 100).toFixed(1)}%`;
+        console.log(`${s.taken_at.slice(0, 19)}  followed=${rate}  value_recall=${valueRecall}  value_cases=${s.value_eval_cases}  resolved=${s.injections_resolved}  history=${s.history_injections_total}  rules=${s.active_rule_count}  cand=${s.candidate_correction_count}${s.notes ? `  (${s.notes})` : ""}`);
       }
       if (snaps.length >= 2) {
         const diff = diffQualitySnapshots(snaps[snaps.length - 1], snaps[0]);
@@ -2434,6 +2454,10 @@ maintenanceCmd
         console.log(`  candidates:      ${diff.candidate_delta >= 0 ? "+" : ""}${diff.candidate_delta}`);
         console.log(`  history injects: ${diff.history_injections_delta >= 0 ? "+" : ""}${diff.history_injections_delta}`);
         console.log(`  history snippets:${diff.history_snippets_delta >= 0 ? "+" : ""}${diff.history_snippets_delta}`);
+        console.log(`  value cases:     ${diff.value_eval_cases_delta >= 0 ? "+" : ""}${diff.value_eval_cases_delta}`);
+        console.log(`  value recall:    ${diff.value_eval_recall_at_k_delta_pp >= 0 ? "+" : ""}${diff.value_eval_recall_at_k_delta_pp.toFixed(1)}pp`);
+        console.log(`  value mrr:       ${diff.value_eval_mrr_delta >= 0 ? "+" : ""}${diff.value_eval_mrr_delta.toFixed(3)}`);
+        console.log(`  value override:  ${diff.value_eval_override_rate_delta_pp >= 0 ? "+" : ""}${diff.value_eval_override_rate_delta_pp.toFixed(1)}pp`);
       }
       return;
     }
@@ -2441,7 +2465,12 @@ maintenanceCmd
     const report = computeQualityReport(db, { sinceIso: opts.since });
 
     if (opts.snapshot) {
-      const row = recordQualitySnapshot(db, report, opts.note);
+      const valueEval = opts.valueEval
+        ? summarizeValueRetrievalEval(await runValueRetrievalEval(db, {
+          sinceIso: report.window_start,
+        }))
+        : undefined;
+      const row = recordQualitySnapshot(db, report, opts.note, valueEval);
       if (opts.json) {
         console.log(JSON.stringify({ snapshot: row, report }, null, 2));
         return;

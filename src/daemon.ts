@@ -62,6 +62,7 @@ import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/lo
 import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
 import { runDeterministicCleanup } from "./maintenance/cleanup.js";
 import { computeQualityReport, listQualitySnapshots, recordQualitySnapshot } from "./maintenance/quality.js";
+import { runValueRetrievalEval, summarizeValueRetrievalEval } from "./eval/retrieval.js";
 import { hasProviderConfigured } from "./credentials/keychain.js";
 import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
@@ -282,7 +283,7 @@ function scheduleQualitySnapshotLoop() {
 
   const intervalMs = Math.max(60, qualitySnapshotConfig.intervalSeconds) * 1000;
 
-  const run = () => {
+  const run = async () => {
     if (qualitySnapshotRunning) return;
     qualitySnapshotRunning = true;
     try {
@@ -293,9 +294,10 @@ function scheduleQualitySnapshotLoop() {
         if (ageMs < intervalMs) return;
       }
       const report = computeQualityReport(db);
-      const row = recordQualitySnapshot(db, report, "auto");
+      const valueEval = summarizeValueRetrievalEval(await runValueRetrievalEval(db));
+      const row = recordQualitySnapshot(db, report, "auto", valueEval);
       console.log(
-        `[recall] quality snapshot ${row.id.slice(0, 8)} followed=${row.followed_rate_resolved != null ? (row.followed_rate_resolved * 100).toFixed(1) + "%" : "n/a"} resolved=${row.injections_resolved} history=${row.history_injections_total} rules=${row.active_rule_count} cand=${row.candidate_correction_count}`,
+        `[recall] quality snapshot ${row.id.slice(0, 8)} followed=${row.followed_rate_resolved != null ? (row.followed_rate_resolved * 100).toFixed(1) + "%" : "n/a"} value_recall=${(row.value_eval_recall_at_k * 100).toFixed(1)}% value_cases=${row.value_eval_cases} resolved=${row.injections_resolved} history=${row.history_injections_total} rules=${row.active_rule_count} cand=${row.candidate_correction_count}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -305,9 +307,9 @@ function scheduleQualitySnapshotLoop() {
     }
   };
 
-  setTimeout(run, 60_000).unref?.();
+  setTimeout(() => void run(), 60_000).unref?.();
   // Re-check hourly; the age gate keeps actual writes weekly.
-  const timer = setInterval(run, 3600 * 1000);
+  const timer = setInterval(() => void run(), 3600 * 1000);
   timer.unref?.();
 }
 

@@ -178,6 +178,9 @@ Inspect quality / health / injection pack:
 ```bash
 recall quality -r owner/repo
 recall health -r owner/repo
+recall maintenance quality
+recall eval value-retrieval --snapshot
+recall maintenance quality --history
 recall compile -r owner/repo
 recall compile -r owner/repo --query "pytest -q" --include-candidates
 ```

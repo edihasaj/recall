@@ -449,6 +449,12 @@ export const qualitySnapshots = sqliteTable("quality_snapshots", {
   candidate_correction_count: integer("candidate_correction_count").notNull(),
   history_injections_total: integer("history_injections_total").notNull().default(0),
   history_snippets_injected: integer("history_snippets_injected").notNull().default(0),
+  value_eval_cases: integer("value_eval_cases").notNull().default(0),
+  value_eval_hybrid_passed: integer("value_eval_hybrid_passed").notNull().default(0),
+  value_eval_recall_at_k: real("value_eval_recall_at_k").notNull().default(0),
+  value_eval_mrr: real("value_eval_mrr").notNull().default(0),
+  value_eval_override_rate: real("value_eval_override_rate").notNull().default(0),
+  value_eval_skipped_events: integer("value_eval_skipped_events").notNull().default(0),
   notes: text("notes"),
 }, (table) => ([
   index("idx_quality_snapshots_taken").on(table.taken_at),

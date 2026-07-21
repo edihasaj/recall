@@ -71,6 +71,13 @@
       "when": 1784655320000,
       "tag": "0009_memory_value_events",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784658920000,
+      "tag": "0010_value_retrieval_snapshots",
+      "breakpoints": true
     }
   ]
 }

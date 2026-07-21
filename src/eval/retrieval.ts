@@ -66,6 +66,15 @@ export interface ValueRetrievalEvalReport {
   retrieval: RetrievalEvalReport;
 }
 
+export interface ValueRetrievalEvalMetrics {
+  generated_cases: number;
+  skipped_events: number;
+  hybrid_passed: number;
+  recall_at_k: number;
+  mrr: number;
+  override_rate: number;
+}
+
 export interface RetrievalEvalProviderMetrics {
   recall_at_k: number;
   mrr: number;
@@ -252,6 +261,18 @@ export async function runValueRetrievalEval(
     skipped_events: skippedEvents,
     source_events: sourceEvents,
     retrieval,
+  };
+}
+
+export function summarizeValueRetrievalEval(report: ValueRetrievalEvalReport): ValueRetrievalEvalMetrics {
+  const primary = report.retrieval.provider_reports[0];
+  return {
+    generated_cases: report.generated_cases,
+    skipped_events: report.skipped_events,
+    hybrid_passed: primary?.summary.hybrid_passed ?? 0,
+    recall_at_k: primary?.metrics.recall_at_k ?? 0,
+    mrr: primary?.metrics.mrr ?? 0,
+    override_rate: primary?.metrics.override_rate ?? 0,
   };
 }
 

@@ -163,8 +163,11 @@ Run on demand: `recall maintenance cleanup` (dry-run) or `recall maintenance cle
 ### Quality snapshot env vars
 
 The daemon records a `quality_snapshots` row weekly so trends in injection
-followed-rate, active-rule count, and candidate backlog become visible via
-`recall maintenance quality --history` over time.
+followed-rate, active-rule count, candidate backlog, and telemetry-derived
+retrieval quality become visible via `recall maintenance quality --history`
+over time. The retrieval metric is built from recent `retrieval_miss` and
+`used` value events: Recall turns those events back into eval cases and checks
+whether hybrid retrieval finds the same valuable memory again.
 
 `recall maintenance quality` also reports the value ledger for the same window:
 injected memory count, estimated injection tokens, estimated tokens saved when
@@ -190,6 +193,8 @@ recall maintenance stats                       # task backlog counts
 recall maintenance list                        # pending tasks
 recall maintenance quality                     # injection outcomes + value ledger
 recall eval value-retrieval                    # retrieval eval from recent misses/used completions
+recall eval value-retrieval --snapshot         # persist eval metrics into quality history
+recall maintenance quality --history           # followed-rate + value-recall trends
 ```
 
 Every LLM call the dispatcher makes lands in the `llm_usage` table with provider, model, task kind, tokens, cost estimate, duration, and ok/error. No row is written when the dispatcher has nothing to run or no API key is configured.
