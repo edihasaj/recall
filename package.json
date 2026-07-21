@@ -1,6 +1,6 @@
 {
   "name": "@edihasaj/recall",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
   "homepage": "https://recallmemory.dev/",

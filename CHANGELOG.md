@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.6 - 2026-07-21
+
+### Fixed
+
+- **Older running daemons no longer downgrade newer DB metadata.** `initDb()` now migrates only when `PRAGMA user_version` is below the binary's target version, so an older still-running daemon cannot reopen a newer schema and set the version pragma backwards while the table layout remains new.
+
 ## 0.8.5 - 2026-07-21
 
 ### Added
