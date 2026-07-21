@@ -2489,6 +2489,29 @@ maintenanceCmd
   });
 
 maintenanceCmd
+  .command("value-backfill")
+  .description("Backfill memory value events from historical injection outcomes")
+  .option("--since <iso>", "Only backfill injections at or after this timestamp")
+  .option("--apply", "Persist changes (default is dry-run)")
+  .option("--json", "Emit raw JSON report")
+  .action(async (opts) => {
+    const {
+      backfillMemoryValueEvents,
+      formatMemoryValueBackfillReport,
+    } = await import("./models/memory-value.js");
+    const db = initDb();
+    const report = backfillMemoryValueEvents(db, {
+      sinceIso: opts.since,
+      dryRun: !opts.apply,
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    console.log(formatMemoryValueBackfillReport(report));
+  });
+
+maintenanceCmd
   .command("usage")
   .description("Summarize LLM API usage (tokens, cost) across recent maintenance runs")
   .option("--since <iso>", "Window start (default: last 30 days)")

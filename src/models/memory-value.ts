@@ -44,6 +44,7 @@ export interface RecordMemoryValueEventInput {
   injected_tokens_estimate?: number;
   saved_tokens_estimate?: number;
   evidence?: MemoryValueEvidence;
+  created_at?: string;
 }
 
 export function estimateTokens(text: string | null | undefined): number {
@@ -70,10 +71,131 @@ export function recordMemoryValueEvent(
       injected_tokens_estimate: Math.max(0, Math.round(input.injected_tokens_estimate ?? 0)),
       saved_tokens_estimate: Math.max(0, Math.round(input.saved_tokens_estimate ?? 0)),
       evidence: (input.evidence ?? {}) as any,
-      created_at: new Date().toISOString(),
+      created_at: input.created_at ?? new Date().toISOString(),
     })
     .run();
   return id;
+}
+
+export interface MemoryValueBackfillReport {
+  scanned_injections: number;
+  inserted_injected: number;
+  inserted_outcomes: number;
+  skipped_existing: number;
+  dry_run: boolean;
+}
+
+export function backfillMemoryValueEvents(
+  db: RecallDb,
+  opts: { sinceIso?: string; dryRun?: boolean } = {},
+): MemoryValueBackfillReport {
+  const rows = db.select({
+    id: memoryInjections.id,
+    memory_id: memoryInjections.memory_id,
+    session_id: memoryInjections.session_id,
+    repo: memoryInjections.repo,
+    injected_at: memoryInjections.injected_at,
+    outcome: memoryInjections.outcome,
+    outcome_at: memoryInjections.outcome_at,
+    text: memories.text,
+  })
+    .from(memoryInjections)
+    .leftJoin(memories, eq(memoryInjections.memory_id, memories.id))
+    .where(opts.sinceIso ? gte(memoryInjections.injected_at, opts.sinceIso) : undefined)
+    .all();
+
+  const existingInjected = new Set(
+    db.select({ injection_id: memoryValueEvents.injection_id })
+      .from(memoryValueEvents)
+      .where(eq(memoryValueEvents.event_type, "injected"))
+      .all()
+      .map((row) => row.injection_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  const existingOutcomes = new Set(
+    db.select({
+      injection_id: memoryValueEvents.injection_id,
+      event_type: memoryValueEvents.event_type,
+    })
+      .from(memoryValueEvents)
+      .where(inArray(memoryValueEvents.event_type, ["followed", "overridden", "ignored", "contradicted"]))
+      .all()
+      .filter((row) => row.injection_id)
+      .map((row) => `${row.injection_id}:${row.event_type}`),
+  );
+
+  const report: MemoryValueBackfillReport = {
+    scanned_injections: rows.length,
+    inserted_injected: 0,
+    inserted_outcomes: 0,
+    skipped_existing: 0,
+    dry_run: opts.dryRun !== false,
+  };
+
+  for (const row of rows) {
+    if (existingInjected.has(row.id)) {
+      report.skipped_existing += 1;
+    } else {
+      report.inserted_injected += 1;
+      if (!report.dry_run) {
+        recordMemoryValueEvent(db, {
+          memory_id: row.memory_id,
+          injection_id: row.id,
+          session_id: row.session_id,
+          repo: row.repo,
+          event_type: "injected",
+          source: "system",
+          injected_tokens_estimate: estimateTokens(row.text),
+          evidence: {
+            matched_memory_text: row.text ?? undefined,
+            reason: "backfilled from memory_injections",
+          },
+          created_at: row.injected_at,
+        });
+      }
+    }
+
+    if (!row.outcome) continue;
+    const outcomeKey = `${row.id}:${row.outcome}`;
+    if (existingOutcomes.has(outcomeKey)) {
+      report.skipped_existing += 1;
+      continue;
+    }
+
+    report.inserted_outcomes += 1;
+    if (!report.dry_run) {
+      recordMemoryValueEvent(db, {
+        memory_id: row.memory_id,
+        injection_id: row.id,
+        session_id: row.session_id,
+        repo: row.repo,
+        event_type: row.outcome,
+        source: "system",
+        saved_tokens_estimate: row.outcome === "followed" ? estimateTokens(row.text) : 0,
+        evidence: {
+          matched_memory_text: row.text ?? undefined,
+          reason: "backfilled from memory_injections outcome",
+        },
+        created_at: row.outcome_at ?? row.injected_at,
+      });
+    }
+  }
+
+  return report;
+}
+
+export function formatMemoryValueBackfillReport(report: MemoryValueBackfillReport): string {
+  const lines = [
+    "# Memory Value Backfill",
+    "",
+    `Mode:              ${report.dry_run ? "dry-run" : "applied"}`,
+    `Scanned injects:   ${report.scanned_injections}`,
+    `Inserted injected: ${report.inserted_injected}`,
+    `Inserted outcomes: ${report.inserted_outcomes}`,
+    `Skipped existing:  ${report.skipped_existing}`,
+  ];
+  return lines.join("\n");
 }
 
 export function recordInjectionValueEvents(

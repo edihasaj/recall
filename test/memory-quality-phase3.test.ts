@@ -8,7 +8,12 @@ import { compileContext } from "../src/compiler/context.js";
 import { createHistorySnippet } from "../src/history/snippets.js";
 import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
 import { handleAssistantCompletionHook, handlePromptHook, handleToolHook } from "../src/cli/hook.js";
-import { computeMemoryValueReport, recordCompletionUseValueEvents } from "../src/models/memory-value.js";
+import {
+  backfillMemoryValueEvents,
+  computeMemoryValueReport,
+  recordCompletionUseValueEvents,
+} from "../src/models/memory-value.js";
+import { recordMemoryInjections, resolveMemoryInjectionOutcome } from "../src/models/memory-injections.js";
 import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
@@ -219,6 +224,52 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(report.used).toBe(1);
     expect(report.saved_tokens_estimate).toBeGreaterThan(0);
     expect(report.top_savers[0]).toMatchObject({ memory_id: memoryId, used: 1, followed: 0 });
+  });
+
+  it("backfills value events from historical injection outcomes idempotently", () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    recordMemoryInjections(db, {
+      memory_ids: [memoryId],
+      session_id: "sess-backfill",
+      repo: "edihasaj/recall",
+    });
+    resolveMemoryInjectionOutcome(db, memoryId, "sess-backfill", "followed");
+    db.$client.prepare("delete from memory_value_events").run();
+
+    const dryRun = backfillMemoryValueEvents(db);
+    expect(dryRun).toMatchObject({
+      scanned_injections: 1,
+      inserted_injected: 1,
+      inserted_outcomes: 1,
+      skipped_existing: 0,
+      dry_run: true,
+    });
+    expect(db.$client.prepare("select count(*) as n from memory_value_events").get()).toEqual({ n: 0 });
+
+    const applied = backfillMemoryValueEvents(db, { dryRun: false });
+    expect(applied.inserted_injected).toBe(1);
+    expect(applied.inserted_outcomes).toBe(1);
+
+    const report = computeMemoryValueReport(db, { sinceIso: "1970-01-01T00:00:00.000Z" });
+    expect(report.events_total).toBe(2);
+    expect(report.injections).toBe(1);
+    expect(report.outcomes.followed).toBe(1);
+    expect(report.saved_tokens_estimate).toBeGreaterThan(0);
+    expect(report.injected_tokens_estimate).toBeGreaterThan(0);
+
+    const second = backfillMemoryValueEvents(db, { dryRun: false });
+    expect(second.inserted_injected).toBe(0);
+    expect(second.inserted_outcomes).toBe(0);
+    expect(second.skipped_existing).toBe(2);
   });
 
   it("infers completion-use evidence from paraphrased assistant text", async () => {

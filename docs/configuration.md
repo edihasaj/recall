@@ -192,6 +192,7 @@ recall maintenance usage --json                # machine-readable
 recall maintenance stats                       # task backlog counts
 recall maintenance list                        # pending tasks
 recall maintenance quality                     # injection outcomes + value ledger
+recall maintenance value-backfill --apply      # derive value rows from old injection outcomes
 recall eval value-retrieval                    # retrieval eval from recent misses/used completions
 recall eval value-retrieval --snapshot         # persist eval metrics into quality history
 recall maintenance quality --history           # followed-rate + value-recall trends
@@ -205,6 +206,11 @@ memory outcome lands in
 session, and repo when available. `ump.feedback` is wired into the same path, so
 UMP clients can report `followed | overridden | ignored | contradicted` and
 still improve Recall's rankings and value report.
+
+If you upgraded from a version before the value ledger existed, run
+`recall maintenance value-backfill --apply` once. It is idempotent and only
+derives `injected` / outcome value rows from existing `memory_injections`
+timestamps; it does not invent completion-use or retrieval-miss events.
 
 Agents that can see their own assistant output can report direct usefulness
 evidence without changing memory confidence:
