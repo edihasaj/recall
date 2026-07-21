@@ -98,7 +98,7 @@ export function createStandaloneDb(dbPath: string): { db: RecallDb; sqlite: Data
 // current the init path must stay read-only.
 function migrateIfNeeded(db: RecallDb) {
   const current = Number(db.$client.pragma("user_version", { simple: true }) ?? 0);
-  if (current === RECALL_DB_USER_VERSION) return;
+  if (current >= RECALL_DB_USER_VERSION) return;
   migrate(db, { migrationsFolder: getMigrationsPath() });
   setDbUserVersion(db.$client);
 }

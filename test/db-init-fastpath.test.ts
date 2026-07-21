@@ -47,4 +47,20 @@ describe("initDb fast path", () => {
       blocker.close();
     }
   });
+
+  it("does not downgrade user_version when an older binary opens a newer DB", () => {
+    process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+    const dir = mkdtempSync(join(tmpdir(), "recall-fastpath-newer-"));
+    const path = join(dir, "test.db");
+
+    const first = initStandaloneDb(path);
+    first.$client.pragma(`user_version = ${RECALL_DB_USER_VERSION + 1}`);
+    first.$client.close();
+
+    const reopened = initStandaloneDb(path);
+    expect(
+      Number(reopened.$client.pragma("user_version", { simple: true })),
+    ).toBe(RECALL_DB_USER_VERSION + 1);
+    reopened.$client.close();
+  });
 });
