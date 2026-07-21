@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.10 - 2026-07-21
+
+### Added
+
+- **Automatic completion-use value inference.** Session-end hooks can now record `used` value events from the last assistant message when the agent provides it, so Recall can learn which injected memories actually influenced completions without manual reporting.
+
+### Fixed
+
+- **Current top-saver quality reporting.** `recall maintenance quality` no longer lists rejected memories as top savers, so historical cleanup artifacts do not pollute the current value signal.
+
 ## 0.8.9 - 2026-07-21
 
 ### Added
