@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.5 - 2026-07-21
+
+### Added
+
+- **Recall now tracks memory value.** New `memory_value_events` telemetry records injected memories, followed/overridden/ignored/contradicted outcomes, retrieval misses, conservative injected-token cost, conservative saved-token estimates, and top saver memories in `recall maintenance quality`.
+- **Repeated corrections can expose retrieval misses.** When a prompt repeats a correction that matches an existing active or candidate memory that was not injected, Recall now records a `retrieval_miss`; matching candidates are promoted so the same instruction is more likely to appear next time.
+- **UMP feedback feeds Recall's native learning loop.** `ump.feedback` now writes through the same feedback/value path as native MCP and hook outcomes, so UMP clients can improve rankings and value reporting.
+
+### Fixed
+
+- **`recall compile --session` now persists session-scoped injection evidence.** The CLI was recording a compile activity event with the requested session but not passing that session into the compiler, so `memory_injections` and value rows were skipped.
+
 ## 0.8.4 - 2026-07-21
 
 ### Fixed
