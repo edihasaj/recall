@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.4 - 2026-07-21
+
+### Fixed
+
+- **Corpus cleanup is stricter without becoming broad.** Deterministic cleanup now rejects explicit Recall e2e smoke-test artifacts while leaving legitimate end-to-end verification rules alone, and reports those rejects separately.
+- **Maintenance backlog stops surfacing dead work.** The non-LLM maintenance loop now abandons open tasks tied to invalid repo scopes (`Projects`, temp paths, test fixture repos) or memory targets that have already been rejected or disappeared.
+- **Hook integration tests no longer write into the live Recall daemon.** In-process hook calls with an injected test DB now execute directly unless daemon transport is explicitly requested, preventing test fixture repo scans from leaking into the production memory store.
+
 ## 0.8.3 - 2026-07-07
 
 ### Changed

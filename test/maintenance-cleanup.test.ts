@@ -496,6 +496,9 @@ describe("capture-time fragment filter", () => {
     expect(qualityReasons("Never commit secrets to the repo")).toHaveLength(0);
     expect(qualityReasons("Run tests for this PR before merging")).toHaveLength(0);
     expect(qualityReasons("Do not set securityContext.privileged=true")).toHaveLength(0);
+    expect(qualityReasons(
+      "Treat production and application hosts as dedicated to their own apps only; if a proxy or clean-egress path is needed, propose dedicated infrastructure and get approval first.",
+    )).toHaveLength(0);
   });
 });
 

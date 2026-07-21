@@ -427,6 +427,7 @@ const VERB_HINTS = [
   "load", "save", "ignore", "accept", "reject", "update", "create",
   "delete", "rename", "move", "copy", "validate", "verify", "check",
   "follow", "read", "write", "open", "close", "send", "receive",
+  "treat", "propose",
   "configure", "enable", "disable",
 ];
 
