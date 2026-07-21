@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.8 - 2026-07-21
+
+### Fixed
+
+- **Hybrid retrieval now recovers when FTS is too strict.** Query-time compilation falls back to Recall's normalized lexical matcher when neither FTS nor vector search returns a clearly matching memory, so paraphrases like "Ran pytest before handing off" can still retrieve a stored "always run pytest before handoff" rule. The value-retrieval eval now pins this regression.
+
 ## 0.8.7 - 2026-07-21
 
 ### Added
