@@ -38,9 +38,9 @@ jobs:
       matrix:
         include:
           # macOS
-          - { os: darwin,  arch: x64,   runner: macos-13,           node: 20 }
-          - { os: darwin,  arch: x64,   runner: macos-13,           node: 22 }
-          - { os: darwin,  arch: x64,   runner: macos-13,           node: 24 }
+          - { os: darwin,  arch: x64,   runner: macos-15-intel,     node: 20 }
+          - { os: darwin,  arch: x64,   runner: macos-15-intel,     node: 22 }
+          - { os: darwin,  arch: x64,   runner: macos-15-intel,     node: 24 }
           - { os: darwin,  arch: arm64, runner: macos-14,           node: 20 }
           - { os: darwin,  arch: arm64, runner: macos-14,           node: 22 }
           - { os: darwin,  arch: arm64, runner: macos-14,           node: 24 }
