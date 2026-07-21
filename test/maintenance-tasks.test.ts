@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { and, eq } from "drizzle-orm";
 import { initStandaloneDb } from "../src/db/client.js";
-import { historySnippets, memoryMaintenanceTasks } from "../src/db/schema.js";
+import { historySnippets, memories, memoryMaintenanceTasks } from "../src/db/schema.js";
 import { createMemory } from "../src/models/memory.js";
 import {
   DEFAULT_ENQUEUE_CONFIG,
+  abandonInvalidOpenTasks,
   abandonOverAttemptTasks,
   applyBacklogCaps,
   enqueueMaintenanceTasks,
@@ -205,6 +206,51 @@ describe("tier-2 maintenance tasks — phase 1", () => {
       .where(eq(memoryMaintenanceTasks.id, id)).get()!;
     expect(row.status).toBe("abandoned");
     expect(row.failure_reason).toBe("max_attempts_exceeded");
+  });
+
+  it("abandonInvalidOpenTasks abandons invalid repo aliases and dead memory targets", () => {
+    const db = freshDb();
+    const rejectedMemory = createMemory(db, {
+      type: "rule",
+      text: "always use pnpm",
+      scope: "repo",
+      path_scope: null,
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    db.update(memories)
+      .set({ status: "rejected" })
+      .where(eq(memories.id, rejectedMemory)).run();
+
+    const aliasTask = insertTaskIdempotent(db, {
+      kind: "summarize_history",
+      target: "snip-projects",
+      repo: "Projects",
+      payload: { snippet_id: "snip-projects" },
+    })!;
+    const deadTargetTask = insertTaskIdempotent(db, {
+      kind: "refine_candidate",
+      target: rejectedMemory,
+      repo: "test/repo",
+      payload: { memory_id: rejectedMemory },
+    })!;
+    const liveTask = insertTaskIdempotent(db, {
+      kind: "summarize_history",
+      target: "snip-live",
+      repo: "test/repo",
+      payload: { snippet_id: "snip-live" },
+    })!;
+
+    expect(abandonInvalidOpenTasks(db)).toBe(2);
+
+    const rows = db.select().from(memoryMaintenanceTasks).all();
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get(aliasTask)?.status).toBe("abandoned");
+    expect(byId.get(aliasTask)?.failure_reason).toContain("workspace_root_repo_alias");
+    expect(byId.get(deadTargetTask)?.status).toBe("abandoned");
+    expect(byId.get(deadTargetTask)?.failure_reason).toContain("target_memory_rejected");
+    expect(byId.get(liveTask)?.status).toBe("pending");
   });
 
   it("applyBacklogCaps drops lowest-priority pending over per-kind cap", () => {

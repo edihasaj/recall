@@ -153,6 +153,12 @@ export async function executePromptHook(
   input: PromptHookInput,
   opts: HookExecutionOptions = {},
 ): Promise<HookResult> {
+  if (opts.db && !opts.daemonOrigin) {
+    return handlePromptHook(input, {
+      db: opts.db,
+      source: opts.source ?? "cli",
+    });
+  }
   const daemonResult = await postHookToDaemon<HookResult>(
     "/hook/prompt",
     input,
@@ -170,6 +176,12 @@ export async function executeToolHook(
   input: ToolHookInput,
   opts: HookExecutionOptions = {},
 ): Promise<HookResult> {
+  if (opts.db && !opts.daemonOrigin) {
+    return handleToolHook(input, {
+      db: opts.db,
+      source: opts.source ?? "cli",
+    });
+  }
   const daemonResult = await postHookToDaemon<HookResult>(
     "/hook/tool",
     input,
@@ -187,6 +199,12 @@ export async function executeSessionStartHook(
   input: SessionStartHookInput,
   opts: HookExecutionOptions = {},
 ): Promise<HookResult> {
+  if (opts.db && !opts.daemonOrigin) {
+    return handleSessionStartHook(input, {
+      db: opts.db,
+      source: opts.source ?? "cli",
+    });
+  }
   const daemonResult = await postHookToDaemon<HookResult>(
     "/hook/session-start",
     input,
@@ -204,6 +222,12 @@ export async function executeSessionEndHook(
   input: SessionEndHookInput,
   opts: HookExecutionOptions = {},
 ): Promise<HookResult> {
+  if (opts.db && !opts.daemonOrigin) {
+    return handleSessionEndHook(input, {
+      db: opts.db,
+      source: opts.source ?? "cli",
+    });
+  }
   const daemonResult = await postHookToDaemon<HookResult>(
     "/hook/session-end",
     input,

@@ -120,6 +120,7 @@ export interface CleanupReport {
     globalize_losers: number;
     test_fixture_rejections: number;
     invalid_scope_rejections: number;
+    e2e_artifact_rejections: number;
   };
   plan: CleanupPlanItem[];
 }
@@ -206,6 +207,7 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
   let globalizeLosers = 0;
   let testFixtureRejections = 0;
   let invalidScopeRejections = 0;
+  let e2eArtifactRejections = 0;
   for (const p of plan) {
     if (p.kind === "dedupe_exact_merge") {
       dedupeClusters += 1;
@@ -224,6 +226,9 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
     } else {
       invalidScopeRejections += 1;
     }
+    if (p.kind === "reject_fragment_candidate" && p.reasons.includes("e2e_verification_artifact")) {
+      e2eArtifactRejections += 1;
+    }
   }
   return {
     dedupe_clusters: dedupeClusters,
@@ -235,6 +240,7 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
     globalize_losers: globalizeLosers,
     test_fixture_rejections: testFixtureRejections,
     invalid_scope_rejections: invalidScopeRejections,
+    e2e_artifact_rejections: e2eArtifactRejections,
   };
 }
 
@@ -448,6 +454,8 @@ const BENCHMARK_ARTIFACT_RULE_RE =
   /\b(?:agent-scorecard|data\/agent-runs\.json|generated scorecard|benchmark tasks?|Oktapod and OpenClaw|OpenClaw and Oktapod|do not add Hermes)\b/i;
 const TOOL_EMBARGO_TASK_RULE_RE =
   /^\s*do\s+not\s+(?:open\s+browser,\s+screenshot,\s+or\s+devtools\s+tools|open\s+browser,\s+take\s+screenshots,\s+or\s+use\s+devtools\s+tools)(?:\s+(?:during|for)\s+(?:this\s+|the\s+)?(?:task|benchmark(?:\s+run)?))?\.?\s*$/i;
+const E2E_VERIFICATION_ARTIFACT_RE =
+  /\b(?:recall\s+(?:e2e|end[- ]to[- ]end)\s+verification|(?:e2e|end[- ]to[- ]end)\s+verification\s+(?:smoke|fixture|artifact)|for\s+recall\s+(?:e2e|end[- ]to[- ]end)\s+verification)\b/i;
 const ACTIVE_FRAGMENT_REASONS = new Set([
   "bare_modal",
   "trailing_question",
@@ -459,6 +467,7 @@ const ACTIVE_FRAGMENT_REASONS = new Set([
   "workspace_only_runtime_rule",
   "benchmark_artifact_rule",
   "tool_embargo_task_rule",
+  "e2e_verification_artifact",
   "embedded_question",
 ]);
 // Anything past this length is almost certainly a voice ramble, not a rule.
@@ -516,6 +525,7 @@ export function qualityReasons(rawText: string): string[] {
   if (WORKSPACE_ONLY_RULE_RE.test(text)) reasons.push("workspace_only_runtime_rule");
   if (BENCHMARK_ARTIFACT_RULE_RE.test(text)) reasons.push("benchmark_artifact_rule");
   if (TOOL_EMBARGO_TASK_RULE_RE.test(text)) reasons.push("tool_embargo_task_rule");
+  if (E2E_VERIFICATION_ARTIFACT_RE.test(text)) reasons.push("e2e_verification_artifact");
   if (EMBEDDED_QUESTION_RE.test(text)) reasons.push("embedded_question");
 
   // Verb check: strip punctuation and look for any verb hint as a token.
@@ -1192,6 +1202,7 @@ export function formatCleanupReport(report: CleanupReport): string {
   lines.push(`  globalizations:       ${report.counts.globalizations} (losers=${report.counts.globalize_losers})`);
   lines.push(`  test_fixture_rejects: ${report.counts.test_fixture_rejections}`);
   lines.push(`  invalid_scope_rejects:${report.counts.invalid_scope_rejections}`);
+  lines.push(`  e2e_artifact_rejects: ${report.counts.e2e_artifact_rejections}`);
   if (report.plan.length === 0) {
     lines.push("  (no actions)");
     return lines.join("\n");

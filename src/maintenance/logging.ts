@@ -13,7 +13,12 @@ export function maintenanceChangeCount(result: MaintenanceResult): number {
     result.vector_rows_rebuilt +
     result.lexical_rows_rebuilt +
     result.history_snippets_created +
-    result.history_embeddings_refreshed
+    result.history_embeddings_refreshed +
+    result.maintenance_tasks_enqueued +
+    result.maintenance_leases_swept +
+    result.maintenance_tasks_dropped +
+    result.maintenance_tasks_expired +
+    result.maintenance_tasks_invalid
   );
 }
 
@@ -40,6 +45,7 @@ export function formatMaintenanceSummary(result: MaintenanceResult): string {
     `rebuilt(vec=${result.vector_rows_rebuilt},fts=${result.lexical_rows_rebuilt}) ` +
     `drift(vec=${result.vector_drift},fts=${result.lexical_drift}) ` +
     `stale=${result.embedding_stale} ` +
-    `history(created=${result.history_snippets_created},refreshed=${result.history_embeddings_refreshed},drift_vec=${result.history_vector_drift},drift_fts=${result.history_lexical_drift})`
+    `history(created=${result.history_snippets_created},refreshed=${result.history_embeddings_refreshed},drift_vec=${result.history_vector_drift},drift_fts=${result.history_lexical_drift}) ` +
+    `tasks(enqueued=${result.maintenance_tasks_enqueued},swept=${result.maintenance_leases_swept},dropped=${result.maintenance_tasks_dropped},expired=${result.maintenance_tasks_expired},invalid=${result.maintenance_tasks_invalid})`
   );
 }

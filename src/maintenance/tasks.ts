@@ -66,6 +66,7 @@ export interface EnqueueCounts {
   expired_leases_swept: number;
   dropped_over_cap: number;
   expired_pending_tasks: number;
+  invalid_tasks_abandoned: number;
 }
 
 type TaskRow = typeof memoryMaintenanceTasks.$inferSelect;
@@ -308,6 +309,101 @@ export function abandonOverAttemptTasks(db: RecallDb): number {
     ))
     .run();
   return result.changes;
+}
+
+const TEST_FIXTURE_REPO_RE = /^test\/recall-[a-z0-9-]+-repo-[a-z0-9]+$/i;
+
+function isTempPath(value: string | null): boolean {
+  if (!value) return false;
+  return value.startsWith("/tmp/") || value.startsWith("/private/tmp/") || value.includes("/tmp/");
+}
+
+function invalidTaskScopeReasons(repo: string | null): string[] {
+  const reasons: string[] = [];
+  if (repo === "Projects") reasons.push("workspace_root_repo_alias");
+  if (repo && TEST_FIXTURE_REPO_RE.test(repo)) reasons.push("test_fixture_repo");
+  if (isTempPath(repo)) reasons.push("repo_field_is_temp_path");
+  return reasons;
+}
+
+function payloadString(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function taskTargetReasons(db: RecallDb, task: TaskRow): string[] {
+  const payload = (task.payload ?? {}) as Record<string, unknown>;
+  if (task.kind === "verify_capture" || task.kind === "refine_candidate") {
+    const memoryId = payloadString(payload, "memory_id");
+    if (!memoryId) return ["target_memory_id_missing"];
+    const row = db.select({ status: memories.status })
+      .from(memories)
+      .where(eq(memories.id, memoryId))
+      .get();
+    if (!row) return ["target_memory_missing"];
+    if (row.status === "rejected") return ["target_memory_rejected"];
+  }
+
+  if (task.kind === "merge_duplicates") {
+    const rawCandidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+    const ids = rawCandidates
+      .map((candidate) => {
+        if (!candidate || typeof candidate !== "object") return null;
+        const id = (candidate as { id?: unknown }).id;
+        return typeof id === "string" && id.trim() ? id : null;
+      })
+      .filter((id): id is string => id != null);
+
+    if (ids.length < 2) return ["merge_candidates_insufficient"];
+    const live = db.select({ id: memories.id })
+      .from(memories)
+      .where(and(
+        inArray(memories.id, ids),
+        inArray(memories.status, ["active", "candidate"]),
+      ))
+      .all();
+    if (live.length < 2) return ["merge_candidates_not_live"];
+  }
+
+  return [];
+}
+
+/**
+ * Abandon open tasks that can no longer produce useful work. This keeps the
+ * agent-facing queue truthful after deterministic cleanup rejects fixture rows
+ * or after older repo detection bugs put tasks under aliases like "Projects".
+ */
+export function abandonInvalidOpenTasks(db: RecallDb, now: Date = new Date()): number {
+  const rows = db.select().from(memoryMaintenanceTasks)
+    .where(inArray(memoryMaintenanceTasks.status, OPEN_STATUSES))
+    .all();
+
+  let changed = 0;
+  const nowIso = now.toISOString();
+  for (const row of rows) {
+    const reasons = [
+      ...invalidTaskScopeReasons(row.repo),
+      ...taskTargetReasons(db, row),
+    ];
+    if (reasons.length === 0) continue;
+
+    const result = db.update(memoryMaintenanceTasks)
+      .set({
+        status: "abandoned",
+        failure_reason: `invalid_task:${[...new Set(reasons)].join(",")}`.slice(0, 500),
+        claimed_by: null,
+        claimed_at: null,
+        claim_expires_at: null,
+        completed_at: nowIso,
+      })
+      .where(and(
+        eq(memoryMaintenanceTasks.id, row.id),
+        inArray(memoryMaintenanceTasks.status, OPEN_STATUSES),
+      ))
+      .run();
+    changed += result.changes;
+  }
+  return changed;
 }
 
 export function applyBacklogCaps(
@@ -710,6 +806,7 @@ export async function enqueueMaintenanceTasks(
   // Tasks older than 2x the summary window are almost certainly stuck because
   // no LLM provider is configured. Abandon them so the queue stays interpretable.
   const expiredPending = expireStalePendingTasks(db, config.summary_max_age_days * 2);
+  const invalid = abandonInvalidOpenTasks(db);
 
   const counts: Partial<Record<MaintenanceTaskKind, number>> = {};
   counts.refine_candidate = produceRefineCandidateTasks(db, config);
@@ -728,6 +825,7 @@ export async function enqueueMaintenanceTasks(
     expired_leases_swept: expired,
     dropped_over_cap: dropped,
     expired_pending_tasks: expiredPending,
+    invalid_tasks_abandoned: invalid,
   };
 }
 

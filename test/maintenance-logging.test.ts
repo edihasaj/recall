@@ -41,6 +41,8 @@ function makeResult(overrides: Partial<MaintenanceResult> = {}): MaintenanceResu
     maintenance_tasks_enqueued: 0,
     maintenance_leases_swept: 0,
     maintenance_tasks_dropped: 0,
+    maintenance_tasks_expired: 0,
+    maintenance_tasks_invalid: 0,
     ...overrides,
   };
 }
@@ -79,6 +81,9 @@ describe("maintenance logging", () => {
     expect(formatMaintenanceSummary(result)).toContain("drift(vec=2,fts=3)");
     expect(formatMaintenanceSummary(result)).toContain(
       "history(created=5,refreshed=6,drift_vec=7,drift_fts=8)",
+    );
+    expect(formatMaintenanceSummary(result)).toContain(
+      "tasks(enqueued=0,swept=0,dropped=0,expired=0,invalid=0)",
     );
   });
 });

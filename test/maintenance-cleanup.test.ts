@@ -261,6 +261,31 @@ describe("maintenance cleanup — rejectFragmentCandidates", () => {
     expect(plan).toHaveLength(3);
     expect(plan.every((item) => item.reasons.includes("tool_embargo_task_rule"))).toBe(true);
   });
+
+  it("rejects explicit Recall e2e smoke-test artifacts without rejecting real verification rules", () => {
+    const db = freshDb();
+    const artifact = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm for Recall e2e verification.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "Always run end-to-end verification before release.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+
+    const report = runDeterministicCleanup(db, { dryRun: false, only: "reject_fragment_candidate" });
+    expect(report.counts.fragment_rejections).toBe(1);
+    expect(report.counts.e2e_artifact_rejections).toBe(1);
+    expect(getMemory(db, artifact)?.status).toBe("rejected");
+  });
 });
 
 describe("maintenance cleanup — promoteRepeatCorrections", () => {
