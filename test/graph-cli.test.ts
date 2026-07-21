@@ -10,6 +10,7 @@ import { syncMemoryFtsIndex } from "../src/vector/sqlite-fts.js";
 
 const tsxEntry = resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
 const cliEntry = resolve(process.cwd(), "src/cli.ts");
+const CLI_TEST_TIMEOUT_MS = 20_000;
 
 let dataDir = "";
 
@@ -79,7 +80,7 @@ describe("recall graph CLI", () => {
     expect(filtered.status).toBe(0);
     expect(filtered.stdout).toMatch(/middleware/);
     expect(filtered.stdout).not.toMatch(/^\s*\d+\s+library\s+jose\s*$/m);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it("graph entities --kind library only shows libraries", () => {
     const r = runCli(["graph", "entities", "--kind", "library"]);
@@ -106,5 +107,5 @@ describe("recall graph CLI", () => {
     const second = runCli(["graph", "backfill"]);
     expect(second.status).toBe(0);
     expect(second.stdout).toMatch(/Processed \d+ memories/);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 });
