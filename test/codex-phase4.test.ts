@@ -12,6 +12,8 @@ import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
+import { compileContext } from "../src/compiler/context.js";
+import { createMemory } from "../src/models/memory.js";
 import {
   installCodexNotifyBridge,
   uninstallCodexNotifyBridge,
@@ -170,4 +172,35 @@ describe("phase 4 Codex adapter", () => {
       exit_code: 0,
     });
   }, 10_000);
+
+  it("records completion-use value from Codex stopped notifications", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "recall-codex-phase4-db-"));
+    const db = initStandaloneDb(join(tempDir, "recall.db"));
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-stop-value",
+      config: { max_lines: 1, max_commands: 0, max_gotchas: 0 },
+    });
+
+    await dispatchCodexNotify(JSON.stringify({
+      event: "stopped",
+      session_id: "sess-stop-value",
+      cwd: "/Users/edi/Projects/recall",
+      last_assistant_message: "Used pnpm for package commands and kept package-lock untouched.",
+    }), { db });
+
+    const rows = db.$client
+      .prepare("select event_type, memory_id from memory_value_events where session_id = ? and event_type = 'used'")
+      .all("sess-stop-value") as Array<{ event_type: string; memory_id: string }>;
+    expect(rows).toEqual([{ event_type: "used", memory_id: memoryId }]);
+  });
 });

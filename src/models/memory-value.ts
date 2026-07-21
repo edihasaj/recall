@@ -644,6 +644,7 @@ export function computeMemoryValueReport(
     .where(and(
       gte(memoryValueEvents.created_at, start),
       inArray(memoryValueEvents.event_type, ["followed", "used"]),
+      inArray(memories.status, ["active", "candidate"]),
     ))
     .groupBy(memoryValueEvents.memory_id, memories.text)
     .orderBy(desc(sql`coalesce(sum(${memoryValueEvents.saved_tokens_estimate}), 0)`))

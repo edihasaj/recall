@@ -213,7 +213,9 @@ derives `injected` / outcome value rows from existing `memory_injections`
 timestamps; it does not invent completion-use or retrieval-miss events.
 
 Agents that can see their own assistant output can report direct usefulness
-evidence without changing memory confidence:
+evidence without changing memory confidence. Codex/Claude session-end hooks
+also infer this automatically when the hook payload includes the last assistant
+message:
 
 ```bash
 recall hook assistant --session "$SESSION_ID" --repo edihasaj/recall \

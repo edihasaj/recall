@@ -92,6 +92,7 @@ export interface SessionEndHookInput {
   repo_path?: string;
   path?: string;
   turn_count?: number;
+  last_assistant_turn?: string;
   agent?: string;
 }
 
@@ -758,10 +759,25 @@ export async function handleSessionEndHook(
       repo_path: input.repo_path ?? null,
       path: input.path ?? null,
       turn_count: input.turn_count ?? null,
+      last_assistant_turn: input.last_assistant_turn
+        ? truncateText(redactSensitiveText(input.last_assistant_turn), MAX_PREV_ASSISTANT_LENGTH)
+        : null,
     },
   }, async () => {
     const sessionId = requireNonEmpty(input.session_id, "session_id");
     const repo = resolveRepo(input.repo, input.repo_path);
+    const source = resolveHookSource(opts.source, input.agent);
+    const assistantText = input.last_assistant_turn
+      ? truncateText(redactSensitiveText(input.last_assistant_turn), MAX_ASSISTANT_COMPLETION_LENGTH)
+      : "";
+    const completionUse = assistantText.trim().length > 0
+      ? await recordCompletionUseValueEventsSemantic(db, {
+          session_id: sessionId,
+          completion_text: assistantText,
+          repo,
+          source,
+        })
+      : { recorded: 0, memory_ids: [] };
 
     endSessionLifecycle(db, {
       session_id: sessionId,
@@ -772,6 +788,8 @@ export async function handleSessionEndHook(
       payload: {
         ended_at: new Date().toISOString(),
         turn_count: input.turn_count ?? null,
+        assistant_use_recorded: completionUse.recorded,
+        assistant_used_memory_ids: completionUse.memory_ids,
       },
     });
 
@@ -879,11 +897,13 @@ async function readSessionStartInputFromStdin(agent: "claude-code" | "codex"): P
 
 async function readSessionEndInputFromStdin(agent: "claude-code" | "codex"): Promise<SessionEndHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
+  const codexPayload = payload as ClaudeCodeHookPayload & { last_assistant_message?: string };
   return {
     agent,
     path: extractClaudeToolPath(payload.tool_input),
     repo_path: payload.cwd,
     session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
+    last_assistant_turn: codexPayload.last_assistant_message,
   };
 }
 
@@ -941,6 +961,7 @@ export async function dispatchCodexNotify(
     case "session_complete":
       return executeSessionEndHook({
         agent: "codex",
+        last_assistant_turn: payload.last_assistant_message,
         repo_path: payload.cwd,
         session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
       }, opts);

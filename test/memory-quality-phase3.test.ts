@@ -7,7 +7,7 @@ import { createMemory, getMemory, getMemoryFeedback } from "../src/models/memory
 import { compileContext } from "../src/compiler/context.js";
 import { createHistorySnippet } from "../src/history/snippets.js";
 import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
-import { handleAssistantCompletionHook, handlePromptHook, handleToolHook } from "../src/cli/hook.js";
+import { handleAssistantCompletionHook, handlePromptHook, handleSessionEndHook, handleToolHook } from "../src/cli/hook.js";
 import {
   backfillMemoryValueEvents,
   computeMemoryValueReport,
@@ -226,6 +226,43 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(report.top_savers[0]).toMatchObject({ memory_id: memoryId, used: 1, followed: 0 });
   });
 
+  it("records completion-use evidence from session-end assistant text", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-stop-used",
+      config: { max_lines: 1, max_commands: 0, max_gotchas: 0 },
+    });
+
+    await handleSessionEndHook(
+      {
+        session_id: "sess-stop-used",
+        repo: "edihasaj/recall",
+        agent: "codex",
+        last_assistant_turn: "Used pnpm for package commands and kept the lockfile in sync.",
+      },
+      { db, source: "cli" },
+    );
+
+    const rows = db.$client
+      .prepare("select event_type, memory_id, source from memory_value_events where session_id = ? and event_type = 'used'")
+      .all("sess-stop-used") as Array<{ event_type: string; memory_id: string; source: string }>;
+    expect(rows).toEqual([{ event_type: "used", memory_id: memoryId, source: "hook:codex" }]);
+
+    const report = computeMemoryValueReport(db, { sinceIso: new Date(Date.now() - 60_000).toISOString() });
+    expect(report.used).toBe(1);
+    expect(report.top_savers[0]).toMatchObject({ memory_id: memoryId, used: 1 });
+  });
+
   it("backfills value events from historical injection outcomes idempotently", () => {
     const db = freshDb();
     const memoryId = createMemory(db, {
@@ -270,6 +307,40 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(second.inserted_injected).toBe(0);
     expect(second.inserted_outcomes).toBe(0);
     expect(second.skipped_existing).toBe(2);
+  });
+
+  it("omits rejected memories from current top savers", () => {
+    const db = freshDb();
+    const rejectedId = createMemory(db, {
+      type: "rule",
+      text: "Never keep malformed memories in top saver output.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    const activeId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    recordMemoryInjections(db, {
+      memory_ids: [rejectedId, activeId],
+      session_id: "sess-top-savers",
+      repo: "edihasaj/recall",
+    });
+    resolveMemoryInjectionOutcome(db, rejectedId, "sess-top-savers", "followed");
+    resolveMemoryInjectionOutcome(db, activeId, "sess-top-savers", "followed");
+    backfillMemoryValueEvents(db, { dryRun: false });
+    db.$client.prepare("update memories set status = 'rejected' where id = ?").run(rejectedId);
+
+    const report = computeMemoryValueReport(db, { sinceIso: new Date(Date.now() - 60_000).toISOString() });
+    expect(report.saved_tokens_estimate).toBeGreaterThan(0);
+    expect(report.top_savers.map((saver) => saver.memory_id)).toEqual([activeId]);
   });
 
   it("infers completion-use evidence from paraphrased assistant text", async () => {

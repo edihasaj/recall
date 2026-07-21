@@ -532,6 +532,7 @@ hookCmd
   .option("--path <path>", "File path context")
   .option("--agent <agent>", "Agent name")
   .option("--turn-count <count>", "Turn count")
+  .option("--assistant-text <text>", "Last assistant completion text for value-use inference")
   .option("--claude-code-stdin", "Read Claude Code hook JSON from stdin")
   .option("--codex-stdin", "Read Codex hook JSON from stdin")
   .action(safeHookAction("session-end", async (opts) => {
@@ -546,6 +547,7 @@ hookCmd
             path: opts.path,
             agent: opts.agent,
             turn_count: opts.turnCount ? parseInteger(opts.turnCount, "turn-count") : undefined,
+            last_assistant_turn: opts.assistantText,
           };
     await executeSessionEndHook(input);
   }));
