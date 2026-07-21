@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.9 - 2026-07-21
+
+### Added
+
+- **Historical value ledger backfill.** `recall maintenance value-backfill --apply` now derives idempotent `injected` and outcome value events from existing `memory_injections`, so upgraded installs immediately get token value and top-saver reporting from their existing followed/ignored/overridden/contradicted injection history.
+
 ## 0.8.8 - 2026-07-21
 
 ### Fixed
