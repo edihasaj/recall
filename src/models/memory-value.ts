@@ -8,6 +8,7 @@ import { listInjectedMemoryIdsForSession } from "./memory-injections.js";
 
 export type MemoryValueEventType =
   | "injected"
+  | "used"
   | FeedbackOutcome
   | "retrieval_miss";
 
@@ -15,6 +16,8 @@ export interface MemoryValueEvidence {
   context?: string;
   query_text?: string;
   correction_text?: string;
+  completion_excerpt?: string;
+  explicit_memory_ids?: string[];
   prompt_path?: string;
   reason?: string;
   matched_memory_text?: string;
@@ -164,6 +167,77 @@ export function recordOutcomeValueEvent(
   });
 }
 
+export interface CompletionUseResult {
+  recorded: number;
+  memory_ids: string[];
+}
+
+export function recordCompletionUseValueEvents(
+  db: RecallDb,
+  input: {
+    session_id: string;
+    completion_text: string;
+    repo?: string | null;
+    memory_ids?: readonly string[];
+    source: ActivitySource;
+  },
+): CompletionUseResult {
+  const completionText = input.completion_text.trim();
+  if (!completionText) return { recorded: 0, memory_ids: [] };
+
+  const explicitIds = new Set(input.memory_ids ?? []);
+  const candidates = injectedMemoriesForCompletionUse(db, input.session_id, input.memory_ids);
+  const selected = new Map<string, MemoryItem>();
+  for (const candidate of candidates) {
+    if (explicitIds.has(candidate.id) || completionUsesMemory(completionText, candidate.text)) {
+      selected.set(candidate.id, candidate);
+    }
+  }
+  if (selected.size === 0) return { recorded: 0, memory_ids: [] };
+
+  const existingRows = db.select({ memory_id: memoryValueEvents.memory_id })
+    .from(memoryValueEvents)
+    .where(and(
+      eq(memoryValueEvents.session_id, input.session_id),
+      eq(memoryValueEvents.event_type, "used"),
+      inArray(memoryValueEvents.memory_id, [...selected.keys()]),
+    ))
+    .all();
+  const alreadyRecorded = new Set(existingRows.map((row) => row.memory_id).filter(Boolean));
+
+  let recorded = 0;
+  for (const memory of selected.values()) {
+    if (alreadyRecorded.has(memory.id)) continue;
+    const injection = db.select()
+      .from(memoryInjections)
+      .where(and(
+        eq(memoryInjections.memory_id, memory.id),
+        eq(memoryInjections.session_id, input.session_id),
+      ))
+      .get();
+    recordMemoryValueEvent(db, {
+      memory_id: memory.id,
+      injection_id: injection?.id ?? null,
+      session_id: input.session_id,
+      repo: memory.repo ?? input.repo ?? null,
+      event_type: "used",
+      source: input.source,
+      saved_tokens_estimate: estimateTokens(memory.text),
+      evidence: {
+        completion_excerpt: excerpt(completionText),
+        explicit_memory_ids: input.memory_ids ? [...input.memory_ids] : undefined,
+        matched_memory_text: memory.text,
+        reason: explicitIds.has(memory.id)
+          ? "agent explicitly reported using this injected memory"
+          : "assistant completion overlapped an injected memory",
+      },
+    });
+    recorded += 1;
+  }
+
+  return { recorded, memory_ids: [...selected.keys()] };
+}
+
 export interface RetrievalMissResult {
   recorded: boolean;
   memory_id: string | null;
@@ -235,6 +309,7 @@ export interface MemoryValueReport {
   window_end: string;
   events_total: number;
   injections: number;
+  used: number;
   outcomes: Record<string, number>;
   retrieval_misses: number;
   injected_tokens_estimate: number;
@@ -244,6 +319,7 @@ export interface MemoryValueReport {
     memory_id: string;
     text: string;
     saved_tokens_estimate: number;
+    used: number;
     followed: number;
   }>;
 }
@@ -259,6 +335,7 @@ export function computeMemoryValueReport(
   const totals = db.select({
     events_total: sql<number>`count(*)`.as("events_total"),
     injections: sql<number>`sum(case when ${memoryValueEvents.event_type} = 'injected' then 1 else 0 end)`.as("injections"),
+    used: sql<number>`sum(case when ${memoryValueEvents.event_type} = 'used' then 1 else 0 end)`.as("used"),
     retrieval_misses: sql<number>`sum(case when ${memoryValueEvents.event_type} = 'retrieval_miss' then 1 else 0 end)`.as("retrieval_misses"),
     injected_tokens_estimate: sql<number>`coalesce(sum(${memoryValueEvents.injected_tokens_estimate}), 0)`.as("injected_tokens_estimate"),
     saved_tokens_estimate: sql<number>`coalesce(sum(${memoryValueEvents.saved_tokens_estimate}), 0)`.as("saved_tokens_estimate"),
@@ -283,13 +360,14 @@ export function computeMemoryValueReport(
     memory_id: memoryValueEvents.memory_id,
     text: memories.text,
     saved_tokens_estimate: sql<number>`coalesce(sum(${memoryValueEvents.saved_tokens_estimate}), 0)`.as("saved_tokens_estimate"),
+    used: sql<number>`sum(case when ${memoryValueEvents.event_type} = 'used' then 1 else 0 end)`.as("used"),
     followed: sql<number>`sum(case when ${memoryValueEvents.event_type} = 'followed' then 1 else 0 end)`.as("followed"),
   })
     .from(memoryValueEvents)
     .leftJoin(memories, eq(memoryValueEvents.memory_id, memories.id))
     .where(and(
       gte(memoryValueEvents.created_at, start),
-      eq(memoryValueEvents.event_type, "followed"),
+      inArray(memoryValueEvents.event_type, ["followed", "used"]),
     ))
     .groupBy(memoryValueEvents.memory_id, memories.text)
     .orderBy(desc(sql`coalesce(sum(${memoryValueEvents.saved_tokens_estimate}), 0)`))
@@ -307,6 +385,7 @@ export function computeMemoryValueReport(
     window_end: end,
     events_total: Number(totals?.events_total ?? 0),
     injections: Number(totals?.injections ?? 0),
+    used: Number(totals?.used ?? 0),
     outcomes,
     retrieval_misses: Number(totals?.retrieval_misses ?? 0),
     injected_tokens_estimate: injectedTokens,
@@ -318,6 +397,7 @@ export function computeMemoryValueReport(
         memory_id: row.memory_id!,
         text: row.text!,
         saved_tokens_estimate: Number(row.saved_tokens_estimate ?? 0),
+        used: Number(row.used ?? 0),
         followed: Number(row.followed ?? 0),
       })),
   };
@@ -334,6 +414,32 @@ function candidateMemoriesForMissDetection(
       (memory.status === "active" || memory.status === "candidate") &&
       rows.findIndex((candidate) => candidate.id === memory.id) === index
     );
+}
+
+function injectedMemoriesForCompletionUse(
+  db: RecallDb,
+  sessionId: string,
+  memoryIds: readonly string[] | undefined,
+): MemoryItem[] {
+  const injectedIds = listInjectedMemoryIdsForSession(db, sessionId);
+  const wanted = memoryIds && memoryIds.length > 0
+    ? [...new Set(memoryIds)].filter((id) => injectedIds.has(id))
+    : [...injectedIds];
+  if (wanted.length === 0) return [];
+
+  return wanted
+    .map((id) => getMemory(db, id))
+    .filter((memory): memory is MemoryItem => Boolean(memory));
+}
+
+function completionUsesMemory(completionText: string, memoryText: string): boolean {
+  const score = jaccard(completionText, memoryText);
+  if (score >= 0.34) return true;
+  const memoryTokens = tokens(memoryText);
+  if (memoryTokens.length === 0) return false;
+  const completionTokens = new Set(tokens(completionText));
+  const matched = memoryTokens.filter((token) => completionTokens.has(token)).length;
+  return matched >= Math.min(4, memoryTokens.length) && matched / memoryTokens.length >= 0.6;
 }
 
 function bestTextMatch(
@@ -362,4 +468,9 @@ function tokens(text: string): string[] {
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((token) => token.length > 2);
+}
+
+function excerpt(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length <= 320 ? compact : `${compact.slice(0, 319)}…`;
 }

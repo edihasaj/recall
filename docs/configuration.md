@@ -168,8 +168,9 @@ followed-rate, active-rule count, and candidate backlog become visible via
 
 `recall maintenance quality` also reports the value ledger for the same window:
 injected memory count, estimated injection tokens, estimated tokens saved when
-memories were followed, retrieval misses where a repeated correction matched
-memory that had not been injected, and top memories by saved-token estimate.
+memories were followed or later used in an assistant completion, retrieval
+misses where a repeated correction matched memory that had not been injected,
+and top memories by saved-token estimate.
 Saved-token estimates are conservative: they use the memory text the user did
 not have to repeat, not a vendor billing claim.
 
@@ -191,11 +192,26 @@ recall maintenance quality                     # injection outcomes + value ledg
 
 Every LLM call the dispatcher makes lands in the `llm_usage` table with provider, model, task kind, tokens, cost estimate, duration, and ok/error. No row is written when the dispatcher has nothing to run or no API key is configured.
 
-Every injected memory and resolved memory outcome lands in
+Every injected memory, inferred/explicit completion-use event, and resolved
+memory outcome lands in
 `memory_value_events`, linked back to the memory, injection row, feedback row,
 session, and repo when available. `ump.feedback` is wired into the same path, so
 UMP clients can report `followed | overridden | ignored | contradicted` and
 still improve Recall's rankings and value report.
+
+Agents that can see their own assistant output can report direct usefulness
+evidence without changing memory confidence:
+
+```bash
+recall hook assistant --session "$SESSION_ID" --repo edihasaj/recall \
+  --memory <memory-id> --text "Used pnpm for package commands."
+
+# or pipe the completion text and let Recall infer matching injected memories
+printf '%s\n' "$ASSISTANT_COMPLETION" | recall hook assistant --session "$SESSION_ID" --repo edihasaj/recall
+```
+
+MCP clients can call `signal_completion_use` with `session_id`,
+`completion_text`, optional `repo`, and optional explicit `memory_ids`.
 
 ### Clearing a key
 

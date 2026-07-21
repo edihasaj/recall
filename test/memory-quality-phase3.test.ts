@@ -7,8 +7,8 @@ import { createMemory, getMemory, getMemoryFeedback } from "../src/models/memory
 import { compileContext } from "../src/compiler/context.js";
 import { createHistorySnippet } from "../src/history/snippets.js";
 import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
-import { handlePromptHook, handleToolHook } from "../src/cli/hook.js";
-import { computeMemoryValueReport } from "../src/models/memory-value.js";
+import { handleAssistantCompletionHook, handlePromptHook, handleToolHook } from "../src/cli/hook.js";
+import { computeMemoryValueReport, recordCompletionUseValueEvents } from "../src/models/memory-value.js";
 
 let dbCounter = 0;
 
@@ -130,6 +130,98 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(report.net_tokens_estimate).toBe(report.saved_tokens_estimate - report.injected_tokens_estimate);
     expect(report.net_tokens_estimate).toBe(0);
     expect(report.top_savers[0].memory_id).toBe(memoryId);
+  });
+
+  it("records completion-use evidence for injected memories without changing confidence", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    const notInjected = createMemory(db, {
+      type: "rule",
+      text: "Use uv for Python commands.",
+      scope: "path",
+      path_scope: "python/**",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-used",
+      config: { max_lines: 1, max_commands: 0, max_gotchas: 0 },
+    });
+
+    const result = recordCompletionUseValueEvents(db, {
+      session_id: "sess-used",
+      repo: "edihasaj/recall",
+      completion_text: "Use pnpm for package commands. I kept the lockfile in sync.",
+      source: "cli",
+    });
+
+    expect(result.recorded).toBe(1);
+    expect(result.memory_ids).toEqual([memoryId]);
+    expect(getMemory(db, memoryId)!.confidence).toBeCloseTo(0.8);
+
+    const explicit = recordCompletionUseValueEvents(db, {
+      session_id: "sess-used",
+      repo: "edihasaj/recall",
+      completion_text: "I explicitly used it again.",
+      memory_ids: [memoryId, notInjected],
+      source: "cli",
+    });
+    expect(explicit.recorded).toBe(0);
+    expect(explicit.memory_ids).toEqual([memoryId]);
+
+    const rows = db.$client
+      .prepare("select event_type, saved_tokens_estimate, evidence from memory_value_events where session_id = ? and event_type = 'used'")
+      .all("sess-used") as Array<{ event_type: string; saved_tokens_estimate: number; evidence: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].saved_tokens_estimate).toBeGreaterThan(0);
+    expect(JSON.parse(rows[0].evidence).completion_excerpt).toContain("pnpm");
+
+    const report = computeMemoryValueReport(db, { sinceIso: new Date(Date.now() - 60_000).toISOString() });
+    expect(report.used).toBe(1);
+    expect(report.saved_tokens_estimate).toBeGreaterThan(0);
+    expect(report.top_savers[0]).toMatchObject({ memory_id: memoryId, used: 1, followed: 0 });
+  });
+
+  it("hook assistant records completion-use evidence", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-assistant-hook",
+    });
+
+    await handleAssistantCompletionHook(
+      {
+        session_id: "sess-assistant-hook",
+        repo: "edihasaj/recall",
+        text: "Used pnpm for package commands and committed the lockfile.",
+        agent: "codex",
+      },
+      { db, source: "cli" },
+    );
+
+    const rows = db.$client
+      .prepare("select event_type, source from memory_value_events where session_id = ? and memory_id = ? and event_type = 'used'")
+      .all("sess-assistant-hook", memoryId) as Array<{ event_type: string; source: string }>;
+    expect(rows).toEqual([{ event_type: "used", source: "hook:codex" }]);
   });
 
   it("leaves outcome unresolved when the next prompt has no relevant tool activity", async () => {

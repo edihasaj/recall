@@ -161,7 +161,7 @@ export const memoryValueEvents = sqliteTable("memory_value_events", {
   session_id: text("session_id").notNull(),
   repo: text("repo"),
   event_type: text("event_type", {
-    enum: ["injected", "followed", "overridden", "ignored", "contradicted", "retrieval_miss"],
+    enum: ["injected", "used", "followed", "overridden", "ignored", "contradicted", "retrieval_miss"],
   }).notNull(),
   source: text("source").notNull(),
   injected_tokens_estimate: integer("injected_tokens_estimate").notNull().default(0),
@@ -217,7 +217,7 @@ export const activityEvents = sqliteTable("activity_events", {
 export const hookCalls = sqliteTable("hook_calls", {
   id: text("id").primaryKey(),
   event: text("event", {
-    enum: ["session_started", "prompt_submitted", "tool_invoked", "session_ended"],
+    enum: ["session_started", "prompt_submitted", "tool_invoked", "assistant_completed", "session_ended"],
   }).notNull(),
   agent: text("agent").notNull(),
   dedupe_key: text("dedupe_key"),

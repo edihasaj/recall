@@ -67,6 +67,7 @@ import { initDb } from "./db/client.js";
 import { ensureDailyBackup } from "./backups/snapshot.js";
 import { handleRecallMcpHttpRequest } from "./mcp/http.js";
 import {
+  handleAssistantCompletionHook,
   handlePromptHook,
   handleSessionEndHook,
   handleSessionStartHook,
@@ -631,6 +632,19 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { error: "name and numeric exit_code required" });
       }
       const result = await handleToolHook(body, {
+        db,
+        source: "daemon",
+      });
+      return send(res, 200, { ...result, transport: "daemon" });
+    }
+
+    // Hook assistant completion
+    if (path === "/hook/assistant" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.text) {
+        return send(res, 400, { error: "text required" });
+      }
+      const result = await handleAssistantCompletionHook(body, {
         db,
         source: "daemon",
       });

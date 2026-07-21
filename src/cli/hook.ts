@@ -25,11 +25,12 @@ import { peekTasks } from "../maintenance/tasks.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { hookCallDedupeKey } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
-import { detectAndRecordRetrievalMisses } from "../models/memory-value.js";
+import { detectAndRecordRetrievalMisses, recordCompletionUseValueEvents } from "../models/memory-value.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 25;
 const MAX_PROMPT_TEXT_LENGTH = 8_192;
+const MAX_ASSISTANT_COMPLETION_LENGTH = 8_192;
 const MAX_PREV_ASSISTANT_LENGTH = 2_048;
 const MAX_TOOL_INPUT_SUMMARY_LENGTH = 1_024;
 const MAX_RECENT_TOOL_CALLS = 3;
@@ -60,6 +61,16 @@ export interface ToolHookInput {
   session_id?: string;
   path?: string;
   input_summary?: string;
+  agent?: string;
+}
+
+export interface AssistantCompletionHookInput {
+  text: string;
+  repo?: string;
+  repo_path?: string;
+  session_id?: string;
+  path?: string;
+  memory_ids?: readonly string[];
   agent?: string;
 }
 
@@ -94,6 +105,7 @@ export interface HookResult {
   event:
     | "prompt_submitted"
     | "tool_invoked"
+    | "assistant_completed"
     | "session_started"
     | "session_ended";
   session_id: string;
@@ -190,6 +202,29 @@ export async function executeToolHook(
   );
   if (daemonResult) return daemonResult;
   const result = await handleToolHook(input, {
+    db: opts.db,
+    source: opts.source ?? "cli",
+  });
+  return { ...result, transport: "fallback" };
+}
+
+export async function executeAssistantCompletionHook(
+  input: AssistantCompletionHookInput,
+  opts: HookExecutionOptions = {},
+): Promise<HookResult> {
+  if (opts.db && !opts.daemonOrigin) {
+    return handleAssistantCompletionHook(input, {
+      db: opts.db,
+      source: opts.source ?? "cli",
+    });
+  }
+  const daemonResult = await postHookToDaemon<HookResult>(
+    "/hook/assistant",
+    input,
+    opts,
+  );
+  if (daemonResult) return daemonResult;
+  const result = await handleAssistantCompletionHook(input, {
     db: opts.db,
     source: opts.source ?? "cli",
   });
@@ -408,6 +443,67 @@ export async function handleToolHook(
       session_id: sessionId,
       repo,
       recent_tool_calls: [toolCall],
+      transport: "direct",
+    };
+  });
+}
+
+export async function handleAssistantCompletionHook(
+  input: AssistantCompletionHookInput,
+  opts: HookRuntimeOptions = {},
+): Promise<HookResult> {
+  const db = opts.db ?? initDb();
+  const telemetrySessionId = input.session_id?.trim() || "hook";
+  return withHookTelemetry(db, "assistant_completed", input.agent ?? "hook", {
+    session_id: telemetrySessionId,
+    payload: {
+      repo: input.repo ?? null,
+      repo_path: input.repo_path ?? null,
+      path: input.path ?? null,
+      text: truncateText(redactSensitiveText(input.text), MAX_ASSISTANT_COMPLETION_LENGTH),
+      memory_ids: input.memory_ids ?? [],
+    },
+  }, async () => {
+    const text = truncateText(
+      redactSensitiveText(requireNonEmpty(input.text, "text")),
+      MAX_ASSISTANT_COMPLETION_LENGTH,
+    );
+    const sessionId = input.session_id?.trim() || "hook";
+    const repo = resolveRepo(input.repo, input.repo_path);
+    const source = resolveHookSource(opts.source, input.agent);
+    const value = recordCompletionUseValueEvents(db, {
+      session_id: sessionId,
+      completion_text: text,
+      repo,
+      memory_ids: input.memory_ids,
+      source,
+    });
+
+    createActivityEvent(db, {
+      session_id: sessionId,
+      repo,
+      path: input.path ?? null,
+      source,
+      event_type: "session_event",
+      memory_ids: value.memory_ids,
+      request: {
+        client: input.agent ?? "hook",
+        name: "assistant_completed",
+        repo_path: input.repo_path ?? null,
+        explicit_memory_ids: input.memory_ids ?? [],
+      },
+      result: {
+        used_memory_ids: value.memory_ids,
+        recorded_value_events: value.recorded,
+        completion_excerpt: truncateText(text.replace(/\s+/g, " ").trim(), 320),
+        completed_at: new Date().toISOString(),
+      },
+    });
+
+    return {
+      event: "assistant_completed",
+      session_id: sessionId,
+      repo,
       transport: "direct",
     };
   });
@@ -895,7 +991,7 @@ async function postHookToDaemon<T>(
 
 async function withHookTelemetry<T>(
   db: RecallDb,
-  event: "session_started" | "prompt_submitted" | "tool_invoked" | "session_ended",
+  event: "session_started" | "prompt_submitted" | "tool_invoked" | "assistant_completed" | "session_ended",
   agent: string,
   dedupe: {
     session_id?: string | null;

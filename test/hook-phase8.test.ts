@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { getHookCallStats, listHookCalls } from "../src/hooks/calls.js";
-import { handlePromptHook, handleToolHook } from "../src/cli/hook.js";
+import { handleAssistantCompletionHook, handlePromptHook, handleToolHook } from "../src/cli/hook.js";
 
 let dbCounter = 0;
 
@@ -34,6 +34,21 @@ describe("phase 8 hook telemetry", () => {
     const stats = getHookCallStats(db, { agent: "codex" });
     expect(stats.map((row) => row.event).sort()).toEqual(["prompt_submitted", "tool_invoked"]);
     expect(stats.every((row) => row.ok_calls === 1)).toBe(true);
+  });
+
+  it("records assistant completion hook telemetry", async () => {
+    const db = freshDb();
+
+    await handleAssistantCompletionHook(
+      { session_id: "sess-assistant", repo: "edihasaj/recall", text: "I used the injected memory.", agent: "codex" },
+      { db },
+    );
+
+    const calls = listHookCalls(db);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].event).toBe("assistant_completed");
+    const stats = getHookCallStats(db, { agent: "codex" });
+    expect(stats[0]).toMatchObject({ event: "assistant_completed", ok_calls: 1 });
   });
 
   it("dedupes repeated hook telemetry by structural key", async () => {

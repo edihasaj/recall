@@ -206,6 +206,7 @@ export function formatQualityReport(r: QualityReport): string {
   lines.push("Value:");
   lines.push(`  events:       ${r.value.events_total}`);
   lines.push(`  injections:   ${r.value.injections}`);
+  lines.push(`  used:         ${r.value.used}`);
   lines.push(`  misses:       ${r.value.retrieval_misses}`);
   lines.push(`  injected tok: ~${r.value.injected_tokens_estimate}`);
   lines.push(`  saved tok:    ~${r.value.saved_tokens_estimate}`);
@@ -214,7 +215,7 @@ export function formatQualityReport(r: QualityReport): string {
     lines.push("  top savers:");
     for (const saver of r.value.top_savers.slice(0, 3)) {
       lines.push(
-        `    ${saver.memory_id.slice(0, 8)} ~${saver.saved_tokens_estimate} tok (${saver.followed} followed) ${saver.text.slice(0, 80)}`,
+        `    ${saver.memory_id.slice(0, 8)} ~${saver.saved_tokens_estimate} tok (${saver.used} used, ${saver.followed} followed) ${saver.text.slice(0, 80)}`,
       );
     }
   }

@@ -62,6 +62,7 @@ import {
 } from "./daemon/service.js";
 import {
   dispatchCodexNotify,
+  executeAssistantCompletionHook,
   executePromptHook,
   executeSessionEndHook,
   executeSessionStartHook,
@@ -440,6 +441,34 @@ hookCmd
             input_summary: opts.inputSummary,
           };
     await executeToolHook(input);
+  }));
+
+hookCmd
+  .command("assistant")
+  .description("Record assistant completion text and infer which injected memories were used")
+  .option("--text <text>", "Assistant completion text; reads stdin if omitted")
+  .option("--repo <repo>", "Repository slug")
+  .option("--repo-path <path>", "Repository path")
+  .option("--session <id>", "Session ID")
+  .option("--path <path>", "File path context")
+  .option("--agent <agent>", "Agent name")
+  .option("--memory <id>", "Explicit injected memory ID used by the completion", collectMemoryIds, [] as string[])
+  .action(safeHookAction("assistant", async (opts) => {
+    const stdinText = opts.text ? null : await readStdinText();
+    const text = opts.text ?? stdinText;
+    if (!text) throw new Error("text is required (pass --text or pipe completion text on stdin)");
+    const memoryIds = opts.memory.length > 0
+      ? resolveMemoryIdPrefixes(opts.memory)
+      : [];
+    await executeAssistantCompletionHook({
+      text,
+      repo: opts.repo,
+      repo_path: opts.repoPath,
+      session_id: opts.session,
+      path: opts.path,
+      agent: opts.agent,
+      memory_ids: memoryIds,
+    });
   }));
 
 hookCmd
@@ -2458,6 +2487,19 @@ function formatAgentName(agent: string) {
 
 function collectAgents(value: string, previous: string[]) {
   return [...previous, value];
+}
+
+function collectMemoryIds(value: string, previous: string[]) {
+  return [...previous, value];
+}
+
+function resolveMemoryIdPrefixes(prefixes: string[]): string[] {
+  const db = initDb();
+  return prefixes.map((prefix) => {
+    const mem = findByPrefix(db, prefix);
+    if (!mem) throw new Error(`Memory not found: ${prefix}`);
+    return mem.id;
+  });
 }
 
 async function confirmSetupWrite(scope: string): Promise<boolean> {

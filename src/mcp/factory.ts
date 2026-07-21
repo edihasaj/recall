@@ -50,6 +50,7 @@ import {
   type RelationType,
 } from "../graph/store.js";
 import { loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { recordCompletionUseValueEvents } from "../models/memory-value.js";
 
 export function createRecallMcpServer(db: RecallDb = initDb()) {
 const activityEventTypes = [
@@ -553,6 +554,49 @@ tool(
     return {
       content: [
         { type: "text" as const, text: `Outcome recorded: ${result.feedback_id.slice(0, 8)}` },
+      ],
+    };
+  },
+);
+
+tool(
+  "signal_completion_use",
+  "Record assistant completion text as usefulness evidence for memories injected in the same session. Pass memory_ids when the agent knows exactly which memories it used; otherwise Recall infers matches from the completion text.",
+  {
+    session_id: z.string().describe("Current session ID."),
+    completion_text: z.string().describe("Assistant completion text or concise answer summary."),
+    repo: z.string().optional().describe("Repository name."),
+    memory_ids: z.array(z.string()).optional().describe("Injected memory IDs explicitly used by this completion."),
+  },
+  async ({ session_id, completion_text, repo, memory_ids }) => {
+    const result = recordCompletionUseValueEvents(db, {
+      session_id,
+      completion_text,
+      repo: repo ?? null,
+      memory_ids,
+      source: mcpSource(),
+    });
+    createActivityEvent(db, {
+      session_id,
+      repo: repo ?? null,
+      source: mcpSource(),
+      event_type: "session_event",
+      memory_ids: result.memory_ids,
+      request: {
+        name: "assistant_completed",
+        explicit_memory_ids: memory_ids ?? [],
+      },
+      result: {
+        used_memory_ids: result.memory_ids,
+        recorded_value_events: result.recorded,
+      },
+    });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Completion use recorded for ${result.recorded} memory/memories.`,
+        },
       ],
     };
   },

@@ -239,6 +239,7 @@ export const HookCallEvent = z.enum([
   "session_started",
   "prompt_submitted",
   "tool_invoked",
+  "assistant_completed",
   "session_ended",
 ]);
 export type HookCallEvent = z.infer<typeof HookCallEvent>;
