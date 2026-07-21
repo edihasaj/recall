@@ -5,8 +5,14 @@ import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { createMemory } from "../src/models/memory.js";
 import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
-import { formatRetrievalEvalReport, runRetrievalEval } from "../src/eval/retrieval.js";
+import {
+  formatRetrievalEvalReport,
+  formatValueRetrievalEvalReport,
+  runRetrievalEval,
+  runValueRetrievalEval,
+} from "../src/eval/retrieval.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
+import { recordMemoryValueEvent } from "../src/models/memory-value.js";
 
 let dbCounter = 0;
 
@@ -77,6 +83,78 @@ describe("retrieval eval runner", () => {
 
     const text = formatRetrievalEvalReport(report);
     expect(text).toContain("Improved:        1");
+  });
+
+  it("builds retrieval eval cases from value telemetry", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "command",
+      text: "Run pytest -q",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: memoryId,
+      session_id: "sess-value-eval",
+      repo: "test/repo",
+      event_type: "retrieval_miss",
+      source: "cli",
+      evidence: {
+        query_text: "pytest -q",
+        correction_text: "Always run pytest -q.",
+        matched_memory_text: "Run pytest -q",
+      },
+    });
+
+    const report = await runValueRetrievalEval(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+    });
+
+    expect(report.generated_cases).toBe(1);
+    expect(report.skipped_events).toBe(0);
+    expect(report.source_events).toEqual({ retrieval_miss: 1, used: 0 });
+    expect(report.retrieval.summary.hybrid_passed).toBe(1);
+    expect(report.retrieval.cases[0].hybrid.included_texts).toContain("Run pytest -q");
+
+    const text = formatValueRetrievalEvalReport(report);
+    expect(text).toContain("# Value Retrieval Eval");
+    expect(text).toContain("Generated cases: 1");
+    expect(text).toContain("retrieval_miss=1 used=0");
+  });
+
+  it("builds value eval cases from used completion evidence", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: memoryId,
+      session_id: "sess-used-eval",
+      repo: "test/repo",
+      event_type: "used",
+      source: "cli",
+      saved_tokens_estimate: 7,
+      evidence: {
+        completion_excerpt: "Used pnpm for package commands.",
+        matched_memory_text: "Use pnpm for package commands.",
+      },
+    });
+
+    const report = await runValueRetrievalEval(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+      repo: "test/repo",
+    });
+
+    expect(report.generated_cases).toBe(1);
+    expect(report.source_events).toEqual({ retrieval_miss: 0, used: 1 });
+    expect(report.retrieval.summary.hybrid_expected_any_hit_rate).toBe(1);
   });
 
   it("compares provider runs in one report", async () => {

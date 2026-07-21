@@ -189,6 +189,7 @@ recall maintenance usage --json                # machine-readable
 recall maintenance stats                       # task backlog counts
 recall maintenance list                        # pending tasks
 recall maintenance quality                     # injection outcomes + value ledger
+recall eval value-retrieval                    # retrieval eval from recent misses/used completions
 ```
 
 Every LLM call the dispatcher makes lands in the `llm_usage` table with provider, model, task kind, tokens, cost estimate, duration, and ok/error. No row is written when the dispatcher has nothing to run or no API key is configured.

@@ -17,7 +17,12 @@ import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { processCorrection, processReviewFeedback } from "../capture/correction.js";
 import { scanAndStore } from "../scanner/repo.js";
 import { computeMetrics, formatMetricsReport } from "../eval/harness.js";
-import { formatRetrievalEvalReport, runRetrievalEval } from "../eval/retrieval.js";
+import {
+  formatRetrievalEvalReport,
+  formatValueRetrievalEvalReport,
+  runRetrievalEval,
+  runValueRetrievalEval,
+} from "../eval/retrieval.js";
 import { recordSignal, getSignalStats } from "../feedback/implicit.js";
 import { inferScope } from "../capture/scope.js";
 import { evaluatePolicy, listPendingApprovals, resolveApproval } from "../policy/engine.js";
@@ -660,6 +665,26 @@ tool(
     const report = await runRetrievalEval(db, parsed);
     return {
       content: [{ type: "text" as const, text: formatRetrievalEvalReport(report) }],
+    };
+  },
+);
+
+tool(
+  "eval_value_retrieval",
+  "Run retrieval eval cases synthesized from recent Recall value telemetry (`retrieval_miss` and `used` events).",
+  {
+    repo: z.string().optional().describe("Filter value events by repo."),
+    since: z.string().optional().describe("Window start ISO timestamp; defaults to last 14 days."),
+    limit: z.number().int().positive().optional().describe("Max value events to inspect; defaults to 50."),
+  },
+  async ({ repo, since, limit }) => {
+    const report = await runValueRetrievalEval(db, {
+      repo,
+      sinceIso: since,
+      limit,
+    });
+    return {
+      content: [{ type: "text" as const, text: formatValueRetrievalEvalReport(report) }],
     };
   },
 );

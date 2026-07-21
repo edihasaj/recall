@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import type { RecallDb } from "../db/client.js";
+import { memoryValueEvents } from "../db/schema.js";
 import type { EmbeddingConfig } from "../types.js";
 import { getMemory } from "../models/memory.js";
 import { bootstrapEmbeddings, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
@@ -50,6 +52,18 @@ export interface RetrievalEvalReport {
   summary: RetrievalEvalSummary;
   cases: RetrievalEvalCaseResult[];
   provider_reports: RetrievalEvalProviderReport[];
+}
+
+export interface ValueRetrievalEvalReport {
+  since: string;
+  repo: string | null;
+  generated_cases: number;
+  skipped_events: number;
+  source_events: {
+    retrieval_miss: number;
+    used: number;
+  };
+  retrieval: RetrievalEvalReport;
 }
 
 export interface RetrievalEvalProviderMetrics {
@@ -165,6 +179,82 @@ export async function runRetrievalEval(
   };
 }
 
+export async function runValueRetrievalEval(
+  db: RecallDb,
+  options: {
+    sinceIso?: string;
+    repo?: string;
+    limit?: number;
+    providers?: RetrievalEvalProvider[];
+  } = {},
+): Promise<ValueRetrievalEvalReport> {
+  const since = options.sinceIso ?? new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const conditions = [
+    gte(memoryValueEvents.created_at, since),
+    inArray(memoryValueEvents.event_type, ["retrieval_miss", "used"]),
+  ];
+  if (options.repo) conditions.push(eq(memoryValueEvents.repo, options.repo));
+
+  const rows = db.select()
+    .from(memoryValueEvents)
+    .where(and(...conditions))
+    .orderBy(desc(memoryValueEvents.created_at))
+    .limit(options.limit ?? 50)
+    .all();
+
+  let skippedEvents = 0;
+  const sourceEvents = { retrieval_miss: 0, used: 0 };
+  const cases: RetrievalEvalFileType["cases"] = [];
+  for (const row of rows) {
+    if (row.event_type === "retrieval_miss") sourceEvents.retrieval_miss += 1;
+    if (row.event_type === "used") sourceEvents.used += 1;
+
+    const memory = row.memory_id ? getMemory(db, row.memory_id) : null;
+    if (!memory) {
+      skippedEvents += 1;
+      continue;
+    }
+    const evidence = normalizeEvidence(row.evidence);
+    const queryText = row.event_type === "retrieval_miss"
+      ? firstNonEmpty(evidence.query_text, evidence.correction_text)
+      : firstNonEmpty(evidence.completion_excerpt, evidence.context);
+    if (!queryText) {
+      skippedEvents += 1;
+      continue;
+    }
+    const repo = memory.repo ?? row.repo;
+    if (!repo) {
+      skippedEvents += 1;
+      continue;
+    }
+
+    cases.push({
+      name: `${row.event_type}:${row.id.slice(0, 8)}`,
+      repo,
+      path: typeof evidence.prompt_path === "string" ? evidence.prompt_path : undefined,
+      query_text: queryText,
+      include_candidates: row.event_type === "retrieval_miss",
+      max_lines: 3,
+      max_commands: 2,
+      max_gotchas: 2,
+      token_budget: 500,
+      expected_all_texts: [],
+      expected_any_texts: [memory.text],
+      forbidden_texts: [],
+    });
+  }
+
+  const retrieval = await runRetrievalEval(db, { cases }, { providers: options.providers });
+  return {
+    since,
+    repo: options.repo ?? null,
+    generated_cases: cases.length,
+    skipped_events: skippedEvents,
+    source_events: sourceEvents,
+    retrieval,
+  };
+}
+
 export function formatRetrievalEvalReport(report: RetrievalEvalReport): string {
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
   if (report.provider_reports.length > 1) {
@@ -189,6 +279,21 @@ export function formatRetrievalEvalReport(report: RetrievalEvalReport): string {
   }
 
   return formatSingleProviderReport(report.summary, report.cases);
+}
+
+export function formatValueRetrievalEvalReport(report: ValueRetrievalEvalReport): string {
+  const lines = [
+    "# Value Retrieval Eval",
+    "",
+    `Since: ${report.since}`,
+    `Repo: ${report.repo ?? "all"}`,
+    `Generated cases: ${report.generated_cases}`,
+    `Skipped events:  ${report.skipped_events}`,
+    `Source events:   retrieval_miss=${report.source_events.retrieval_miss} used=${report.source_events.used}`,
+    "",
+    formatRetrievalEvalReport(report.retrieval),
+  ];
+  return lines.join("\n");
 }
 
 function formatSingleProviderReport(
@@ -305,6 +410,30 @@ function describeRun(result: RetrievalRunResult) {
 
 function ratio(value: number, total: number) {
   return total > 0 ? value / total : 0;
+}
+
+function normalizeEvidence(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function firstNonEmpty(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
 }
 
 function embeddingConfigForProvider(provider: Exclude<RetrievalEvalProvider, "current">): EmbeddingConfig {

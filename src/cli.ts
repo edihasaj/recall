@@ -23,7 +23,13 @@ import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { inferRepoSlugFromPath } from "./repo/discovery.js";
 import { sync, createTeam, joinTeam } from "./sync/client.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession } from "./eval/harness.js";
-import { formatRetrievalEvalReport, loadRetrievalEvalFile, runRetrievalEval } from "./eval/retrieval.js";
+import {
+  formatRetrievalEvalReport,
+  formatValueRetrievalEvalReport,
+  loadRetrievalEvalFile,
+  runRetrievalEval,
+  runValueRetrievalEval,
+} from "./eval/retrieval.js";
 import {
   bootstrapEmbeddings,
   ensureEmbeddingProviderReady,
@@ -1175,6 +1181,35 @@ evalCmd
     }
 
     console.log(formatRetrievalEvalReport(report));
+  });
+
+evalCmd
+  .command("value-retrieval")
+  .description("Run retrieval eval cases synthesized from recent value telemetry")
+  .option("-r, --repo <repo>", "Filter value events by repo")
+  .option("--since <iso>", "Window start (default: last 14 days)")
+  .option("--limit <n>", "Max value events to inspect", "50")
+  .option("-p, --provider <providers>", "Providers to compare (comma-separated: current,nomic,multilingual-e5,bge-small-en-v1.5)", "current")
+  .option("--json", "Emit raw JSON report")
+  .action(async (opts) => {
+    const db = initDb();
+    const providers = String(opts.provider)
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean) as Array<"current" | "nomic" | "multilingual-e5" | "bge-small-en-v1.5">;
+    const report = await runValueRetrievalEval(db, {
+      repo: opts.repo,
+      sinceIso: opts.since,
+      limit: parseInt(opts.limit, 10),
+      providers,
+    });
+
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+
+    console.log(formatValueRetrievalEvalReport(report));
   });
 
 // --- Phase 1: embeddings ---
