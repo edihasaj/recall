@@ -26,6 +26,7 @@ import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { hookCallDedupeKey } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
 import { detectAndRecordRetrievalMisses, recordCompletionUseValueEvents } from "../models/memory-value.js";
+import { textMatches } from "../text/match.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 25;
@@ -1054,7 +1055,7 @@ async function resolvePendingInjectionOutcomesOnPrompt(
     let outcome: "followed" | "overridden" | "ignored" | "contradicted" | null = null;
     if (correctionTexts.length > 0) {
       const contradicted = correctionTexts.some((text) =>
-        similarity(text, memory.text.toLowerCase()) >= 0.7
+        textMatches(text, memory.text, 0.62)
       );
       const relevant = isPromptRelevant(memory, promptPath, recentToolCalls);
       // Only label "ignored" when we know the memory was applicable to the
@@ -1135,14 +1136,6 @@ function isPromptRelevant(
 ) {
   if (promptPath && pathMatchesMemory(memory, promptPath)) return true;
   return recentToolCalls.some((toolCall) => toolCallTouchesMemory(memory, toolCall));
-}
-
-function similarity(a: string, b: string): number {
-  const wordsA = new Set(a.split(/\s+/));
-  const wordsB = new Set(b.split(/\s+/));
-  const intersection = [...wordsA].filter((word) => wordsB.has(word));
-  const union = new Set([...wordsA, ...wordsB]);
-  return union.size === 0 ? 0 : intersection.length / union.size;
 }
 
 async function readClaudeCodeHookPayloadFromStdin(): Promise<ClaudeCodeHookPayload> {

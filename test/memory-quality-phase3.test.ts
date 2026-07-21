@@ -192,6 +192,58 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(report.top_savers[0]).toMatchObject({ memory_id: memoryId, used: 1, followed: 0 });
   });
 
+  it("infers completion-use evidence from paraphrased assistant text", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-used-paraphrase",
+    });
+
+    const result = recordCompletionUseValueEvents(db, {
+      session_id: "sess-used-paraphrase",
+      repo: "edihasaj/recall",
+      completion_text: "I ran the package command with pnpm and kept the lockfile in sync.",
+      source: "cli",
+    });
+
+    expect(result).toMatchObject({ recorded: 1, memory_ids: [memoryId] });
+  });
+
+  it("does not infer completion-use from one shared low-information token", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "Do not use npm. Use pnpm instead.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-used-short-overlap",
+    });
+
+    const result = recordCompletionUseValueEvents(db, {
+      session_id: "sess-used-short-overlap",
+      repo: "edihasaj/recall",
+      completion_text: "I used npm for this one command.",
+      source: "cli",
+    });
+
+    expect(result).toEqual({ recorded: 0, memory_ids: [] });
+  });
+
   it("hook assistant records completion-use evidence", async () => {
     const db = freshDb();
     const memoryId = createMemory(db, {
@@ -290,6 +342,37 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(getMemory(db, memoryId)!.confidence).toBeCloseTo(0.55);
   });
 
+  it("marks contradicted when the next prompt paraphrases the stored correction", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Do not use npm. Use pnpm instead.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-contradicted-paraphrase",
+    });
+
+    await handlePromptHook(
+      {
+        session_id: "sess-contradicted-paraphrase",
+        repo: "edihasaj/recall",
+        text: "stop using npm; pnpm only",
+        agent: "codex",
+      },
+      { db, source: "cli" },
+    );
+
+    const feedback = getMemoryFeedback(db, memoryId);
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0].outcome).toBe("contradicted");
+  });
+
   it("records a retrieval miss when a repeated correction matched memory was not injected", async () => {
     const db = freshDb();
     const memoryId = createMemory(db, {
@@ -318,6 +401,33 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(rows[0].memory_id).toBe(memoryId);
     expect(rows[0].saved_tokens_estimate).toBe(0);
     expect(JSON.parse(rows[0].evidence).correction_text).toContain("Always use pnpm");
+  });
+
+  it("records a retrieval miss when a repeated correction is paraphrased", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Do not use npm. Use pnpm instead.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    await handlePromptHook(
+      {
+        session_id: "sess-miss-paraphrase",
+        repo: "edihasaj/recall",
+        text: "stop using npm; pnpm only",
+        agent: "codex",
+      },
+      { db, source: "cli" },
+    );
+
+    const rows = db.$client
+      .prepare("select event_type, memory_id from memory_value_events where session_id = ? and event_type = 'retrieval_miss'")
+      .all("sess-miss-paraphrase") as Array<{ event_type: string; memory_id: string }>;
+    expect(rows).toEqual([{ event_type: "retrieval_miss", memory_id: memoryId }]);
   });
 
   it("promotes a candidate memory when a missed matching correction repeats", async () => {

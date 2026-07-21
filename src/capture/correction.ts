@@ -34,7 +34,7 @@ interface CorrectionMatch {
 }
 
 const NEGATION_REPLACEMENT =
-  /\b(?:not|don't|do not|never|stop)\s+(?:use|do|run|call|import)\s+(.+?)[\s,;.]+(?:use|do|run|call|import|instead)\s+(.+)/i;
+  /\b(?:not|don't|do not|never|stop|avoid)\s+(?:use|using|do|doing|run|running|call|calling|import|importing)\s+(.+?)[\s,;.]+(?:(?:use|using|do|run|call|import|instead)\s+)?(.+?)(?:\s+only)?[.!?]?$/i;
 
 const EXPLICIT_RULE =
   /\b(always|never|must|required|forbidden|don't ever)\b\s+(.+)/i;

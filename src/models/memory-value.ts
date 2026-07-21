@@ -5,6 +5,7 @@ import { memories, memoryInjections, memoryValueEvents } from "../db/schema.js";
 import type { ActivitySource, FeedbackOutcome, MemoryItem } from "../types.js";
 import { getMemory, queryMemories, promoteMemory } from "./memory.js";
 import { listInjectedMemoryIdsForSession } from "./memory-injections.js";
+import { textMatchScore } from "../text/match.js";
 
 export type MemoryValueEventType =
   | "injected"
@@ -433,13 +434,8 @@ function injectedMemoriesForCompletionUse(
 }
 
 function completionUsesMemory(completionText: string, memoryText: string): boolean {
-  const score = jaccard(completionText, memoryText);
-  if (score >= 0.34) return true;
-  const memoryTokens = tokens(memoryText);
-  if (memoryTokens.length === 0) return false;
-  const completionTokens = new Set(tokens(completionText));
-  const matched = memoryTokens.filter((token) => completionTokens.has(token)).length;
-  return matched >= Math.min(4, memoryTokens.length) && matched / memoryTokens.length >= 0.6;
+  const match = textMatchScore(completionText, memoryText);
+  return match.score >= 0.62 || (match.intersection >= 3 && match.containment >= 0.6);
 }
 
 function bestTextMatch(
@@ -448,26 +444,10 @@ function bestTextMatch(
 ): { memory: MemoryItem; score: number } | null {
   let best: { memory: MemoryItem; score: number } | null = null;
   for (const memory of memoriesToCheck) {
-    const score = jaccard(text, memory.text);
+    const score = textMatchScore(text, memory.text).score;
     if (!best || score > best.score) best = { memory, score };
   }
   return best;
-}
-
-function jaccard(a: string, b: string): number {
-  const wordsA = new Set(tokens(a));
-  const wordsB = new Set(tokens(b));
-  if (wordsA.size === 0 || wordsB.size === 0) return 0;
-  const intersection = [...wordsA].filter((word) => wordsB.has(word));
-  const union = new Set([...wordsA, ...wordsB]);
-  return intersection.length / union.size;
-}
-
-function tokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((token) => token.length > 2);
 }
 
 function excerpt(text: string): string {
