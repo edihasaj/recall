@@ -285,10 +285,11 @@ describe("review feedback maturity gate", () => {
 });
 
 describe("scan bootstrap behavior", () => {
-  it("keeps operational commands active but leaves softer scan facts out of the active set", () => {
+  it("keeps package-manager choice active but rejects generic package scripts", () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({
       name: "demo",
+      packageManager: "pnpm@10.0.0",
       scripts: {
         test: "vitest run",
         build: "tsup",
@@ -310,9 +311,12 @@ describe("scan bootstrap behavior", () => {
     const commands = scanned.filter((m) => m.type === "command");
     const rules = scanned.filter((m) => m.type === "rule");
 
-    expect(commands.length).toBeGreaterThan(0);
+    expect(commands.map((m) => m.text)).toEqual([
+      "Use pnpm as the package manager (lockfile: pnpm-lock.yaml)",
+    ]);
     expect(commands.every((m) => m.status === "active")).toBe(true);
     expect(rules.every((m) => m.status === "candidate")).toBe(true);
+    expect(scanned.some((m) => /^(test|build):/.test(m.text))).toBe(false);
     expect(scanned.some((m) => m.text.startsWith("CI:"))).toBe(false);
     expect(scanned.some((m) => m.text === "What We Do Not Build")).toBe(false);
   });
@@ -321,7 +325,7 @@ describe("scan bootstrap behavior", () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({
       name: "demo",
-      scripts: { test: "vitest run" },
+      packageManager: "pnpm@10.0.0",
     }, null, 2));
     const db = initStandaloneDb(join(dir, "recall.db"));
 
@@ -338,7 +342,7 @@ describe("scan bootstrap behavior", () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-scan-"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({
       name: "demo",
-      scripts: { test: "vitest run" },
+      packageManager: "pnpm@10.0.0",
     }, null, 2));
     const db = initStandaloneDb(join(dir, "recall.db"));
 
@@ -393,13 +397,12 @@ describe("scan bootstrap behavior", () => {
 
     const result = reconcileScannedMemories(db);
 
-    expect(result.rejected).toBe(2);
-    expect(result.demoted).toBe(2);
+    expect(result.rejected).toBe(3);
+    expect(result.demoted).toBe(1);
     expect(result.normalized).toBe(1);
     expect(getMemory(db, ciId)!.status).toBe("rejected");
     expect(getMemory(db, reqId)!.status).toBe("rejected");
-    expect(getMemory(db, lintId)!.status).toBe("candidate");
-    expect(getMemory(db, lintId)!.confidence).toBeLessThan(CONFIDENCE.ACTIVE_MIN);
+    expect(getMemory(db, lintId)!.status).toBe("rejected");
     expect(getMemory(db, ruleId)!.status).toBe("candidate");
     expect(getMemory(db, ruleId)!.text).toBe("Strong typing: Always prefer Pydantic models");
   });

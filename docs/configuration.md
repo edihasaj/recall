@@ -143,8 +143,10 @@ The dispatcher handles all LLM-needing task kinds: `extract_rules_from_prompt` (
 
 The deterministic cleanup loop (no LLM required) merges exact-text duplicates,
 rejects voice/typing fragments captured as user_correction candidates, rejects
-known benchmark/tooling artifacts, drops temp-path scoped memories, hides repos
-that only contain rejected rows, and auto-promotes high-signal corrections.
+known benchmark/tooling artifacts, rejects generic scanner-derived package
+scripts/tooling facts (`build: ...`, `typecheck: ...`, `lint: ...`,
+`Linting/formatting: ...`), drops temp-path scoped memories, hides repos that
+only contain rejected rows, and auto-promotes high-signal corrections.
 Every action lands in `maintenance_cleanup_log` with before/after snapshots.
 The non-LLM maintenance loop also abandons open maintenance tasks whose repo
 scope is known-invalid (`Projects`, temp paths, test fixture repos) or whose

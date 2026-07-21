@@ -9,6 +9,7 @@ import {
   listCleanupRuns,
   planDedupeExact,
   planPromoteRepeats,
+  planRejectGenericScannedTooling,
   planRejectFragments,
   planRejectInvalidScopes,
   revertCleanupRun,
@@ -506,7 +507,7 @@ describe("maintenance cleanup — suppressUnproductiveCommands", () => {
   it("suppresses high-injection command memories with zero followed feedback", () => {
     const db = freshDb();
     const id = createMemory(db, {
-      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      type: "command", text: "Use the project deploy helper", scope: "repo", repo: "r",
       source: "config_parse", confidence: 0.9,
     });
     db.update(memories).set({ injection_count: 60 }).where(eq(memories.id, id)).run();
@@ -521,7 +522,7 @@ describe("maintenance cleanup — suppressUnproductiveCommands", () => {
   it("does not suppress when at least one followed event exists", () => {
     const db = freshDb();
     const id = createMemory(db, {
-      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      type: "command", text: "Use the project deploy helper", scope: "repo", repo: "r",
       source: "config_parse", confidence: 0.9,
     });
     db.update(memories).set({ injection_count: 60 }).where(eq(memories.id, id)).run();
@@ -538,7 +539,7 @@ describe("maintenance cleanup — suppressUnproductiveCommands", () => {
   it("does not suppress below the injection floor", () => {
     const db = freshDb();
     const id = createMemory(db, {
-      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      type: "command", text: "Use the project deploy helper", scope: "repo", repo: "r",
       source: "config_parse", confidence: 0.9,
     });
     db.update(memories).set({ injection_count: 10 }).where(eq(memories.id, id)).run();
@@ -548,7 +549,7 @@ describe("maintenance cleanup — suppressUnproductiveCommands", () => {
   it("revert restores auto_inject=true", () => {
     const db = freshDb();
     const id = createMemory(db, {
-      type: "command", text: "test: vitest run", scope: "repo", repo: "r",
+      type: "command", text: "Use the project deploy helper", scope: "repo", repo: "r",
       source: "config_parse", confidence: 0.9,
     });
     db.update(memories).set({ injection_count: 60 }).where(eq(memories.id, id)).run();
@@ -556,6 +557,54 @@ describe("maintenance cleanup — suppressUnproductiveCommands", () => {
     expect(getMemory(db, id)?.auto_inject).toBe(false);
     revertCleanupRun(db, report.run_id);
     expect(getMemory(db, id)?.auto_inject).toBe(true);
+  });
+});
+
+describe("maintenance cleanup — rejectGenericScannedTooling", () => {
+  it("rejects generic package scripts and linting facts from config scans", () => {
+    const db = freshDb();
+    const build = createMemory(db, {
+      type: "command",
+      text: "build: `npm run build`",
+      scope: "repo",
+      repo: "r",
+      source: "config_parse",
+      confidence: 0.9,
+    });
+    const typecheck = createMemory(db, {
+      type: "command",
+      text: "typecheck: `tsc --noEmit`",
+      scope: "repo",
+      repo: "r",
+      source: "config_parse",
+      confidence: 0.9,
+    });
+    const linting = createMemory(db, {
+      type: "rule",
+      text: "Linting/formatting: ESLint (flat config)",
+      scope: "repo",
+      repo: "r",
+      source: "config_parse",
+      confidence: 0.59,
+    });
+    const packageManager = createMemory(db, {
+      type: "command",
+      text: "Use pnpm as the package manager",
+      scope: "repo",
+      repo: "r",
+      source: "config_parse",
+      confidence: 0.9,
+    });
+
+    const plan = planRejectGenericScannedTooling(db);
+    expect(plan.map((item) => item.memory_id).sort()).toEqual([build, linting, typecheck].sort());
+
+    const report = runDeterministicCleanup(db, { dryRun: false, only: "reject_generic_scanned_tooling" });
+    expect(report.counts.generic_scanned_tooling_rejections).toBe(3);
+    expect(getMemory(db, build)?.status).toBe("rejected");
+    expect(getMemory(db, typecheck)?.status).toBe("rejected");
+    expect(getMemory(db, linting)?.status).toBe("rejected");
+    expect(getMemory(db, packageManager)?.status).toBe("active");
   });
 });
 

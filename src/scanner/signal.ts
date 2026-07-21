@@ -16,9 +16,10 @@ export interface EvaluatedScannedMemory {
 
 const ACTIVE_COMMAND_PATTERNS = [
   /^use\b/i,
-  /^(test|build|lint|dev|start|typecheck|check):\s*`.+`$/i,
   /^makefile targets:/i,
 ];
+
+const PACKAGE_SCRIPT_PATTERN = /^(test|build|lint|dev|start|typecheck|check):\s*`.+`$/i;
 
 const CANDIDATE_GOTCHA_PATTERNS = [
   /^next\.js project$/i,
@@ -65,8 +66,10 @@ export function evaluateScannedMemory(
     return reject(normalized, "generic_tooling");
   }
 
-  if (input.source === "config_parse" && lower.startsWith("linting/formatting:")) {
-    return keep(normalized, toCandidateConfidence(input.confidence));
+  if (isGenericScannedToolingMemory(input)) {
+    return reject(normalized, PACKAGE_SCRIPT_PATTERN.test(normalized)
+      ? "generic_package_script"
+      : "generic_tooling");
   }
 
   if (ACTIVE_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized))) {
@@ -92,6 +95,16 @@ export function evaluateScannedMemory(
   }
 
   return keep(normalized, toCandidateConfidence(input.confidence));
+}
+
+export function isGenericScannedToolingMemory(input: Pick<ScannedMemoryLike, "text" | "type" | "source">): boolean {
+  if (input.source !== "config_parse") return false;
+  const normalized = normalizeScannedText(input.text);
+  const lower = normalized.toLowerCase();
+  return (
+    (input.type === "command" && PACKAGE_SCRIPT_PATTERN.test(normalized)) ||
+    lower.startsWith("linting/formatting:")
+  );
 }
 
 function normalizeScannedText(text: string): string {

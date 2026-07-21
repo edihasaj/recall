@@ -33,6 +33,7 @@ function makeRepo(root: string, remote: string) {
     join(root, "package.json"),
     JSON.stringify({
       name: "fixture",
+      packageManager: "pnpm@10.0.0",
       scripts: {
         test: "vitest run",
       },

@@ -12,6 +12,7 @@ import { memoryDedupeKey } from "../models/dedupe.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { checkContradiction } from "../contradictions/detector.js";
 import { isDestructiveRisky } from "../capture/correction.js";
+import { isGenericScannedToolingMemory } from "../scanner/signal.js";
 
 const SUPPRESS_INJECTION_FLOOR = 50;
 const GLOBALIZE_REPO_FLOOR = 3;
@@ -37,7 +38,8 @@ export type CleanupActionKind =
   | "suppress_unproductive_command"
   | "globalize_cross_repo"
   | "reject_test_fixture_repo"
-  | "reject_invalid_scope";
+  | "reject_invalid_scope"
+  | "reject_generic_scanned_tooling";
 
 export interface DedupeExactPlan {
   kind: "dedupe_exact_merge";
@@ -96,6 +98,14 @@ export interface RejectInvalidScopePlan {
   reasons: string[];
 }
 
+export interface RejectGenericScannedToolingPlan {
+  kind: "reject_generic_scanned_tooling";
+  memory_id: string;
+  text: string;
+  source: string;
+  memory_type: string;
+}
+
 export type CleanupPlanItem =
   | DedupeExactPlan
   | RejectFragmentPlan
@@ -103,7 +113,8 @@ export type CleanupPlanItem =
   | SuppressCommandPlan
   | GlobalizeCrossRepoPlan
   | RejectTestFixtureRepoPlan
-  | RejectInvalidScopePlan;
+  | RejectInvalidScopePlan
+  | RejectGenericScannedToolingPlan;
 
 export interface CleanupReport {
   run_id: string;
@@ -120,6 +131,7 @@ export interface CleanupReport {
     globalize_losers: number;
     test_fixture_rejections: number;
     invalid_scope_rejections: number;
+    generic_scanned_tooling_rejections: number;
     e2e_artifact_rejections: number;
   };
   plan: CleanupPlanItem[];
@@ -156,6 +168,9 @@ export function runDeterministicCleanup(
   if (!opts.only || opts.only === "reject_invalid_scope") {
     plan.push(...planRejectInvalidScopes(db));
   }
+  if (!opts.only || opts.only === "reject_generic_scanned_tooling") {
+    plan.push(...planRejectGenericScannedTooling(db));
+  }
 
   const counts = summarize(plan);
 
@@ -183,6 +198,9 @@ export function runDeterministicCleanup(
         case "reject_invalid_scope":
           applyRejectInvalidScope(db, runId, item);
           break;
+        case "reject_generic_scanned_tooling":
+          applyRejectGenericScannedTooling(db, runId, item);
+          break;
       }
     }
   }
@@ -207,6 +225,7 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
   let globalizeLosers = 0;
   let testFixtureRejections = 0;
   let invalidScopeRejections = 0;
+  let genericScannedToolingRejections = 0;
   let e2eArtifactRejections = 0;
   for (const p of plan) {
     if (p.kind === "dedupe_exact_merge") {
@@ -223,8 +242,10 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
       globalizeLosers += p.loser_ids.length;
     } else if (p.kind === "reject_test_fixture_repo") {
       testFixtureRejections += 1;
-    } else {
+    } else if (p.kind === "reject_invalid_scope") {
       invalidScopeRejections += 1;
+    } else {
+      genericScannedToolingRejections += 1;
     }
     if (p.kind === "reject_fragment_candidate" && p.reasons.includes("e2e_verification_artifact")) {
       e2eArtifactRejections += 1;
@@ -240,6 +261,7 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
     globalize_losers: globalizeLosers,
     test_fixture_rejections: testFixtureRejections,
     invalid_scope_rejections: invalidScopeRejections,
+    generic_scanned_tooling_rejections: genericScannedToolingRejections,
     e2e_artifact_rejections: e2eArtifactRejections,
   };
 }
@@ -717,6 +739,79 @@ function applyRejectInvalidScope(db: RecallDb, runId: string, plan: RejectInvali
       repo: plan.repo,
       path_scope: plan.path_scope,
       reasons: plan.reasons,
+    } as any,
+    reverted: false,
+    reverted_at: null,
+    created_at: now,
+  }).run();
+}
+
+// --- rejectGenericScannedTooling -----------------------------------------
+
+export function planRejectGenericScannedTooling(db: RecallDb): RejectGenericScannedToolingPlan[] {
+  const rows = db.select({
+    id: memories.id,
+    text: memories.text,
+    type: memories.type,
+    source: memories.source,
+    status: memories.status,
+  })
+    .from(memories)
+    .where(and(
+      inArray(memories.status, ["active", "candidate"]),
+      eq(memories.source, "config_parse"),
+    ))
+    .all();
+
+  return rows
+    .filter((row) =>
+      isGenericScannedToolingMemory({
+        text: row.text,
+        type: row.type,
+        source: row.source,
+      })
+    )
+    .map((row) => ({
+      kind: "reject_generic_scanned_tooling",
+      memory_id: row.id,
+      text: row.text,
+      source: row.source,
+      memory_type: row.type,
+    }));
+}
+
+function applyRejectGenericScannedTooling(db: RecallDb, runId: string, plan: RejectGenericScannedToolingPlan) {
+  const before = getMemory(db, plan.memory_id);
+  if (!before || !["active", "candidate"].includes(before.status)) return;
+
+  const now = new Date().toISOString();
+  db.update(memories)
+    .set({ status: "rejected", dedupe_key: null, updated_at: now })
+    .where(eq(memories.id, plan.memory_id))
+    .run();
+
+  const after = getMemory(db, plan.memory_id);
+  recordAuditWithSnapshot(
+    db,
+    plan.memory_id,
+    "rejected",
+    DEFAULT_ACTOR,
+    `cleanup_generic_scanned_tooling:run:${runId}`,
+    before,
+    after ?? null,
+  );
+
+  db.insert(maintenanceCleanupLog).values({
+    id: randomUUID(),
+    run_id: runId,
+    action: "reject_generic_scanned_tooling",
+    memory_id: plan.memory_id,
+    related_memory_id: null,
+    before_snapshot: before as unknown as any,
+    after_snapshot: after as unknown as any,
+    details: {
+      source: plan.source,
+      memory_type: plan.memory_type,
     } as any,
     reverted: false,
     reverted_at: null,
@@ -1203,6 +1298,7 @@ export function formatCleanupReport(report: CleanupReport): string {
   lines.push(`  globalizations:       ${report.counts.globalizations} (losers=${report.counts.globalize_losers})`);
   lines.push(`  test_fixture_rejects: ${report.counts.test_fixture_rejections}`);
   lines.push(`  invalid_scope_rejects:${report.counts.invalid_scope_rejections}`);
+  lines.push(`  generic_tool_rejects: ${report.counts.generic_scanned_tooling_rejections}`);
   lines.push(`  e2e_artifact_rejects: ${report.counts.e2e_artifact_rejections}`);
   if (report.plan.length === 0) {
     lines.push("  (no actions)");
@@ -1228,9 +1324,12 @@ export function formatCleanupReport(report: CleanupReport): string {
     } else if (item.kind === "reject_test_fixture_repo") {
       lines.push(`  reject-test-repo: ${item.memory_id.slice(0, 8)}  repo=${item.repo}`);
       lines.push(`                    "${truncate(item.text, 80)}"`);
-    } else {
+    } else if (item.kind === "reject_invalid_scope") {
       lines.push(`  reject-invalid-scope: ${item.memory_id.slice(0, 8)}  scope=${item.scope} repo=${item.repo ?? "-"} path=${item.path_scope ?? "-"} reasons=${item.reasons.join(",")}`);
       lines.push(`                        "${truncate(item.text, 80)}"`);
+    } else {
+      lines.push(`  reject-generic-tooling: ${item.memory_id.slice(0, 8)}  source=${item.source} type=${item.memory_type}`);
+      lines.push(`                          "${truncate(item.text, 80)}"`);
     }
   }
   return lines.join("\n");
