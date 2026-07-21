@@ -8,6 +8,7 @@ import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import { listHistorySnippets } from "../history/snippets.js";
 import { searchHistorySnippets } from "../history/retrieval.js";
+import { textMatchScore } from "../text/match.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
@@ -20,6 +21,7 @@ const DEFAULT_CONFIG: CompilerConfig = {
 };
 const QUERY_RESULT_LIMIT = 2;
 const QUERY_VECTOR_RELEVANCE_FLOOR = 0.7;
+const QUERY_TEXT_MATCH_FLOOR = 0.45;
 const HISTORY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const HISTORY_LEXICAL_RELEVANCE_FLOOR = 0.01;
 
@@ -267,6 +269,19 @@ export async function compileContextHybrid(
   const retrievalById = new Map(
     retrieval.map((item) => [item.memory.id, item]),
   );
+  if (effectiveQuery) {
+    for (const memory of passing) {
+      if (retrievalById.has(memory.id)) continue;
+      const lexical = textMatchScore(effectiveQuery, memory.text);
+      if (lexical.score < QUERY_TEXT_MATCH_FLOOR) continue;
+      retrievalById.set(memory.id, {
+        memory,
+        score: lexical.score,
+        similarity: 0,
+        lexical_score: lexical.score,
+      });
+    }
+  }
 
   const summaries = getMemoryFeedbackSummaries(db, passing.map((m) => m.id));
   const emptySummary = { followed: 0, overridden: 0, contradicted: 0, ignored: 0, resolved: 0 };

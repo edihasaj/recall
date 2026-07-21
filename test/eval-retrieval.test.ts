@@ -159,6 +159,39 @@ describe("retrieval eval runner", () => {
     expect(report.retrieval.summary.hybrid_expected_any_hit_rate).toBe(1);
   });
 
+  it("recovers used memory through normalized lexical fallback when FTS is too strict", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "always run pytest -q before handoff",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: memoryId,
+      session_id: "sess-used-paraphrase",
+      repo: "test/repo",
+      event_type: "used",
+      source: "cli",
+      saved_tokens_estimate: 8,
+      evidence: {
+        completion_excerpt: "Ran pytest -q before handing off.",
+        matched_memory_text: "always run pytest -q before handoff",
+      },
+    });
+
+    const report = await runValueRetrievalEval(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+      repo: "test/repo",
+    });
+
+    expect(report.generated_cases).toBe(1);
+    expect(report.retrieval.summary.hybrid_passed).toBe(1);
+    expect(report.retrieval.cases[0].hybrid.included_texts).toContain("always run pytest -q before handoff");
+  });
+
   it("compares provider runs in one report", async () => {
     const db = freshDb();
     delete process.env.RECALL_EMBEDDINGS_DISABLED;
