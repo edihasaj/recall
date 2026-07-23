@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.19 - 2026-07-23
+
+### Added
+
+- **Recall Cloud is visible in the native app.** The macOS sidebar and menu bar now expose cloud status, sign-in/management, hosted memories, and the automatic two-way sync model.
+
+### Changed
+
+- **Recall.app has a clearer modern status surface.** The overview now prioritizes daemon, cloud-sync, and dashboard health with a compact green-teal hero and single-scroll detail views.
+
+### Fixed
+
+- **Settings reliably opens from the menu bar.** The menu action now opens Recall's dashboard and selects Preferences instead of depending on an unavailable SwiftUI Settings selector.
+- **Exact global memories remain retrievable with embeddings enabled.** Strong normalized lexical matches can pass the vector relevance floor, fixing global synced rules that FTS found but repo-filtered vector search could not.
+
 ## 0.8.18 - 2026-07-23
 
 ### Changed

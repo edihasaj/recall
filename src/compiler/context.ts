@@ -291,7 +291,13 @@ export async function compileContextHybrid(
       const retrievalItem = retrievalById.get(memory.id);
       if (effectiveQuery) {
         if (!retrievalItem) return false;
-        if (embeddingConfig && retrievalItem.similarity < QUERY_VECTOR_RELEVANCE_FLOOR) {
+        const hasStrongLexicalMatch =
+          retrievalItem.lexical_score >= QUERY_TEXT_MATCH_FLOOR;
+        if (
+          embeddingConfig
+          && retrievalItem.similarity < QUERY_VECTOR_RELEVANCE_FLOOR
+          && !hasStrongLexicalMatch
+        ) {
           return false;
         }
         return true;

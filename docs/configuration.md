@@ -42,6 +42,7 @@ The hook does **not** try to extract rules with regex. Instead:
 4. The LLM extracts zero or more durable rules from the prompt, in any language, and returns one canonical English sentence per rule with confidence and scope. Empty list is a valid answer ("nothing worth saving here").
 5. The applier creates one candidate memory per rule with semantic dedup against existing same-repo memories. Duplicate hook deliveries for the same prompt share one extraction task, and near-identical high-risk candidates are deduped even when the LLM varies the rule type. Promotion still flows through repetition or explicit confirm — the LLM judges, never auto-activates.
 6. History snippets can supplement prompt-time memory only when they have a lexical match or clear vector relevance. Weak semantic matches are dropped so stale summaries do not steer unrelated turns.
+7. Strong normalized lexical matches remain eligible when embeddings are enabled, including global memories outside the repo-filtered vector slice.
 
 ### Path B — Regex fallback (no provider configured, or LLM explicitly disabled)
 

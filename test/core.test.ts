@@ -786,6 +786,34 @@ describe("compiler", () => {
     expect(result.text).toContain("Run pytest -q");
   });
 
+  it("hybrid compile keeps strong lexical global matches outside the repo vector filter", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+    installMockEmbeddingProvider((text) => (
+      text.toLowerCase().includes("unrelated query") ? [1, 0, 0] : [0, 0, 1]
+    ));
+
+    const globalId = createMemory(db, {
+      type: "rule",
+      text: "Use uv for Python dependency management",
+      scope: "global",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    await flushEmbeddingJobs();
+
+    const result = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "Use uv for Python dependency management",
+    });
+
+    expect(result.memories_included).toContain(globalId);
+    expect(result.text).toContain("Use uv for Python dependency management");
+  });
+
   it("hybrid compile returns only the top two relevant query matches", async () => {
     const db = freshDb();
     delete process.env.RECALL_EMBEDDINGS_DISABLED;
