@@ -34,6 +34,18 @@ interface Return<T> {
   refresh: () => void;
 }
 
+/** Identity for de-duplicating appended rows: prefer a stable id field. */
+function itemKey(item: unknown): string {
+  if (item && typeof item === "object") {
+    const rec = item as Record<string, unknown>;
+    for (const field of ["id", "session_id", "memory_id"]) {
+      const value = rec[field];
+      if (typeof value === "string" || typeof value === "number") return `${field}:${value}`;
+    }
+  }
+  return JSON.stringify(item);
+}
+
 /**
  * Tiny load-more helper. Accumulates pages in state; resets when `resetKey`
  * changes (filter change). Polls only the *head* page on `refetchInterval` so
@@ -56,6 +68,12 @@ export function useLoadMore<T, Q>({
   const queryRef = useRef(query);
   queryRef.current = query;
   const resetKeyRef = useRef(resetKey);
+  // In-flight guard as a ref, not state: the LoadMore sentinel can fire
+  // onLoadMore twice in the same tick (IntersectionObserver batching, or
+  // StrictMode double-mounting the observer). `isLoadingMore` state has not
+  // propagated yet at that point, so a state-based guard lets both calls
+  // through and each appends the same page — duplicating every row.
+  const inFlightRef = useRef(false);
 
   const loadHead = async (signal?: AbortSignal) => {
     setIsLoading(true);
@@ -75,6 +93,7 @@ export function useLoadMore<T, Q>({
   // Reset whenever resetKey changes.
   useEffect(() => {
     resetKeyRef.current = resetKey;
+    inFlightRef.current = false;
     const ctrl = new AbortController();
     loadHead(ctrl.signal);
     return () => ctrl.abort();
@@ -104,15 +123,24 @@ export function useLoadMore<T, Q>({
   }, [refetchInterval, resetKey, pageSize, fetchPage]);
 
   const loadMore = () => {
-    if (isLoadingMore || !hasMore) return;
+    if (inFlightRef.current || !hasMore) return;
+    inFlightRef.current = true;
     setIsLoadingMore(true);
     fetchPage(items.length, queryRef.current)
       .then(({ items: more, has_more }) => {
-        setItems((prev) => [...prev, ...more]);
+        // Append only rows we don't already hold — belt-and-braces against a
+        // page being fetched twice for the same offset.
+        setItems((prev) => {
+          const seen = new Set(prev.map((item) => itemKey(item)));
+          return [...prev, ...more.filter((item) => !seen.has(itemKey(item)))];
+        });
         setHasMore(has_more);
       })
       .catch((e) => setError(e))
-      .finally(() => setIsLoadingMore(false));
+      .finally(() => {
+        inFlightRef.current = false;
+        setIsLoadingMore(false);
+      });
   };
 
   const refresh = () => loadHead();

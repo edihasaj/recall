@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.17 - 2026-07-23
+
+### Fixed
+
+- **Paginated lists no longer duplicate rows.** The load-more sentinel auto-fires via `IntersectionObserver` and could call `loadMore()` twice in the same tick; the in-flight guard read `isLoadingMore` state, which had not propagated yet, so both calls fetched the same offset and appended it twice — every row in Memories, Timeline, and Sessions rendered double. The guard is now a ref, and appended pages are de-duplicated by id.
+
+### Changed
+
+- **Landing page refresh.** Rewrote the hero and section copy to be shorter and plainer, dropped the stale version eyebrows, and replaced the dashboard screenshots with current dark-theme captures of the knowledge graph, timeline, and sessions views.
+
 ## 0.8.16 - 2026-07-23
 
 ### Changed

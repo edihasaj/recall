@@ -53,11 +53,10 @@
     <main id="top">
       <section class="hero">
         <div class="hero-copy" data-reveal="2">
-          <p class="eyebrow">Local-first memory for coding agents</p>
           <h1>Recall</h1>
           <p class="lede">
-            A repo-memory compiler that learns from corrections, review feedback, and local project facts, then injects
-            only the trusted instructions your coding agents need.
+            Your coding agents keep forgetting. Recall remembers — it learns from your corrections
+            and feeds the right rules back into every session, automatically.
           </p>
 
           <div class="hero-actions" id="install">
@@ -173,7 +172,7 @@
             <div class="agent-action">
               <small>Claude</small>
               <p>
-                Touched <code>docs/site.css</code> and bumped <code>package.json</code> to <code>0.5.2</code> —
+                Touched <code>docs/site.css</code> and bumped <code>package.json</code> —
                 ran <code>docs:check</code>, synced <code>package-lock.json</code>, added a CHANGELOG entry,
                 and prepared a conventional commit. Signing on; ready to push when you say.
               </p>
@@ -186,17 +185,17 @@
         <div class="proof-item" data-reveal="4">
           <strong>01</strong>
           <h2>Not a transcript archive.</h2>
-          <p>Recall turns repeated corrections and operational feedback into compact repo instructions.</p>
+          <p>Repeated corrections become short, durable repo rules — not a pile of chat logs to search.</p>
         </div>
         <div class="proof-item" data-reveal="5">
           <strong>02</strong>
           <h2>Quality before injection.</h2>
-          <p>Health scores, maturity gates, dedupe, confirmations, and rejection keep noisy memories out.</p>
+          <p>Scoring, dedupe, and rejection gates keep noisy or one-off memories out of the prompt.</p>
         </div>
         <div class="proof-item" data-reveal="6">
           <strong>03</strong>
-          <h2>Native agent wiring.</h2>
-          <p>Use the CLI, daemon, MCP server, and lifecycle hooks for Codex, Claude Code, Gemini CLI, and Qwen.</p>
+          <h2>Wired into your agent.</h2>
+          <p>MCP server, lifecycle hooks, daemon, and CLI — for Claude Code, Codex, Gemini CLI, and Qwen.</p>
         </div>
       </section>
 
@@ -231,10 +230,9 @@
           <p class="eyebrow">What gets installed</p>
           <h2>A small status surface. The work happens in hooks.</h2>
           <p>
-            Recall.app is a quiet little window — daemon health, where memories live on disk,
-            and a couple of buttons. The actual capture and injection runs through MCP and the
-            SessionStart / UserPromptSubmit / SessionEnd hooks of your coding agent. There's no
-            UI to babysit.
+            Recall.app is a quiet window — daemon health, where memories live on disk, a few
+            buttons. The real work runs through MCP and your agent's SessionStart /
+            UserPromptSubmit / SessionEnd hooks. Nothing to babysit.
           </p>
         </div>
         <figure data-reveal="11">
@@ -245,13 +243,11 @@
 
       <section class="dashboard-showcase" aria-label="Web dashboard">
         <div class="dashboard-intro" data-reveal="11">
-          <p class="eyebrow">v0.7 · web dashboard</p>
           <h2>See everything your agents have learned.</h2>
           <p>
-            Open <strong>Dashboard in Browser</strong> from the menu bar (or run
-            <code>recall webui start</code>) and the bundled SPA serves a knowledge graph,
-            timeline, sessions feed, and contradictions view — local-only on
-            <code>http://localhost:7891</code>, no cloud, no account.
+            Open <strong>Dashboard in Browser</strong> from the menu bar, or run
+            <code>recall webui start</code>. Knowledge graph, timeline, sessions, and
+            contradictions — served locally on <code>localhost:7891</code>. No cloud, no account.
           </p>
         </div>
         <figure class="dashboard-demo" data-reveal="11">
@@ -260,16 +256,16 @@
         </figure>
         <div class="dashboard-tiles">
           <figure data-reveal="11">
-            <img src="./graph-2d.png" alt="Knowledge graph 2D layered view grouped by entity kind: files, functions, libraries, tools, commands, concepts." loading="lazy" />
-            <figcaption><strong>Knowledge graph.</strong> 2D layered view + 3D force layout. Entities are extracted from every memory; contains-match search filters across the whole set, not just the top-N.</figcaption>
+            <img src="./graph-3d.png" alt="Knowledge graph 3D force layout with labelled entity nodes extracted from memories." loading="lazy" />
+            <figcaption><strong>Knowledge graph.</strong> Entities pulled from every verified memory, in a 3D force layout or a 2D view grouped by kind. Search filters the whole set, not just the top-N.</figcaption>
           </figure>
           <figure data-reveal="11">
-            <img src="./timeline.png" alt="Timeline of activity events from coding agents: tool calls, prompt submits, captures, with filter chips for repo/source/type." loading="lazy" />
-            <figcaption><strong>Timeline.</strong> Filterable feed of every daemon event with click-to-expand request/result JSON and deep links into linked memories.</figcaption>
+            <img src="./timeline.png" alt="Timeline of agent activity: tool calls, prompts, and captured corrections, filterable by repo, source, and type." loading="lazy" />
+            <figcaption><strong>Timeline.</strong> Every event your agents generate, filterable by repo, source, and type — expand any row for the raw request and result.</figcaption>
           </figure>
           <figure data-reveal="11">
-            <img src="./sessions.png" alt="Sessions list showing per-session duration, event count, and event-type chips across multiple coding-agent runs." loading="lazy" />
-            <figcaption><strong>Sessions.</strong> Every distinct session across MCP, hooks, and CLI traffic with duration, type chips, and inline drilldown.</figcaption>
+            <img src="./sessions.png" alt="Sessions list showing per-session duration, event count, and event-type chips across coding-agent runs." loading="lazy" />
+            <figcaption><strong>Sessions.</strong> Each agent run across MCP, hooks, and CLI — duration, event mix, and a click-through to the full trace.</figcaption>
           </figure>
         </div>
       </section>
@@ -332,15 +328,13 @@
           <p class="eyebrow">Install</p>
           <h2>Install. Open. That's it.</h2>
           <p>
-            On macOS: one Homebrew command, then click <strong>Install + Start</strong> in Recall.app.
-            On Linux: one <code>curl | bash</code> — the installer runs <code>npm i -g</code> and <code>recall setup --yes</code> for you.
-            On Windows: one PowerShell line — the installer drops the system-tray companion in <code>%LOCALAPPDATA%</code>, registers autostart, and launches.
-            Every path auto-detects supported coding agents and wires MCP + lifecycle hooks for you.
+            One command on any platform — Homebrew on macOS, <code>curl | bash</code> on Linux,
+            one PowerShell line on Windows. Each installer auto-detects your coding agents and
+            wires up MCP and lifecycle hooks for you.
           </p>
           <p>
-            From the next session onward, Recall injects rules and gotchas into your agent's
-            context automatically. The CLI is there if you want to inspect or override —
-            you don't need it for the common path.
+            From the next session on, Recall injects the right rules automatically. The CLI is
+            there when you want to inspect or override — you don't need it for the common path.
           </p>
         </div>
         <div class="command-stack" data-reveal="13">
