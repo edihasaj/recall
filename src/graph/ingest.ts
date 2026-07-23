@@ -124,13 +124,18 @@ function persistExtraction(
  * (daemon /correct, /review, /scan) that want graph ingest to be a no-op on
  * failure rather than aborting the originating request.
  *
- * Returns the summary on success, `null` if the memory was not found, or
- * `null` if any error was swallowed.
+ * Only *active* (verified) memories enter the graph — candidate/transient
+ * memories are skipped so the graph stays a projection of verified knowledge.
+ * A candidate that is later promoted is ingested at promotion time.
+ *
+ * Returns the summary on success, `null` if the memory was not found, not
+ * active, or if any error was swallowed.
  */
 export function safeIngestMemoryById(db: RecallDb, memoryId: string): IngestSummary | null {
   try {
     const mem = getMemory(db, memoryId);
     if (!mem) return null;
+    if (mem.status !== "active") return null;
     return ingestMemoryHeuristic(db, { id: mem.id, text: mem.text, repo: mem.repo });
   } catch (err) {
     console.error(`[recall] graph ingest failed for ${memoryId}:`, err);

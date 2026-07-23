@@ -43,7 +43,10 @@ import {
   countRelations,
   type RelationType,
 } from "./graph/store.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { safeIngestMemoryById } from "./graph/ingest.js";
+import { reconcileGraphIfStale } from "./graph/reconcile.js";
 import type { EntityKind } from "./graph/normalize.js";
 
 function safeIngestMemory(memoryId: string): void {
@@ -1182,6 +1185,20 @@ async function startDaemon() {
   }
 
   db = initDb();
+
+  // Auto-clean the knowledge graph when the extractor rules have changed since
+  // this install last rebuilt it (one-time per version bump, all users).
+  try {
+    const dataDir = process.env.RECALL_DATA_DIR ?? join(homedir(), ".recall");
+    const reconciled = reconcileGraphIfStale(db, dataDir);
+    if (reconciled) {
+      console.log(
+        `[recall] graph rebuilt under new extractor rules — ${reconciled.memories} active memories, ${reconciled.entity_touches} entity touches`,
+      );
+    }
+  } catch (error: unknown) {
+    console.error(`[recall] graph reconcile failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   server.listen(PORT, () => {
     console.log(`Recall daemon listening on http://localhost:${PORT}`);

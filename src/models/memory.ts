@@ -4,6 +4,7 @@ import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
 import { memoryDedupeKey } from "./dedupe.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
+import { safeIngestMemoryById } from "../graph/ingest.js";
 import {
   CONFIDENCE,
   PROMOTION,
@@ -215,6 +216,13 @@ export function promoteMemory(
     .run();
 
   queueMemoryEmbeddingSync(db, id);
+
+  // A memory only enters the (verified-only) knowledge graph once it becomes
+  // active. Ingest on the candidate→active transition so promoted memories
+  // appear without waiting for the next daemon restart / reconcile.
+  if (newStatus === "active" && mem.status !== "active") {
+    safeIngestMemoryById(db, id);
+  }
   return true;
 }
 

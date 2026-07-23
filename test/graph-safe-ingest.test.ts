@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb, type RecallDb } from "../src/db/client.js";
-import { createMemory } from "../src/models/memory.js";
+import { createMemory, promoteMemory } from "../src/models/memory.js";
 import { safeIngestMemoryById } from "../src/graph/ingest.js";
 import { listEntitiesForMemory } from "../src/graph/store.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
@@ -27,19 +27,49 @@ describe("safeIngestMemoryById", () => {
     vi.restoreAllMocks();
   });
 
-  it("ingests entities for a real memory id", () => {
+  it("ingests entities for an active (verified) memory id", () => {
     const id = createMemory(db, {
       type: "rule",
       text: "Use `jose` in `src/auth/middleware.ts`.",
       scope: "repo",
       repo: "demo",
       source: "manual",
+      confidence: 0.9, // active
     });
     const summary = safeIngestMemoryById(db, id);
     expect(summary).not.toBeNull();
     expect(summary!.entities_created_or_updated).toBeGreaterThan(0);
     const names = listEntitiesForMemory(db, id).map((e) => e.name);
     expect(names).toEqual(expect.arrayContaining(["jose", "src/auth/middleware.ts"]));
+  });
+
+  it("skips candidate (unverified) memories — graph is verified-only", () => {
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Use `zod` for validation.",
+      scope: "repo",
+      repo: "demo",
+      source: "user_correction",
+      confidence: 0.4, // candidate
+    });
+    expect(safeIngestMemoryById(db, id)).toBeNull();
+    expect(listEntitiesForMemory(db, id)).toHaveLength(0);
+  });
+
+  it("ingests a memory when it is promoted to active", () => {
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Use `pino` for logging.",
+      scope: "repo",
+      repo: "demo",
+      source: "user_correction",
+      confidence: 0.4, // candidate — not graphed yet
+    });
+    expect(listEntitiesForMemory(db, id)).toHaveLength(0);
+    // Promotion to active ingests it via the promoteMemory graph hook.
+    promoteMemory(db, id, "explicit_confirm");
+    const names = listEntitiesForMemory(db, id).map((e) => e.name);
+    expect(names).toContain("pino");
   });
 
   it("returns null for an unknown memory id (no throw)", () => {

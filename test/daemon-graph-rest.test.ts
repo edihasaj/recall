@@ -104,7 +104,7 @@ describe("daemon /graph REST routes (live HTTP)", () => {
     expect(typeof r.json.relations).toBe("number");
   });
 
-  it("POST /correct ingests the memory into the graph automatically", async () => {
+  it("ingests a memory into the graph once it is verified (confirmed)", async () => {
     const correction = await post("/correct", {
       text: "always use `jose` in `src/auth/middleware.ts`",
       repo: "edihasaj/recall-test",
@@ -116,10 +116,17 @@ describe("daemon /graph REST routes (live HTTP)", () => {
     expect(memoryIds.length).toBeGreaterThan(0);
     const memId = memoryIds[0];
 
-    // The memory should now have entities linked in the graph.
-    const memEntities = await get(`/graph/memory/${memId}`);
-    expect(memEntities.status).toBe(200);
-    const names = memEntities.json.entities.map((e: any) => e.name);
+    // The graph is verified-only: a fresh candidate correction is NOT graphed.
+    const before = await get(`/graph/memory/${memId}`);
+    expect(before.json.entities.map((e: any) => e.name)).not.toContain("jose");
+
+    // Confirming promotes it to active, which ingests it into the graph.
+    const confirm = await post("/confirm", { memory_id: memId });
+    expect(confirm.status).toBe(200);
+
+    const after = await get(`/graph/memory/${memId}`);
+    expect(after.status).toBe(200);
+    const names = after.json.entities.map((e: any) => e.name);
     expect(names).toEqual(expect.arrayContaining(["jose", "src/auth/middleware.ts"]));
   });
 
@@ -140,12 +147,15 @@ describe("daemon /graph REST routes (live HTTP)", () => {
 
   it("POST /graph/query expands via graph hops", async () => {
     // Add a sibling memory mentioning jose so graph expansion has something
-    // to find for a query that doesn't textually match it.
-    await post("/correct", {
+    // to find for a query that doesn't textually match it. Confirm it so it
+    // enters the verified-only graph.
+    const sibling = await post("/correct", {
       text: "always rotate `jose` signing keys weekly",
       repo: "edihasaj/recall-test",
       session_id: "sess-rest-2",
     });
+    const siblingIds: string[] = sibling.json.ids ?? sibling.json.created ?? [];
+    if (siblingIds[0]) await post("/confirm", { memory_id: siblingIds[0] });
 
     const r = await post("/graph/query", {
       query: "auth middleware",

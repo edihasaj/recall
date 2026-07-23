@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.16 - 2026-07-23
+
+### Changed
+
+- **The knowledge graph is now a verified-only projection, and cleans itself.** Only *active* (verified) memories contribute entities — candidate/transient memories are skipped at capture time, and a memory is ingested the moment it is promoted to active. On daemon startup the graph auto-rebuilds once whenever the extractor rules have advanced (tracked by a `GRAPH_EXTRACTOR_VERSION` marker in the data dir), so existing installs shed junk entities (`pnpm build`, `node dist`, `pnpm as`, …) automatically on upgrade — no manual `graph backfill --rebuild` needed. That flag remains available for on-demand rebuilds.
+
 ## 0.8.15 - 2026-07-23
 
 ### Fixed
