@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.13 - 2026-07-23
+
+### Fixed
+
+- **Dashboard text is larger and more legible.** Bumped the WebUI type scale across the sidebar, page headers, memory rows, badges, toolbars, timeline, sessions, and graph panels so the dense metadata is comfortably readable instead of squinting-small.
+- **Knowledge graph labels are readable on the dark canvas.** 3D node labels now render as bright, larger text on a near-opaque chip (kind identity moves to the coloured border and node sphere) instead of dim kind-tinted text that vanished into the background. Softened the depth fog and lifted the canvas gradient so labels no longer fade to black a short distance from the camera.
+- **Daemon version no longer shows stale after an update.** When the app launches and finds the launchd daemon still running a previously-installed version (e.g. after `brew upgrade`), it now bounces the daemon once so the reported version and served UI match the installed bundle. Previously the healthy old daemon was left running and the dashboard kept showing the old version until a manual restart.
+
 ## 0.8.12 - 2026-07-23
 
 ### Fixed

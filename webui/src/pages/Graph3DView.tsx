@@ -133,9 +133,10 @@ export function Graph3DView({
     };
 
     // Depth cueing: fog matched to the background so far-away nodes/links
-    // dissolve into it rather than staying crisp at every distance.
+    // recede — kept gentle so labels stay legible rather than dissolving to
+    // black a short distance from the camera.
     const scene = fg.scene();
-    if (scene) scene.fog = new THREE.FogExp2(0x0b0c0f, 0.0016);
+    if (scene) scene.fog = new THREE.FogExp2(0x141a24, 0.0009);
 
     // Ambient idle orbit — react-force-graph calls controls.update() every
     // frame, so OrbitControls.autoRotate animates for free. Pause the moment
@@ -188,7 +189,7 @@ export function Graph3DView({
         position: "relative",
         height: "calc(100vh - 240px)",
         minHeight: 480,
-        background: "radial-gradient(ellipse at center, #141a24 0%, #0b0c0f 68%)",
+        background: "radial-gradient(ellipse at center, #1c2534 0%, #0d1017 72%)",
         borderRadius: 8,
         overflow: "hidden",
       }}
@@ -210,16 +211,18 @@ export function Graph3DView({
             sprite.backgroundColor = kindColor;
             sprite.color = readableTextColor(kindColor);
           } else {
-            sprite.backgroundColor = "rgba(11, 12, 15, 0.88)";
-            // Tinted text in the kind's color for unselected — keeps the
-            // dark-background readability invariant ("white-ish on black").
-            sprite.color = kindColor;
+            // Near-opaque dark chip + bright near-white text so labels stay
+            // legible against the dark canvas — several kind colors (grey,
+            // olive) are too dim to read as text. Kind identity is carried by
+            // the coloured border and the node sphere, not the label text.
+            sprite.backgroundColor = "rgba(11, 12, 15, 0.94)";
+            sprite.color = "#f2f4f8";
           }
           sprite.borderColor = kindColor;
-          sprite.borderWidth = 0.6;
+          sprite.borderWidth = 1;
           sprite.borderRadius = 3;
-          sprite.padding = 3;
-          sprite.textHeight = n.selected ? 6 : 4;
+          sprite.padding = 4;
+          sprite.textHeight = n.selected ? 8 : 6;
           return sprite;
         }}
         nodeThreeObjectExtend
@@ -255,7 +258,7 @@ export function Graph3DView({
           background: "rgba(11, 12, 15, 0.7)",
           border: `1px solid ${dragEnabled ? "var(--accent)" : "var(--border)"}`,
           color: dragEnabled ? "var(--accent)" : "var(--muted)",
-          fontSize: 10,
+          fontSize: 12,
           fontFamily: "var(--mono)",
           pointerEvents: "none",
           letterSpacing: 0.3,

@@ -9,12 +9,14 @@ final class DaemonController: ObservableObject {
     @Published var setupStatus = "Idle"
     @Published var setupRunning = false
     @Published var lastError: String?
+    @Published var daemonVersion = ""
 
     let dataDir = NSHomeDirectory() + "/.recall"
     let logDir = NSHomeDirectory() + "/.recall/logs"
 
     private let label = "com.recall.daemon"
     private var refreshTask: Task<Void, Never>?
+    private var didAutoRestartForVersion = false
 
     var summary: String {
         "Production Recall app. Bundled runtime. Launchd-managed daemon."
@@ -26,6 +28,8 @@ final class DaemonController: ObservableObject {
             startDaemon()
         } else if !healthOK {
             setupStatus = "Install required"
+        } else {
+            restartIfBundleNewerThanRunning()
         }
         refreshTask?.cancel()
         refreshTask = Task {
@@ -51,6 +55,9 @@ final class DaemonController: ObservableObject {
             if healthOK {
                 setupRunning = false
                 setupStatus = "Ready"
+                if let version = Self.jsonString(health, key: "version") {
+                    daemonVersion = version
+                }
             }
         } catch {
             healthOK = false
@@ -82,6 +89,33 @@ final class DaemonController: ObservableObject {
 
     func restartDaemon() {
         runRecallInBackground(status: "Restarting daemon", "daemon", "restart")
+    }
+
+    /// After a bundle update (e.g. `brew upgrade`) the launchd daemon keeps
+    /// running the previously-installed code — it stays healthy, so nothing
+    /// bounces it and the UI reports the old version. When the running daemon's
+    /// version differs from the bundled runtime, restart it once so the served
+    /// UI and reported version match the installed app.
+    private func restartIfBundleNewerThanRunning() {
+        guard !didAutoRestartForVersion, !daemonVersion.isEmpty else { return }
+        guard let bundled = bundledVersion(), bundled != daemonVersion else { return }
+        didAutoRestartForVersion = true
+        setupStatus = "Updating daemon to \(bundled)"
+        restartDaemon()
+    }
+
+    private func bundledVersion() -> String? {
+        let pkgPath = URL(fileURLWithPath: runtimeRoot)
+            .appendingPathComponent("package.json").path
+        guard let data = FileManager.default.contents(atPath: pkgPath) else { return nil }
+        return Self.jsonString(String(decoding: data, as: UTF8.self), key: "version")
+    }
+
+    private nonisolated static func jsonString(_ json: String, key: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = object[key] as? String else { return nil }
+        return value
     }
 
     func openDataDir() {

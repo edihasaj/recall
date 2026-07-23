@@ -104,17 +104,17 @@ function SessionCard({ session }: { session: SessionRow }) {
       onClick={() => setOpen(!open)}
     >
       <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 600 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 13.5, fontWeight: 600 }}>
           {session.session_id.slice(0, 8)}
           <span style={{ color: "var(--muted)" }}>…{session.session_id.slice(-4)}</span>
         </span>
         {session.repo && (
-          <span style={{ color: "var(--muted)", fontSize: 12 }}>{session.repo}</span>
+          <span style={{ color: "var(--muted)", fontSize: 13.5 }}>{session.repo}</span>
         )}
         <span className="badge" style={{ background: "var(--surface-2)", padding: "1px 6px" }}>
           {session.event_count} event{session.event_count === 1 ? "" : "s"}
         </span>
-        <span style={{ color: "var(--muted)", fontSize: 11, fontFamily: "var(--mono)" }}>
+        <span style={{ color: "var(--muted)", fontSize: 12.5, fontFamily: "var(--mono)" }}>
           {duration}
         </span>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -122,7 +122,7 @@ function SessionCard({ session }: { session: SessionRow }) {
             <span
               key={t}
               style={{
-                fontSize: 10,
+                fontSize: 12,
                 padding: "1px 6px",
                 borderRadius: 3,
                 color: TYPE_COLORS[t] ?? "var(--muted)",
@@ -133,7 +133,7 @@ function SessionCard({ session }: { session: SessionRow }) {
             </span>
           ))}
         </div>
-        <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 11 }}>
+        <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 12.5 }}>
           {relative(session.last_at)} {open ? "▾" : "▸"}
         </span>
       </div>
@@ -156,7 +156,7 @@ function SessionDrilldown({ sessionId }: { sessionId: string }) {
         <Link
           to={`/timeline?session_id=${sessionId}`}
           className="btn"
-          style={{ padding: "2px 8px", fontSize: 11 }}
+          style={{ padding: "2px 8px", fontSize: 12.5 }}
         >
           open in timeline →
         </Link>
@@ -182,17 +182,17 @@ function CompactEventRow({ event }: { event: ActivityEvent }) {
         gap: 10,
         alignItems: "baseline",
         padding: "4px 0",
-        fontSize: 12,
+        fontSize: 13.5,
         borderBottom: "1px dashed var(--border)",
       }}
     >
-      <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10, minWidth: 60 }}>
+      <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 12, minWidth: 60 }}>
         {shortTime(event.created_at)}
       </span>
-      <span style={{ color, fontFamily: "var(--mono)", fontSize: 11, minWidth: 95 }}>
+      <span style={{ color, fontFamily: "var(--mono)", fontSize: 12.5, minWidth: 95 }}>
         {event.event_type}
       </span>
-      <span style={{ color: "var(--muted)", fontSize: 11 }}>{event.source}</span>
+      <span style={{ color: "var(--muted)", fontSize: 12.5 }}>{event.source}</span>
       <span style={{ flex: 1, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
         {summary}
       </span>

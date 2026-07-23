@@ -210,31 +210,31 @@ function EventRow({
         >
           {event.event_type}
         </span>
-        <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 11 }}>
+        <span style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 12.5 }}>
           {event.source}
         </span>
         {event.repo && (
-          <span style={{ color: "var(--muted)", fontSize: 12 }}>{event.repo}</span>
+          <span style={{ color: "var(--muted)", fontSize: 13.5 }}>{event.repo}</span>
         )}
         {event.memory_ids && event.memory_ids.length > 0 && (
           <span className="badge" style={{ background: "var(--surface-2)", padding: "1px 6px" }}>
             {event.memory_ids.length} mem
           </span>
         )}
-        <span style={{ flex: 1, color: "var(--text-2)", fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ flex: 1, color: "var(--text-2)", fontSize: 14, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {summary}
         </span>
-        <span style={{ color: "var(--muted)", fontSize: 11 }}>{open ? "▾" : "▸"}</span>
+        <span style={{ color: "var(--muted)", fontSize: 12.5 }}>{open ? "▾" : "▸"}</span>
       </div>
 
       {open && (
-        <div style={{ marginTop: 10, fontSize: 12, fontFamily: "var(--mono)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ marginTop: 10, fontSize: 13.5, fontFamily: "var(--mono)" }} onClick={(e) => e.stopPropagation()}>
           {event.session_id && (
             <div style={{ marginBottom: 8 }}>
               <span style={{ color: "var(--muted)" }}>session: </span>
               <button
                 className="btn"
-                style={{ padding: "0 6px", fontSize: 11 }}
+                style={{ padding: "0 6px", fontSize: 12.5 }}
                 onClick={() => onJumpSession(event.session_id!)}
               >
                 {event.session_id}
@@ -284,7 +284,7 @@ const preStyle: CSSProperties = {
   padding: "8px 10px",
   borderRadius: 4,
   marginTop: 4,
-  fontSize: 11,
+  fontSize: 12.5,
   lineHeight: 1.45,
   maxHeight: 320,
   overflow: "auto",

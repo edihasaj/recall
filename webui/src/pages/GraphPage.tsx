@@ -203,7 +203,7 @@ function buildEntityLayout(
         background: "transparent",
         border: "none",
         color: KIND_COLORS[kind],
-        fontSize: 11,
+        fontSize: 12.5,
         fontWeight: 700,
         textTransform: "uppercase",
         letterSpacing: "0.5px",
@@ -224,8 +224,8 @@ function buildEntityLayout(
             color: isSelected ? "#0b0c0f" : "#e6e6e6",
             border: `1.5px solid ${KIND_COLORS[e.kind]}`,
             borderRadius: 6,
-            fontSize: 11,
-            padding: "6px 9px",
+            fontSize: 12.5,
+            padding: "7px 10px",
             width: 240,
             whiteSpace: "pre-wrap",
           },
@@ -244,7 +244,7 @@ function buildEntityLayout(
       animated: r.relation_type === "conflicts_with" || r.relation_type === "replaces",
       style: { stroke: RELATION_COLORS[r.relation_type] ?? "#555", strokeWidth: 1.5 },
       label: r.relation_type,
-      labelStyle: { fill: RELATION_COLORS[r.relation_type] ?? "#888", fontSize: 9 },
+      labelStyle: { fill: RELATION_COLORS[r.relation_type] ?? "#888", fontSize: 10.5 },
       labelBgStyle: { fill: "#0b0c0f", fillOpacity: 0.7 },
     }));
 
@@ -287,7 +287,7 @@ function EntityPanel({
         <span className="badge" style={{ color: KIND_COLORS[root.kind] }}>{root.kind}</span>
         <button className="btn" onClick={onClose} style={{ padding: "2px 8px" }}>✕</button>
       </div>
-      <div className="memory-text" style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, wordBreak: "break-word" }}>
+      <div className="memory-text" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, wordBreak: "break-word" }}>
         {root.name}
       </div>
       <div className="memory-meta" style={{ marginBottom: 10 }}>
@@ -339,14 +339,14 @@ function MemoryPreview({ memoryId }: { memoryId: string }) {
   });
   if (q.isLoading) {
     return (
-      <div className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 11, padding: "4px 0" }}>
+      <div className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 12.5, padding: "4px 0" }}>
         {memoryId.slice(0, 8)} · loading…
       </div>
     );
   }
   if (q.isError || !q.data) {
     return (
-      <div className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 11, padding: "4px 0", color: "var(--danger)" }}>
+      <div className="memory-meta" style={{ fontFamily: "var(--mono)", fontSize: 12.5, padding: "4px 0", color: "var(--danger)" }}>
         {memoryId.slice(0, 8)} · unavailable
       </div>
     );
@@ -362,7 +362,7 @@ function MemoryPreview({ memoryId }: { memoryId: string }) {
         border: "1px solid var(--border)",
       }}
     >
-      <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--muted)", marginBottom: 4, fontFamily: "var(--mono)" }}>
+      <div style={{ display: "flex", gap: 8, fontSize: 11.5, color: "var(--muted)", marginBottom: 4, fontFamily: "var(--mono)" }}>
         <span>{m.id.slice(0, 8)}</span>
         <span>·</span>
         <span>{m.type}</span>
@@ -375,7 +375,7 @@ function MemoryPreview({ memoryId }: { memoryId: string }) {
           </>
         )}
       </div>
-      <div style={{ fontSize: 12, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
         {m.text}
       </div>
     </div>
