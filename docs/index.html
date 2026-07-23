@@ -6,7 +6,7 @@
     <title>Recall - repo memory for coding agents</title>
     <meta
       name="description"
-      content="Recall is a local repo-memory compiler for coding agents on macOS, Linux, and Windows. It learns corrections, scores memory quality, and injects trusted instructions through CLI, MCP, and hooks."
+      content="Your coding agents keep forgetting. Recall learns from your corrections and feeds the right rules back into every session — on macOS, Linux, and Windows, through CLI, MCP, and hooks."
     />
     <meta name="theme-color" content="#2f211a" />
     <link rel="canonical" href="https://recallmemory.dev/" />
@@ -14,14 +14,14 @@
     <meta property="og:title" content="Recall" />
     <meta
       property="og:description"
-      content="Local repo memory for coding agents. Corrections, review feedback, quality scoring, MCP, hooks. macOS menu bar app, Linux daemon, and Windows system-tray companion."
+      content="Your coding agents keep forgetting. Recall learns from your corrections and feeds the right rules back into every session. macOS menu bar app, Linux daemon, Windows tray companion."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://recallmemory.dev/" />
     <meta property="og:image" content="https://recallmemory.dev/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Recall — local-first repo memory for coding agents. SessionStart hook injects rules and gotchas into the agent's context." />
+    <meta property="og:image:alt" content="Recall — the SessionStart hook injecting a repo's rules and gotchas into a coding agent's context." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://recallmemory.dev/og-image.png" />
 
@@ -154,27 +154,27 @@
               <span class="hook-dot"></span>
               <small>SessionStart hook fired · 14ms · injected into agent context</small>
             </div>
-            <pre class="injection"><code><span class="lead">Recall (edihasaj/recall):</span>
+            <pre class="injection"><code><span class="lead">Recall (northwind/storefront):</span>
 
 ## Rules
-- after bumping package.json, bump package-lock.json + add a CHANGELOG entry
-- if you touched docs/, run `npm run docs:check` before commit
-- <span class="tag">[global]</span> never bypass commit signing (-c commit.gpgsign=false)
-- prefer pnpm over npm in this repo; conventional commits required
+- prices are integers in minor units — never store a float for money
+- never hardcode a tax rate; read it from `config/tax.ts`
+- <span class="tag">[global]</span> add a regression test with every bug fix
+- always use pnpm here — never npm or yarn
 
 ## Commands
-- dev: tsup --watch
-- gate: typecheck &amp;&amp; test &amp;&amp; docs:check
+- test: pnpm test --filter storefront
+- gate: pnpm lint &amp;&amp; pnpm typecheck &amp;&amp; pnpm test
 
 ## Gotchas
-- ~/.recall/recall.db: snapshot before destructive migrations
-- macOS code-sign cert lives in 1Password, not the repo</code></pre>
+- `CartSummary` re-renders on every keystroke — memoise first
+- checkout state lives in zustand, not React context</code></pre>
             <div class="agent-action">
               <small>Claude</small>
               <p>
-                Touched <code>docs/site.css</code> and bumped <code>package.json</code> —
-                ran <code>docs:check</code>, synced <code>package-lock.json</code>, added a CHANGELOG entry,
-                and prepared a conventional commit. Signing on; ready to push when you say.
+                Fixed the rounding bug in <code>pricing.ts</code> — kept the total in minor units,
+                pulled the rate from <code>config/tax.ts</code>, memoised <code>CartSummary</code>,
+                and added a regression test. Gate is green; ready to push when you say.
               </p>
             </div>
           </div>
@@ -251,8 +251,8 @@
           </p>
         </div>
         <figure class="dashboard-demo" data-reveal="11">
-          <img src="./demo.gif" alt="Recall web dashboard: clicking through Memories, the knowledge graph (2D and 3D), Timeline, and Sessions." loading="lazy" width="1280" height="800" />
-          <figcaption>End-to-end walkthrough of the dashboard.</figcaption>
+          <img src="./dashboard.png" alt="Recall dashboard Memories view listing captured rules, gotchas, and decisions with type, repo, confidence, and source for each." loading="lazy" width="1680" height="1050" />
+          <figcaption>Every rule, gotcha, and decision Recall has captured — with the evidence behind it.</figcaption>
         </figure>
         <div class="dashboard-tiles">
           <figure data-reveal="11">

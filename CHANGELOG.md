@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.18 - 2026-07-23
+
+### Changed
+
+- **All marketing imagery is now generated from a fictional dataset.** The published dashboard walkthrough and screenshots were captured against a real machine and showed live repository names, prompts, and file paths. Every asset is regenerated from a curated, entirely invented dataset (an imaginary "Northwind" company and its repos) via the new `scripts/seed-demo-dataset.mjs`, and the hero, OG card, and README samples use the same fictional rules. Assets that carried real data (`demo.gif`, `demo.mp4`, and the stale graph/session captures) are removed.
+
 ## 0.8.17 - 2026-07-23
 
 ### Fixed

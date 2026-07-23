@@ -17,7 +17,7 @@ for (const file of [indexPath, cssPath, iconPath]) {
 const html = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, "utf8") : "";
 const required = [
   "Recall",
-  "repo-memory compiler",
+  "Recall remembers",
   "brew install --cask edihasaj/tap/recall",
   "recall setup --yes",
   "GitHub Releases",

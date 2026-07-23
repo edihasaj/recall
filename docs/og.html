@@ -227,8 +227,8 @@
           <h1>Recall</h1>
         </div>
         <p class="tagline">
-          Local-first <em>repo memory</em> for coding agents. Capture corrections, score quality,
-          inject only what matters.
+          Your coding agents keep forgetting. <em>Recall remembers</em> — it learns from your
+          corrections and feeds the right rules back into every session.
         </p>
         <div class="meta-row">
           <span class="pill">Open source · MIT</span>
@@ -246,13 +246,13 @@
           <span>SessionStart hook fired · injected into agent context</span>
         </div>
         <div class="body-pre">
-          <div class="lead">Recall (edihasaj/recall):</div>
+          <div class="lead">Recall (northwind/storefront):</div>
           <div class="section-h">## Rules</div>
-          <div class="row">- after bumping package.json, sync lock + CHANGELOG</div>
-          <div class="row">- if you touched docs/, run <span style="color:#ffd9a8">npm run docs:check</span></div>
-          <div class="row">- <span class="tag">[global]</span> never bypass commit signing</div>
+          <div class="row">- prices are integers in minor units — never a float</div>
+          <div class="row">- never hardcode a tax rate; read <span style="color:#ffd9a8">config/tax.ts</span></div>
+          <div class="row">- <span class="tag">[global]</span> add a regression test with every fix</div>
           <div class="section-h">## Gotchas</div>
-          <div class="row">- ~/.recall/recall.db: snapshot before destructive migrations</div>
+          <div class="row">- CartSummary re-renders on every keystroke — memoise</div>
         </div>
       </div>
     </div>

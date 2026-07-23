@@ -30,11 +30,11 @@ recall correct -r owner/repo "don't use npm, use pnpm"   # one correction
 
 The bundled web dashboard (open via the menu bar item *Open Dashboard in Browser*, or `recall webui start`) is the fastest way to see what Recall has learned: memories, the knowledge graph, recent activity, and live sessions across every agent that hits the daemon.
 
-![Recall web dashboard demo](assets/demo.gif)
+![Recall web dashboard](docs/dashboard.png)
 
 | Knowledge graph | Timeline | Sessions |
 | --- | --- | --- |
-| ![Knowledge graph](docs/graph-2d.png) | ![Timeline](docs/timeline.png) | ![Sessions](docs/sessions.png) |
+| ![Knowledge graph](docs/graph-3d.png) | ![Timeline](docs/timeline.png) | ![Sessions](docs/sessions.png) |
 
 - **Graph** — 2D layered view by entity kind plus a 3D force layout (toggle in the toolbar). Repo + kind dropdowns and a contains-match name search filter the visible set; click a node to drill into linked memories and neighbours.
 - **Timeline** — filterable feed of every daemon event (compile, query, scan, correction, feedback, tool calls…). Click a row to expand the full request/result JSON; jump straight to the linked memories or pivot into the session view.
