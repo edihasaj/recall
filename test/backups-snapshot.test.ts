@@ -18,6 +18,11 @@ function freshDbPath(): string {
 }
 
 describe("daily database snapshot", () => {
+  it("places backups beside the database", () => {
+    const dbPath = freshDbPath();
+    expect(getBackupsDir(dbPath)).toBe(join(dbPath, "..", "backups"));
+  });
+
   it("creates today's backup when absent", () => {
     const dbPath = freshDbPath();
     const result = ensureDailyBackup({ dbPath, now: new Date("2026-04-17T12:00:00Z") });

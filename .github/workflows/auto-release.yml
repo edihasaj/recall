@@ -61,8 +61,10 @@ jobs:
           git tag "$tag" -m "$tag"
           git push origin "refs/tags/$tag"
 
-      - name: Dispatch release workflow
+      - name: Dispatch release workflows
         if: steps.version.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run release.yml --field tag="${{ steps.version.outputs.tag }}"
+        run: |
+          gh workflow run release.yml --field tag="${{ steps.version.outputs.tag }}"
+          gh workflow run windows-tray.yml --field tag="${{ steps.version.outputs.tag }}"

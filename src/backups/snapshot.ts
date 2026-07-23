@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getDbPath } from "../db/client.js";
 
 export const DEFAULT_BACKUP_RETENTION = 2;
@@ -11,14 +11,9 @@ export interface BackupResult {
 }
 
 export function getBackupsDir(dbPath: string = getDbPath()): string {
-  const dir = join(dirOf(dbPath), "backups");
+  const dir = join(dirname(dbPath), "backups");
   mkdirSync(dir, { recursive: true });
   return dir;
-}
-
-function dirOf(path: string): string {
-  const idx = path.lastIndexOf("/");
-  return idx === -1 ? "." : path.slice(0, idx);
 }
 
 function todayStamp(now = new Date()): string {

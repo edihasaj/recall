@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.20 - 2026-07-24
+
+### Fixed
+
+- **Windows tray installs now start the Recall daemon.** The tray resolves the per-user global npm package installed by `install.ps1`, and database backups use the platform-native parent directory instead of treating Windows paths as relative.
+- **Automatic releases now publish Windows binaries.** The release automation explicitly dispatches the Windows tray workflow after creating a tag, so both `arm64` and `amd64` assets are attached without a manual repair.
+
 ## 0.8.19 - 2026-07-23
 
 ### Added

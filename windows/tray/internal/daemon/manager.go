@@ -38,7 +38,8 @@ type Manager struct {
 //  1. $RECALL_DAEMON_SCRIPT env var (escape hatch).
 //  2. Resolved via `node -e "console.log(require.resolve('@edihasaj/recall/package.json'))"`,
 //     then sibling dist/daemon.js.
-//  3. Fall back to first match in well-known npm-global locations.
+//  3. Resolved from `npm root -g`.
+//  4. Fall back to the per-user npm-global location on Windows.
 //
 // Step 2 keeps the tray honest about which install it's binding to.
 func New() (*Manager, error) {
@@ -69,18 +70,48 @@ func New() (*Manager, error) {
 func resolveDaemonScript(nodePath string) (string, error) {
 	cmd := exec.Command(nodePath, "-e", "console.log(require.resolve('@edihasaj/recall/package.json'))")
 	out, err := cmd.Output()
+	if err == nil {
+		pkgJSON := stringTrim(string(out))
+		if pkgJSON != "" {
+			candidate := filepath.Join(filepath.Dir(pkgJSON), "dist", "daemon.js")
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				return candidate, nil
+			}
+		}
+	}
+
+	var candidates []string
+	npmOut, npmErr := exec.Command("npm", "root", "-g").Output()
+	if npmErr == nil {
+		candidates = append(candidates, daemonScriptAtGlobalRoot(stringTrim(string(npmOut))))
+	}
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		candidates = append(candidates, daemonScriptAtGlobalRoot(filepath.Join(appData, "npm", "node_modules")))
+	}
+
+	if candidate, findErr := firstExistingFile(candidates); findErr == nil {
+		return candidate, nil
+	}
 	if err != nil {
 		return "", err
 	}
-	pkgJSON := stringTrim(string(out))
-	if pkgJSON == "" {
-		return "", errors.New("empty resolution from node require.resolve")
+	return "", errors.New("package resolved, but dist/daemon.js was not found")
+}
+
+func daemonScriptAtGlobalRoot(root string) string {
+	return filepath.Join(root, "@edihasaj", "recall", "dist", "daemon.js")
+}
+
+func firstExistingFile(candidates []string) (string, error) {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
 	}
-	candidate := filepath.Join(filepath.Dir(pkgJSON), "dist", "daemon.js")
-	if _, err := os.Stat(candidate); err != nil {
-		return "", fmt.Errorf("stat %s: %w", candidate, err)
-	}
-	return candidate, nil
+	return "", errors.New("no candidate exists")
 }
 
 func stringTrim(s string) string {
