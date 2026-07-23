@@ -55,9 +55,28 @@ const PACKAGE_STOPWORDS = new Set([
   "test", "tests", "build", "run", "runs", "name", "type", "types", "main",
   "yes", "no", "ok", "all", "any", "new", "old", "more", "less", "always",
   "never", "todo", "fixme", "note", "warn", "info", "error", "ts", "js",
+  // Shell / language builtins that look package-shaped in backticks but are
+  // not libraries ("echo", "dict", ...).
+  "echo", "dict", "list", "set", "map", "str", "int", "bool", "float",
+  "print", "println", "log", "dir", "env", "tmp", "src", "lib", "bin",
+  "out", "obj", "val", "var", "let", "const", "func", "def", "cls", "self",
+  "args", "kwargs", "none", "cat", "grep", "sed", "awk", "cwd", "std",
 ]);
 // Bare CLI invocation lines: `npm test`, `pnpm i`, `cargo build`
 const CLI_RE = /\b(npm|pnpm|yarn|bun|cargo|go|uv|pip|node|deno|claude|codex|cursor|recall|brew|gh|git)\s+([a-z][a-z-]{0,30})\b/g;
+// Package managers + runtimes whose `<tool> <word>` pairs are almost always
+// generic build/script noise ("pnpm build", "node dist", "npm run") or English
+// filler grabbed from prose ("Use pnpm as ...", "npm install" → "npm in").
+// For these we record the tool itself but never a `command` entity.
+const TOOL_ONLY_CLIS = new Set(["npm", "pnpm", "yarn", "bun", "node", "deno"]);
+// Second tokens that are English filler, not real subcommands — reject the
+// whole match so we don't mint entities like "pnpm as" or "git it".
+const CLI_SUBCOMMAND_STOPWORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does", "for",
+  "from", "has", "have", "i", "if", "in", "into", "is", "it", "its", "no",
+  "not", "of", "on", "or", "so", "that", "the", "then", "this", "to", "up",
+  "via", "was", "we", "will", "with", "you",
+]);
 // URLs
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`)]+/g;
 
@@ -117,8 +136,18 @@ export function heuristic(text: string): ExtractionResult {
 
   // CLI commands
   for (const m of text.matchAll(CLI_RE)) {
-    push("tool", m[1]);
-    push("command", `${m[1]} ${m[2]}`);
+    const tool = m[1];
+    const sub = m[2];
+    // English filler after the tool ("pnpm as", "npm in") is not a command.
+    if (CLI_SUBCOMMAND_STOPWORDS.has(sub)) {
+      push("tool", tool);
+      continue;
+    }
+    push("tool", tool);
+    // Package managers / runtimes: the `<tool> <script>` pair is generic
+    // tooling noise ("pnpm build", "node dist"). Keep only the tool node.
+    if (TOOL_ONLY_CLIS.has(tool)) continue;
+    push("command", `${tool} ${sub}`);
   }
 
   // URLs

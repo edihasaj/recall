@@ -2001,9 +2001,15 @@ graphCmd
   .description("Run the heuristic extractor over every active memory (idempotent)")
   .option("--repo <repo>", "Limit to a single repo")
   .option("--limit <n>", "Cap rows processed", "10000")
+  .option("--rebuild", "Clear all existing entities/relations first, then re-extract")
   .action(async (opts) => {
     const db = initDb();
     const { ingestMemoryHeuristic } = await import("./graph/ingest.js");
+    if (opts.rebuild) {
+      const { clearGraph } = await import("./graph/store.js");
+      clearGraph(db);
+      console.log("Cleared existing graph entities and relations.");
+    }
     const rows = queryMemories(db, {
       repo: opts.repo,
       status: "active",

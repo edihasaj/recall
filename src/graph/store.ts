@@ -414,3 +414,15 @@ export function countRelations(db: RecallDb): number {
     .get();
   return Number(row?.c ?? 0);
 }
+
+/**
+ * Wipe all graph state (entities, relations, and memory→entity links). Used
+ * by `graph backfill --rebuild` to regenerate the graph from scratch under
+ * the current extraction rules, dropping entities that older/looser rules
+ * produced (e.g. generic `pnpm build` command nodes).
+ */
+export function clearGraph(db: RecallDb): void {
+  db.delete(memoryEntities).run();
+  db.delete(entityRelations).run();
+  db.delete(entities).run();
+}

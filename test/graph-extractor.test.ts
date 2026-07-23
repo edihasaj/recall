@@ -19,12 +19,40 @@ describe("heuristic extractor", () => {
     expect(libs).toContain("@modelcontextprotocol/sdk");
   });
 
-  it("extracts CLI commands", () => {
-    const r = heuristic("Always run npm test before committing.");
+  it("records package managers as a tool but not as generic command noise", () => {
+    const r = heuristic("Always run npm test before committing; use pnpm build and node dist/cli.js.");
     const tools = r.entities.filter((e) => e.kind === "tool").map((e) => e.name);
     const commands = r.entities.filter((e) => e.kind === "command").map((e) => e.name);
-    expect(tools).toContain("npm");
-    expect(commands).toContain("npm test");
+    expect(tools).toEqual(expect.arrayContaining(["npm", "pnpm", "node"]));
+    // Package-manager / runtime script invocations are noise, not entities.
+    expect(commands).not.toContain("npm test");
+    expect(commands).not.toContain("pnpm build");
+    expect(commands).not.toContain("node dist");
+  });
+
+  it("keeps meaningful non-package-manager commands", () => {
+    const r = heuristic("Run cargo build and use gh pr to open the request.");
+    const commands = r.entities.filter((e) => e.kind === "command").map((e) => e.name);
+    expect(commands).toEqual(expect.arrayContaining(["cargo build", "gh pr"]));
+  });
+
+  it("does not mint entities from English filler after a tool name", () => {
+    const r = heuristic("Use pnpm as the package manager; npm is not required.");
+    const names = r.entities.map((e) => e.name);
+    expect(names).not.toContain("pnpm as");
+    expect(names).not.toContain("npm is");
+    expect(names).not.toContain("npm not");
+    // pnpm / npm themselves are still recorded as tools.
+    expect(r.entities.filter((e) => e.kind === "tool").map((e) => e.name))
+      .toEqual(expect.arrayContaining(["pnpm", "npm"]));
+  });
+
+  it("does not treat shell/lang builtins in backticks as libraries", () => {
+    const r = heuristic("Prefer `echo` over `print`, and use a `dict` not a `list`.");
+    const libs = r.entities.filter((e) => e.kind === "library").map((e) => e.name);
+    expect(libs).not.toContain("echo");
+    expect(libs).not.toContain("dict");
+    expect(libs).not.toContain("list");
   });
 
   it("extracts URLs and labels them as url entities", () => {

@@ -1,9 +1,10 @@
 # Changelog
 
-## 0.8.14 - 2026-07-23
+## 0.8.15 - 2026-07-23
 
 ### Fixed
 
+- **Knowledge-graph entities are no longer junk.** The heuristic extractor was minting entities from English filler after a tool name (`Use pnpm as …` → `pnpm as`, `npm install` → `npm in`), from generic package-script/runtime invocations (`pnpm build`, `pnpm test`, `node dist`), and from shell/language builtins in backticks (`echo`, `dict`). Package managers and runtimes (`npm`/`pnpm`/`yarn`/`bun`/`node`/`deno`) now record only the tool, not a `command` node; filler subcommands are dropped; and the library stop-list covers common builtins. `recall graph backfill --rebuild` clears and regenerates the graph under the new rules so existing junk entities are removed.
 - **Graph labels now sit on top of their node bubble.** 3D node labels render in front of the node sphere (depth test/write off, raised render order) instead of being partly occluded by the bubble.
 - **Graph nodes keep their colour at any zoom.** Removed the distance fog so nodes and labels no longer fade to grey/black when the camera pulls back — the full graph stays readable when zoomed out.
 
