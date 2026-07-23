@@ -596,15 +596,34 @@ describe("maintenance cleanup — rejectGenericScannedTooling", () => {
       confidence: 0.9,
     });
 
+    const genericMakefile = createMemory(db, {
+      type: "command",
+      text: "Makefile targets: `make build`, `make test`, `make clean`",
+      scope: "repo",
+      repo: "r",
+      source: "config_parse",
+      confidence: 0.9,
+    });
+    const customMakefile = createMemory(db, {
+      type: "command",
+      text: "Makefile targets: `make migrate`, `make seed-db`",
+      scope: "repo",
+      repo: "r",
+      source: "config_parse",
+      confidence: 0.9,
+    });
+
     const plan = planRejectGenericScannedTooling(db);
-    expect(plan.map((item) => item.memory_id).sort()).toEqual([build, linting, typecheck].sort());
+    expect(plan.map((item) => item.memory_id).sort()).toEqual([build, genericMakefile, linting, typecheck].sort());
 
     const report = runDeterministicCleanup(db, { dryRun: false, only: "reject_generic_scanned_tooling" });
-    expect(report.counts.generic_scanned_tooling_rejections).toBe(3);
+    expect(report.counts.generic_scanned_tooling_rejections).toBe(4);
     expect(getMemory(db, build)?.status).toBe("rejected");
     expect(getMemory(db, typecheck)?.status).toBe("rejected");
     expect(getMemory(db, linting)?.status).toBe("rejected");
+    expect(getMemory(db, genericMakefile)?.status).toBe("rejected");
     expect(getMemory(db, packageManager)?.status).toBe("active");
+    expect(getMemory(db, customMakefile)?.status).toBe("active");
   });
 });
 

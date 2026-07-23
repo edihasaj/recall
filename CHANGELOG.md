@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.12 - 2026-07-23
+
+### Fixed
+
+- **Generic Makefile-target memory cleanup.** Scanner intake and deterministic cleanup now reject `Makefile targets: ...` facts that only enumerate standard build-lifecycle targets (`build`, `test`, `clean`, `install`, `run`, `lint`, `deploy`, …), which were previously promoted to active memory and injected into repos. Lines naming a custom target (e.g. `make migrate`, `make seed-db`) are preserved as candidates. Extends the 0.8.11 generic-tooling hygiene to close the Makefile gap.
+
 ## 0.8.11 - 2026-07-21
 
 ### Fixed

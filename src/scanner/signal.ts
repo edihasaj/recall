@@ -16,10 +16,19 @@ export interface EvaluatedScannedMemory {
 
 const ACTIVE_COMMAND_PATTERNS = [
   /^use\b/i,
-  /^makefile targets:/i,
 ];
 
 const PACKAGE_SCRIPT_PATTERN = /^(test|build|lint|dev|start|typecheck|check):\s*`.+`$/i;
+
+const MAKEFILE_TARGETS_PATTERN = /^makefile targets:/i;
+
+// Standard build-lifecycle target names. A `Makefile targets:` line that lists
+// only these is a config-scan enumeration, not an actionable instruction.
+const GENERIC_MAKE_TARGETS = new Set([
+  "all", "bench", "build", "check", "ci", "clean", "coverage", "deploy", "dev",
+  "dist", "docs", "fmt", "format", "help", "install", "lint", "release", "run",
+  "setup", "start", "test", "tidy", "typecheck",
+]);
 
 const CANDIDATE_GOTCHA_PATTERNS = [
   /^next\.js project$/i,
@@ -103,8 +112,19 @@ export function isGenericScannedToolingMemory(input: Pick<ScannedMemoryLike, "te
   const lower = normalized.toLowerCase();
   return (
     (input.type === "command" && PACKAGE_SCRIPT_PATTERN.test(normalized)) ||
+    isGenericMakefileTargets(normalized) ||
     lower.startsWith("linting/formatting:")
   );
+}
+
+// A `Makefile targets:` line is generic when every listed `make <target>` uses
+// a standard build-lifecycle name. A line naming a custom target (e.g.
+// `make migrate`, `make seed-db`) is preserved as a candidate instead.
+function isGenericMakefileTargets(normalized: string): boolean {
+  if (!MAKEFILE_TARGETS_PATTERN.test(normalized)) return false;
+  const targets = [...normalized.matchAll(/make\s+([a-z0-9][\w-]*)/gi)].map((m) => m[1].toLowerCase());
+  if (targets.length === 0) return true;
+  return targets.every((target) => GENERIC_MAKE_TARGETS.has(target));
 }
 
 function normalizeScannedText(text: string): string {
