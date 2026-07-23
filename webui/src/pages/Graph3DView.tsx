@@ -132,11 +132,10 @@ export function Graph3DView({
       RIGHT: THREE.MOUSE.PAN,
     };
 
-    // Depth cueing: fog matched to the background so far-away nodes/links
-    // recede — kept gentle so labels stay legible rather than dissolving to
-    // black a short distance from the camera.
+    // No distance fog: nodes and labels keep their full colour at any zoom
+    // instead of fading to grey/black when the camera pulls back.
     const scene = fg.scene();
-    if (scene) scene.fog = new THREE.FogExp2(0x141a24, 0.0009);
+    if (scene) scene.fog = null;
 
     // Ambient idle orbit — react-force-graph calls controls.update() every
     // frame, so OrbitControls.autoRotate animates for free. Pause the moment
@@ -223,6 +222,12 @@ export function Graph3DView({
           sprite.borderRadius = 3;
           sprite.padding = 4;
           sprite.textHeight = n.selected ? 8 : 6;
+          // Draw the label on top of its own node sphere instead of letting
+          // the bubble occlude the text. Disabling depth test + write and
+          // bumping render order keeps the label always readable in front.
+          sprite.material.depthTest = false;
+          sprite.material.depthWrite = false;
+          sprite.renderOrder = 10;
           return sprite;
         }}
         nodeThreeObjectExtend

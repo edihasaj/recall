@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.14 - 2026-07-23
+
+### Fixed
+
+- **Graph labels now sit on top of their node bubble.** 3D node labels render in front of the node sphere (depth test/write off, raised render order) instead of being partly occluded by the bubble.
+- **Graph nodes keep their colour at any zoom.** Removed the distance fog so nodes and labels no longer fade to grey/black when the camera pulls back — the full graph stays readable when zoomed out.
+
 ## 0.8.13 - 2026-07-23
 
 ### Fixed
