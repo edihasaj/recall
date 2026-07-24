@@ -91,8 +91,11 @@ describe("safeIngestMemoryById", () => {
     const result = safeIngestMemoryById(db, id);
     expect(result).toBeNull();
     expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining(`graph ingest failed for ${id}`),
-      expect.anything(),
+      "[recall] graph ingest failed:",
+      expect.objectContaining({
+        memory_id: id,
+        error: expect.anything(),
+      }),
     );
   });
 });

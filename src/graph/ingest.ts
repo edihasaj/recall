@@ -138,7 +138,7 @@ export function safeIngestMemoryById(db: RecallDb, memoryId: string): IngestSumm
     if (mem.status !== "active") return null;
     return ingestMemoryHeuristic(db, { id: mem.id, text: mem.text, repo: mem.repo });
   } catch (err) {
-    console.error(`[recall] graph ingest failed for ${memoryId}:`, err);
+    console.error("[recall] graph ingest failed:", { memory_id: memoryId, error: err });
     return null;
   }
 }

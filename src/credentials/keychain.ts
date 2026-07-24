@@ -219,8 +219,6 @@ function writeKeychain(provider: LlmProvider, value: string): void {
   );
 }
 
-function previewKey(key: string): string {
-  const trimmed = key.trim();
-  if (trimmed.length <= 8) return "***";
-  return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
+function previewKey(_key: string): string {
+  return "[configured]";
 }

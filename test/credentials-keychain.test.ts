@@ -30,15 +30,15 @@ describe("keychain credential helper — env fallback", () => {
     expect(creds).toHaveLength(1);
     expect(creds[0].provider).toBe("openai");
     expect(creds[0].source).toBe("env");
-    expect(creds[0].preview).toMatch(/^sk-t….+nai$/);
+    expect(creds[0].preview).toBe("[configured]");
   });
 
-  it("redacts short keys cleanly in previews", async () => {
+  it("never exposes key fragments in previews", async () => {
     process.env.PATH = "/nonexistent";
     process.env.OPENAI_API_KEY = "abcd";
     const { listCredentials } = await loadModule();
     const preview = listCredentials().find((c) => c.provider === "openai")?.preview;
-    expect(preview).toBe("***");
+    expect(preview).toBe("[configured]");
   });
 
   it("returns both providers when both env vars are set", async () => {
@@ -50,4 +50,3 @@ describe("keychain credential helper — env fallback", () => {
     expect(creds.map((c) => c.provider).sort()).toEqual(["anthropic", "openai"]);
   });
 });
-

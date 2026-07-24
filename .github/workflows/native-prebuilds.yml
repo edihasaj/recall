@@ -60,11 +60,11 @@ jobs:
           - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 22 }
           - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 24 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10
       - name: install (no scripts; we run prebuild manually)
@@ -116,7 +116,7 @@ jobs:
           tar -czf "prebuilds-out/${NAME}.tar.gz" -C "${{ steps.bsq.outputs.dir }}" build/Release/better_sqlite3.node
           ls -la prebuilds-out/
         shell: bash
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: prebuild-${{ matrix.os }}-${{ matrix.arch }}-node${{ matrix.node }}
           path: prebuilds-out/
@@ -129,11 +129,11 @@ jobs:
     if: ${{ !inputs.dry_run && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10
       - name: resolve better-sqlite3 version
@@ -146,7 +146,7 @@ jobs:
           BSQ_VERSION=$(node -p "require('better-sqlite3/package.json').version")
           echo "version=$BSQ_VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved better-sqlite3 version: $BSQ_VERSION"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts/
       - name: flatten
@@ -154,7 +154,7 @@ jobs:
           mkdir -p release/
           find artifacts/ -type f -name "*.tar.gz" -exec cp -v {} release/ \;
           ls -la release/
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release/*
           tag_name: v${{ steps.bsq.outputs.version }}

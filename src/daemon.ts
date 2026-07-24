@@ -1148,7 +1148,7 @@ function openInBrowser(url: string): void {
       spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
     }
   } catch (err) {
-    console.error(`[recall] failed to open browser for ${url}:`, err);
+    console.error("[recall] failed to open browser:", { url, error: err });
   }
 }
 

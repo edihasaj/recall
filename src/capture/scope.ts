@@ -10,8 +10,8 @@
  *   - git ownership patterns
  */
 
-import { execSync } from "node:child_process";
-import { dirname, extname, basename } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, extname, basename, join } from "node:path";
 import type { MemoryScope } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 
@@ -340,18 +340,21 @@ function inferFromGitOwnership(
 ): ScopeInference | null {
   try {
     // Check CODEOWNERS
-    const codeowners = execSync(
-      `cat .github/CODEOWNERS 2>/dev/null || cat CODEOWNERS 2>/dev/null || echo ""`,
-      { cwd: repoPath, encoding: "utf-8" },
-    ).trim();
+    const candidates = [
+      join(repoPath, ".github", "CODEOWNERS"),
+      join(repoPath, "CODEOWNERS"),
+    ];
+    const codeownersPath = candidates.find((candidate) => existsSync(candidate));
+    const codeowners = codeownersPath
+      ? readFileSync(codeownersPath, "utf-8").trim()
+      : "";
 
     if (codeowners) {
       // If the file matches a CODEOWNERS pattern, scope to that team
-      const dir = dirname(filePath);
       for (const line of codeowners.split("\n")) {
         if (line.startsWith("#") || !line.trim()) continue;
         const parts = line.trim().split(/\s+/);
-        if (parts.length >= 2 && filePath.includes(parts[0].replace("*", ""))) {
+        if (parts.length >= 2 && filePath.includes(parts[0].replaceAll("*", ""))) {
           return {
             scope: "path",
             path_scope: `${parts[0]}`,
