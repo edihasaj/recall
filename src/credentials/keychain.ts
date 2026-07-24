@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { normalizeAzureOpenAiEndpoint } from "../security/outbound-url.js";
 
 export type LlmProvider = "openai" | "anthropic" | "azure-openai";
 
@@ -71,14 +72,11 @@ export function setAzureConfig(config: {
     );
   }
   const normalized = {
-    endpoint: config.endpoint.trim().replace(/\/+$/, ""),
+    endpoint: normalizeAzureOpenAiEndpoint(config.endpoint),
     deployment: config.deployment.trim(),
     api_version: config.api_version.trim(),
     key: config.key.trim(),
   };
-  if (!normalized.endpoint || !/^https?:\/\//.test(normalized.endpoint)) {
-    throw new Error("Azure endpoint must be an http(s) URL like https://<resource>.openai.azure.com");
-  }
   if (!normalized.deployment) throw new Error("Azure deployment name is required");
   if (!normalized.api_version) throw new Error("Azure api_version is required (e.g. 2024-10-21)");
   if (!normalized.key) throw new Error("Azure api key is required");
@@ -159,7 +157,11 @@ function readAzureConfig(): AzureOpenAiConfig | null {
       if (trimmed.length > 0) {
         const parsed = JSON.parse(trimmed) as Omit<AzureOpenAiConfig, "provider">;
         if (parsed.endpoint && parsed.deployment && parsed.api_version && parsed.key) {
-          return { provider: "azure-openai", ...parsed };
+          return {
+            provider: "azure-openai",
+            ...parsed,
+            endpoint: normalizeAzureOpenAiEndpoint(parsed.endpoint),
+          };
         }
       }
     } catch {
@@ -172,7 +174,17 @@ function readAzureConfig(): AzureOpenAiConfig | null {
   const api_version = process.env.AZURE_OPENAI_API_VERSION?.trim();
   const key = process.env.AZURE_OPENAI_API_KEY?.trim();
   if (endpoint && deployment && api_version && key) {
-    return { provider: "azure-openai", endpoint: endpoint.replace(/\/+$/, ""), deployment, api_version, key };
+    try {
+      return {
+        provider: "azure-openai",
+        endpoint: normalizeAzureOpenAiEndpoint(endpoint),
+        deployment,
+        api_version,
+        key,
+      };
+    } catch {
+      return null;
+    }
   }
   return null;
 }

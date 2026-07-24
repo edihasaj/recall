@@ -166,6 +166,8 @@ async function callAzureOpenAi(
   const url = `${config.endpoint}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(config.api_version)}`;
   const response = await fetch(url, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
     headers: {
       "Content-Type": "application/json",
       "api-key": config.key,

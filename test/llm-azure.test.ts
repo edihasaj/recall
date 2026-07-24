@@ -81,10 +81,31 @@ describe("Azure OpenAI provider", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers["api-key"]).toBe("az-test-key");
     expect(headers["Authorization"]).toBeUndefined();
+    expect(init.redirect).toBe("error");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     const body = JSON.parse(init.body as string);
     expect(body.model).toBeUndefined(); // Azure uses deployment in the URL
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0]).toEqual({ role: "system", content: "s" });
+  });
+
+  it("rejects non-Azure credential destinations before fetch", async () => {
+    const db = freshDb();
+    process.env.AZURE_OPENAI_ENDPOINT = "https://metadata.example.com";
+    process.env.AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
+    process.env.AZURE_OPENAI_API_VERSION = "2024-10-21";
+    process.env.AZURE_OPENAI_API_KEY = "az-test-key";
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(
+      callLlm(db, {
+        provider: "azure-openai",
+        system: "s",
+        user: "u",
+        task_kind: "dedupe",
+      }),
+    ).rejects.toBeInstanceOf(LlmCredentialError);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("trims trailing slash in endpoint and URL-encodes deployment name", async () => {

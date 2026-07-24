@@ -9,6 +9,17 @@ import type { RecallDb } from "../db/client.js";
 import { memories, syncState } from "../db/schema.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import type { SyncConfig, SyncResult, MemoryItem } from "../types.js";
+import { normalizeSyncRemoteUrl } from "../security/outbound-url.js";
+
+const SYNC_REQUEST_TIMEOUT_MS = 30_000;
+
+function syncRequestInit(init: RequestInit): RequestInit {
+  return {
+    ...init,
+    redirect: "error",
+    signal: AbortSignal.timeout(SYNC_REQUEST_TIMEOUT_MS),
+  };
+}
 
 // --- Sync state helpers ---
 
@@ -57,6 +68,7 @@ export async function pushMemories(
   config: SyncConfig,
 ): Promise<{ pushed: number; version: number }> {
   const state = getSyncState(db);
+  const remoteUrl = normalizeSyncRemoteUrl(config.remote_url);
 
   // Get locally modified memories since last push
   const localMemories = db
@@ -75,7 +87,7 @@ export async function pushMemories(
     evidence: typeof m.evidence === "string" ? JSON.parse(m.evidence as string) : m.evidence,
   }));
 
-  const resp = await fetch(`${config.remote_url}/api/push`, {
+  const resp = await fetch(`${remoteUrl}/api/push`, syncRequestInit({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -85,7 +97,7 @@ export async function pushMemories(
       team_id: config.team_id,
       memories: payload,
     }),
-  });
+  }));
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: resp.statusText }));
@@ -95,7 +107,7 @@ export async function pushMemories(
   const result = (await resp.json()) as { pushed: number; version: number };
 
   updateSyncState(db, {
-    remote_url: config.remote_url,
+    remote_url: remoteUrl,
     team_id: config.team_id,
     last_push_at: new Date().toISOString(),
     last_push_version: Math.max(
@@ -113,8 +125,9 @@ export async function pullMemories(
   config: SyncConfig,
 ): Promise<{ pulled: number; conflicts: number }> {
   const state = getSyncState(db);
+  const remoteUrl = normalizeSyncRemoteUrl(config.remote_url);
 
-  const resp = await fetch(`${config.remote_url}/api/pull`, {
+  const resp = await fetch(`${remoteUrl}/api/pull`, syncRequestInit({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -124,7 +137,7 @@ export async function pullMemories(
       team_id: config.team_id,
       since_version: state.last_pull_version,
     }),
-  });
+  }));
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: resp.statusText }));
@@ -234,14 +247,15 @@ export async function createTeam(
   config: Pick<SyncConfig, "remote_url" | "api_key">,
   name: string,
 ): Promise<string> {
-  const resp = await fetch(`${config.remote_url}/api/team`, {
+  const remoteUrl = normalizeSyncRemoteUrl(config.remote_url);
+  const resp = await fetch(`${remoteUrl}/api/team`, syncRequestInit({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.api_key}`,
     },
     body: JSON.stringify({ name }),
-  });
+  }));
 
   if (!resp.ok) throw new Error(`Failed to create team: ${resp.statusText}`);
   const data = (await resp.json()) as { team_id: string };
@@ -252,13 +266,17 @@ export async function joinTeam(
   config: Pick<SyncConfig, "remote_url" | "api_key">,
   teamId: string,
 ): Promise<void> {
-  const resp = await fetch(`${config.remote_url}/api/team/${teamId}/join`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.api_key}`,
-    },
-  });
+  const remoteUrl = normalizeSyncRemoteUrl(config.remote_url);
+  const resp = await fetch(
+    `${remoteUrl}/api/team/${encodeURIComponent(teamId)}/join`,
+    syncRequestInit({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.api_key}`,
+      },
+    }),
+  );
 
   if (!resp.ok) throw new Error(`Failed to join team: ${resp.statusText}`);
 }

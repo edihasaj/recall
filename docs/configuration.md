@@ -254,6 +254,11 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `SENTRY_DSN` | _(empty — disabled)_ | **Opt-in, off by default.** When set to a Sentry DSN, the CLI, daemon, MCP server, and sync server report **errors and crashes only** (no tracing, no profiling, no replay, no PII). Empty/unset is a hard no-op — Sentry never initializes and nothing is sent off-box. See below. |
 | `RECALL_ENV` | `production` | Only used to tag the Sentry `environment` when `SENTRY_DSN` is set. Falls back to `NODE_ENV`, then `production`. |
 
+`RECALL_SYNC_URL` must be an HTTPS URL on the default port with a public DNS
+hostname. Redirects are rejected so the sync bearer token cannot be forwarded
+to another destination. Azure OpenAI credentials accept only the standard
+`https://<resource>.openai.azure.com` endpoint form.
+
 ## Error reporting (Sentry) — opt-in, off by default
 
 Recall is open source and **never phones home by default**. There is no telemetry, no analytics, and no crash reporting unless _you_, the operator, explicitly turn it on.
