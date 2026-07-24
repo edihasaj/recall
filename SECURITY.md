@@ -14,7 +14,8 @@ version tag, and pull requests run dependency review at moderate severity.
 
 ## Reporting
 
-Email security reports to Edi Hasaj at edihasaj@gmail.com. Please include:
+Use GitHub's private vulnerability reporting for this repository. If that is
+unavailable, email Edi Hasaj at edihasaj@gmail.com. Please include:
 
 - affected version or commit
 - operating system
