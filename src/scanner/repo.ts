@@ -1,6 +1,6 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, basename } from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories } from "../db/schema.js";
@@ -8,6 +8,7 @@ import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { createMemory, queryMemories, statusFromConfidence, type CreateMemoryInput } from "../models/memory.js";
 import { getRepoQualityProfile, seedScannedConfidence } from "../repo/quality.js";
 import { evaluateScannedMemory } from "./signal.js";
+import { readUtf8FileIfExists } from "../security/atomic-file.js";
 
 interface ScanResult {
   candidates: CreateMemoryInput[];
@@ -110,11 +111,12 @@ function scanPackageJson(
   repo: string,
 ): CreateMemoryInput[] {
   const pkgPath = join(repoPath, "package.json");
-  if (!existsSync(pkgPath)) return [];
 
   const results: CreateMemoryInput[] = [];
   try {
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    const raw = readUtf8FileIfExists(pkgPath);
+    if (raw === null) return [];
+    const pkg = JSON.parse(raw);
 
     // Package manager detection
     if (pkg.packageManager) {
@@ -175,11 +177,11 @@ function scanMakefile(
   repo: string,
 ): CreateMemoryInput[] {
   const mkPath = join(repoPath, "Makefile");
-  if (!existsSync(mkPath)) return [];
 
   const results: CreateMemoryInput[] = [];
   try {
-    const content = readFileSync(mkPath, "utf-8");
+    const content = readUtf8FileIfExists(mkPath);
+    if (content === null) return [];
     const targets = content.match(/^([a-zA-Z_-]+):/gm);
     if (targets) {
       const key = targets
@@ -246,10 +248,10 @@ function scanInstructionFiles(
 
   for (const file of instructionFiles) {
     const fPath = join(repoPath, file);
-    if (!existsSync(fPath)) continue;
 
     try {
-      const content = readFileSync(fPath, "utf-8");
+      const content = readUtf8FileIfExists(fPath);
+      if (content === null) continue;
       // Extract key rules (lines with "always", "never", "must", "don't")
       const rules = content
         .split("\n")
@@ -325,10 +327,10 @@ function scanReadme(
 ): CreateMemoryInput[] {
   const results: CreateMemoryInput[] = [];
   const readmePath = join(repoPath, "README.md");
-  if (!existsSync(readmePath)) return [];
 
   try {
-    const content = readFileSync(readmePath, "utf-8");
+    const content = readUtf8FileIfExists(readmePath);
+    if (content === null) return [];
 
     // Look for setup/install/getting-started sections
     const setupMatch = content.match(
@@ -392,7 +394,7 @@ function now(): string {
 
 function inferRepoName(repoPath: string): string {
   try {
-    const remote = execSync("git remote get-url origin", {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], {
       cwd: repoPath,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
