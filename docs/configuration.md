@@ -243,7 +243,7 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 
 | Variable | Default | Effect |
 |---|---|---|
-| `RECALL_PORT` | `7890` | HTTP port the daemon listens on. |
+| `RECALL_PORT` | `7890` | HTTP port the daemon listens on. The daemon is always bound to IPv4 loopback (`127.0.0.1`) and rejects browser requests from non-loopback origins. |
 | `RECALL_DATA_DIR` | `~/.recall` | Where the SQLite DB, models cache, and logs live. |
 | `RECALL_MAINTENANCE_ENABLED` | `true` | Set to `false` to stop the non-LLM maintenance loop (prune, compact, promote-candidates, SQLite housekeeping). |
 | `RECALL_MAINTENANCE_INTERVAL_SECONDS` | `300` | Interval for the non-LLM maintenance loop. |

@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **The local daemon no longer exposes command execution to the network or arbitrary websites.** It binds only to IPv4 loopback, rejects non-loopback peers and non-loopback browser origins, replaces wildcard CORS with origin-scoped access, and removes the unused arbitrary-command `/test` route.
 - **Windows tray installs now start the Recall daemon.** The tray resolves the per-user global npm package installed by `install.ps1`, and database backups use the platform-native parent directory instead of treating Windows paths as relative.
 - **Automatic releases now publish Windows binaries.** The release automation explicitly dispatches the Windows tray workflow after creating a tag, builds the tagged source, and creates the GitHub Release before attaching both `arm64` and `amd64` assets.
 

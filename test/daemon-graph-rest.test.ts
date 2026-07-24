@@ -97,6 +97,30 @@ async function get(path: string): Promise<{ status: number; json: any }> {
 }
 
 describe("daemon /graph REST routes (live HTTP)", () => {
+  it("rejects browser requests from non-loopback origins", async () => {
+    const r = await fetch(`${baseUrl}/health`, {
+      headers: { Origin: "https://attacker.example" },
+    });
+    expect(r.status).toBe(403);
+    expect(r.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("allows the loopback WebUI origin without wildcard CORS", async () => {
+    const origin = "http://127.0.0.1:7891";
+    const r = await fetch(`${baseUrl}/health`, { headers: { Origin: origin } });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("access-control-allow-origin")).toBe(origin);
+  });
+
+  it("does not expose the retired arbitrary-command test route", async () => {
+    const r = await post("/test", {
+      repo_path: dataDir,
+      command: "node -e \"process.exit(0)\"",
+      memory_ids: [],
+    });
+    expect(r.status).toBe(404);
+  });
+
   it("GET /graph/stats returns numeric entity/relation counts", async () => {
     const r = await get("/graph/stats");
     expect(r.status).toBe(200);

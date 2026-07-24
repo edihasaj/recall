@@ -9,7 +9,7 @@
 
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import type { RecallDb } from "../db/client.js";
 import { implicitSignals, memories } from "../db/schema.js";
 import { promoteMemory, demoteMemory } from "../models/memory.js";
@@ -82,26 +82,6 @@ export interface TestResult {
   output?: string;
 }
 
-export function runTests(
-  repoPath: string,
-  command: string,
-): TestResult {
-  try {
-    const output = execSync(command, {
-      cwd: repoPath,
-      encoding: "utf-8",
-      timeout: 120_000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return { passed: true, output };
-  } catch (err: any) {
-    return {
-      passed: false,
-      output: err.stdout ?? err.stderr ?? err.message,
-    };
-  }
-}
-
 /**
  * After running tests, record implicit signals for all memories
  * that were injected in the current session.
@@ -142,7 +122,7 @@ export function detectFileChanges(
   const results = new Map<string, "unchanged" | "rewritten">();
 
   try {
-    const diff = execSync("git diff --name-only", {
+    const diff = execFileSync("git", ["diff", "--name-only"], {
       cwd: repoPath,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],

@@ -15,7 +15,7 @@ import {
 } from "./models/memory.js";
 import { scanAndStore } from "./scanner/repo.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession, incrementEvalCounter } from "./eval/harness.js";
-import { recordSignal, getSignalStats, recordTestSignals, runTests } from "./feedback/implicit.js";
+import { recordSignal, getSignalStats } from "./feedback/implicit.js";
 import { createPolicy, listPolicies, evaluatePolicy, requestApproval, resolveApproval, listPendingApprovals } from "./policy/engine.js";
 import { computeHealthScore, computeAllHealthScores } from "./health/scoring.js";
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
@@ -77,6 +77,7 @@ import {
   handleSessionStartHook,
   handleToolHook,
 } from "./cli/hook.js";
+import { authorizeLocalRequest } from "./daemon/http-security.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -322,13 +323,7 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
   const method = req.method ?? "GET";
 
-  // CORS for browser extension
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, MCP-Protocol-Version, MCP-Session-Id, Last-Event-ID",
-  );
+  if (!authorizeLocalRequest(req, res)) return;
 
   if (method === "OPTIONS") {
     res.statusCode = 204;
@@ -940,23 +935,6 @@ const server = createServer(async (req, res) => {
       return send(res, 200, stats);
     }
 
-    // Run tests + record signals
-    if (path === "/test" && method === "POST") {
-      const body = await parseBody(req);
-      const testResult = runTests(body.repo_path, body.command);
-      const signalIds = recordTestSignals(
-        db,
-        body.session_id ?? "daemon",
-        body.memory_ids ?? [],
-        testResult,
-      );
-      return send(res, 200, {
-        passed: testResult.passed,
-        signals: signalIds,
-        output: testResult.output?.slice(0, 1000),
-      });
-    }
-
     // Quality profile
     if (path === "/quality" && method === "GET") {
       const repo = url.searchParams.get("repo") ?? undefined;
@@ -1200,8 +1178,8 @@ async function startDaemon() {
     console.error(`[recall] graph reconcile failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  server.listen(PORT, () => {
-    console.log(`Recall daemon listening on http://localhost:${PORT}`);
+  server.listen(PORT, "127.0.0.1", () => {
+    console.log(`Recall daemon listening on http://127.0.0.1:${PORT}`);
     scheduleMaintenanceLoop();
     scheduleDispatcherLoop();
     scheduleCleanupLoop();
