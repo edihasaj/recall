@@ -8,6 +8,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defineOwn, deleteOwn } from "../security/object.js";
 import { hasCommand, resolveUserHomeDir } from "./utils.js";
 import type {
   AgentAdapter,
@@ -326,7 +327,7 @@ function writeCodexHooksJson(
     const preserved = current.filter((group) => !isCodexManagedGroup(group));
     const merged = [...preserved, ...groups];
     if (JSON.stringify(current) !== JSON.stringify(merged)) {
-      hooks[eventName] = merged;
+      defineOwn(hooks, eventName, merged);
       changed = true;
     }
   }
@@ -368,9 +369,9 @@ function removeCodexHooksJson(targetPath: string): InstallResult {
     if (preserved.length !== current.length) {
       changed = true;
       if (preserved.length > 0) {
-        hooks[eventName] = preserved;
+        defineOwn(hooks, eventName, preserved);
       } else {
-        delete hooks[eventName];
+        deleteOwn(hooks, eventName);
       }
     }
   }

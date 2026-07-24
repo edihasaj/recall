@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defineOwn, deleteOwn } from "../security/object.js";
 import { hasCommand, resolveUserHomeDir } from "./utils.js";
 import type {
   AgentAdapter,
@@ -129,7 +130,7 @@ export function installClaudeCodeHooks(
     const preserved = existing.filter((group) => !isManagedGroup(group));
     const merged = [...preserved, ...groups];
     if (!sameJson(existing, merged)) {
-      hooks[eventName] = merged;
+      defineOwn(hooks, eventName, merged);
       changed = true;
     }
   }
@@ -185,9 +186,9 @@ export function uninstallClaudeCodeHooks(
     if (!sameJson(existing, preserved)) {
       changed = true;
       if (preserved.length > 0) {
-        hooks[eventName] = preserved;
+        defineOwn(hooks, eventName, preserved);
       } else {
-        delete hooks[eventName];
+        deleteOwn(hooks, eventName);
       }
     }
   }

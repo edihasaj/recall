@@ -72,11 +72,23 @@ export function incrementEvalCounter(
   field: CounterField,
   amount: number = 1,
 ) {
-  const col = evalSessions[field];
-  db.update(evalSessions)
-    .set({ [field]: sql`${col} + ${amount}` })
-    .where(eq(evalSessions.id, sessionId))
-    .run();
+  const update = (() => {
+    switch (field) {
+      case "memories_injected":
+        return { memories_injected: sql`${evalSessions.memories_injected} + ${amount}` };
+      case "memories_followed":
+        return { memories_followed: sql`${evalSessions.memories_followed} + ${amount}` };
+      case "memories_overridden":
+        return { memories_overridden: sql`${evalSessions.memories_overridden} + ${amount}` };
+      case "user_corrections":
+        return { user_corrections: sql`${evalSessions.user_corrections} + ${amount}` };
+      case "test_passes":
+        return { test_passes: sql`${evalSessions.test_passes} + ${amount}` };
+      case "test_failures":
+        return { test_failures: sql`${evalSessions.test_failures} + ${amount}` };
+    }
+  })();
+  db.update(evalSessions).set(update).where(eq(evalSessions.id, sessionId)).run();
 }
 
 // --- Compute metrics ---

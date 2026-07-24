@@ -1,3 +1,5 @@
+import { defineOwn } from "./object.js";
+
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\b(Authorization\s*:\s*Bearer\s+)[^\s"'\\]+/gi, "$1[REDACTED]"],
   [/\b(api-key\s*:\s*)[^\s"'\\]+/gi, "$1[REDACTED]"],
@@ -21,7 +23,7 @@ export function redactSensitiveValue<T>(value: T): T {
 
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = redactSensitiveValue(entry);
+    defineOwn(out, key, redactSensitiveValue(entry));
   }
   return out as T;
 }

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { defineOwn } from "../security/object.js";
 
 const DEFAULT_LABEL = "recall-daemon";
 
@@ -210,7 +211,7 @@ function readInstalledConfig(unitPath: string): {
     const exec = raw.match(/^ExecStart=(.+)$/m)?.[1]?.trim().split(/\s+/);
     const env: Record<string, string> = {};
     for (const m of raw.matchAll(/^Environment=([^=]+)=(.+)$/gm)) {
-      env[m[1]] = m[2];
+      defineOwn(env, m[1], m[2]);
     }
     return {
       nodePath: exec?.[0],

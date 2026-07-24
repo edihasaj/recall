@@ -1,3 +1,5 @@
+import { defineOwn } from "../security/object.js";
+
 export function normalizeDedupeText(text: string): string {
   return text
     .toLowerCase()
@@ -90,7 +92,7 @@ export function stripVolatileFields(value: unknown): unknown {
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
     if (/_at$/u.test(key) || key === "timestamp") continue;
     if (entry === undefined) continue;
-    out[key] = stripVolatileFields(entry);
+    defineOwn(out, key, stripVolatileFields(entry));
   }
   return out;
 }
