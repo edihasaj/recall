@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 - 2026-07-24
+
+### Added
+
+- **Four new agent integrations: GitHub Copilot, opencode, Cursor, and Windsurf.** `recall setup` now detects them alongside Claude Code and Codex. None of them expose a lifecycle-hook API, so Recall wires the two levers they do offer: it merges the Recall MCP server into the runtime's own JSON config (`~/.copilot/mcp-config.json`, `~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`, `~/.codeium/windsurf/mcp_config.json`), and installs a managed rules block instructing the agent to call `capture_correction` and `query` itself — into `.github/copilot-instructions.md`, `~/.config/opencode/AGENTS.md`, `.cursor/rules/recall.mdc`, and Windsurf's global rules respectively. Existing servers and unrelated config keys are preserved, the previous file is backed up before any rewrite, and a config Recall cannot parse is reported as a failed step rather than silently rewritten. Capture on these runtimes is model-driven, not automatic — `recall doctor` lists them once detected and reports `rules:` in place of `hooks:`.
+
 ## 0.8.20 - 2026-07-24
 
 ### Fixed

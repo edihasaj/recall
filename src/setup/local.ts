@@ -9,6 +9,7 @@ import {
   uninstallClaudeCodeMemoryOverride,
 } from "../agents/claude-code.js";
 import { installCodexHooks, uninstallCodexHooks } from "../agents/codex.js";
+import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index.js";
 import type { AgentName } from "../agents/types.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
 
@@ -50,6 +51,9 @@ export interface AgentSetupResult {
   /** Only set for Claude Code — managed CLAUDE.md override status. */
   claude_md?: SetupStepResult;
   claude_md_path?: string | null;
+  /** Only set for hookless agents (Copilot, opencode, Cursor, Windsurf) — managed rules-file status. */
+  rules?: SetupStepResult;
+  rules_path?: string | null;
 }
 
 export interface RecallSetupOptions {
@@ -201,20 +205,49 @@ function setupAgent(
   },
 ): AgentSetupResult {
   const detected = detectAgent(agent);
-  const hookConfigPath = resolveHookConfigPath(agent, options.scope, options.cwd);
+  // Hookless agents (Copilot, opencode, Cursor, Windsurf) have no lifecycle
+  // hook API, so there is no hook config file to point at — their equivalent
+  // of "hooks" is the managed rules block installed below.
+  const hookless = isHooklessAgent(agent);
+  const hookConfigPath = hookless
+    ? null
+    : resolveHookConfigPath(agent, options.scope, options.cwd);
 
   const mcp = options.hooksOnly
     ? skipped("hooks-only")
     : configureMcp(agent, options);
   const hooks = options.mcpOnly
     ? skipped("mcp-only")
-    : configureHooks(agent, {
-        configPath: hookConfigPath,
-        dryRun: options.dryRun,
-        paths: options.paths,
-        uninstallHooks: options.uninstallHooks,
-        promptInjection: options.promptInjection,
-      });
+    : hookless
+      ? skipped(`${agent} exposes no hook API — memory routes through MCP + rules file`)
+      : configureHooks(agent, {
+          configPath: hookConfigPath!,
+          dryRun: options.dryRun,
+          paths: options.paths,
+          uninstallHooks: options.uninstallHooks,
+          promptInjection: options.promptInjection,
+        });
+
+  // Hookless agents only capture memory if their rules file tells them to, so
+  // the managed block is the integration — not an optional extra.
+  let rules: SetupStepResult | undefined;
+  let rulesPath: string | null = null;
+  if (hookless && !options.mcpOnly) {
+    const adapter = resolveAdapter(agent);
+    if (options.dryRun) {
+      rules = ok(
+        options.uninstallHooks
+          ? "would remove Recall rules block"
+          : "would install Recall rules block",
+      );
+    } else {
+      const result = options.uninstallHooks
+        ? adapter.uninstallRules!({ cwd: options.cwd })
+        : adapter.installRules!({ cwd: options.cwd });
+      rules = { enabled: true, ok: result.ok, message: result.message };
+      rulesPath = result.config_path;
+    }
+  }
 
   // Claude Code only: install the managed CLAUDE.md memory-override block.
   // Skipped on mcp-only (it's a memory-routing concern, not an MCP concern),
@@ -247,18 +280,44 @@ function setupAgent(
     hook_config_path: options.mcpOnly ? null : hookConfigPath,
     claude_md: claudeMd,
     claude_md_path: claudeMdPath,
+    rules,
+    rules_path: rulesPath,
   };
 }
 
 function configureMcp(
   agent: AgentName,
   options: {
+    cwd?: string;
     dryRun: boolean;
     paths: ReturnType<typeof resolveRuntimePaths>;
     runner: CommandRunner;
     scope: SetupScope;
   },
 ): SetupStepResult {
+  // Copilot / opencode / Cursor / Windsurf register MCP by merging an entry
+  // into their own JSON config — no CLI to shell out to.
+  if (isHooklessAgent(agent)) {
+    const adapter = resolveAdapter(agent);
+    if (adapter.detect() !== "installed") {
+      return skipped(`${agent} not detected`);
+    }
+    if (options.dryRun) {
+      return ok(`would register Recall MCP server in ${adapter.configPath()}`);
+    }
+    const result = adapter.writeMcpFallback({
+      nodePath: options.paths.runtimeNodePath,
+      mcpPath: options.paths.runtimeMcpPath,
+      scope: options.scope,
+      cwd: options.cwd,
+    });
+    return { enabled: true, ok: result.ok, message: result.message };
+  }
+
+  if (agent === "gemini-cli" || agent === "qwen") {
+    return skipped(`${agent} adapter is a reserved stub`);
+  }
+
   if (agent === "codex") {
     if (!hasCommand("codex")) return skipped("codex not found on PATH");
     if (options.scope === "project") {
@@ -335,17 +394,17 @@ function resolveTargetAgents(target?: AgentName[]): AgentName[] {
     return [...new Set(target)];
   }
 
-  const detected: AgentName[] = [];
-  if (detectAgent("codex")) detected.push("codex");
-  if (detectAgent("claude-code")) detected.push("claude-code");
-  return detected;
+  return listAgentNames().filter((agent) => detectAgent(agent));
 }
 
 function detectAgent(agent: AgentName): boolean {
   if (agent === "codex") {
     return hasCommand("codex") || existsSync(join(resolveUserHomeDir(), ".codex", "config.toml"));
   }
-  return hasCommand("claude") || existsSync(join(resolveUserHomeDir(), ".claude", "settings.json"));
+  if (agent === "claude-code") {
+    return hasCommand("claude") || existsSync(join(resolveUserHomeDir(), ".claude", "settings.json"));
+  }
+  return resolveAdapter(agent).detect() === "installed";
 }
 
 function resolveHookConfigPath(agent: AgentName, scope: SetupScope, cwd: string): string {

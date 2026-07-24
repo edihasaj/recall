@@ -146,6 +146,19 @@ recall setup --uninstall-hooks --yes     # remove Recall-managed hooks
 
 By default the hooks inject repo memory once at `SessionStart` (minimal format) and stay silent on every subsequent `UserPromptSubmit`. To re-enable per-prompt injection or wire provider credentials so the daemon can run memory maintenance on a schedule, see [docs/configuration.md](docs/configuration.md).
 
+Supported runtimes, and how deep the integration goes:
+
+| Runtime | Integration | Capture |
+| --- | --- | --- |
+| Claude Code | MCP + lifecycle hooks + managed `~/.claude/CLAUDE.md` block | automatic |
+| Codex | MCP + `hooks.json` (legacy `notify` bridge below 0.115.0) | automatic |
+| GitHub Copilot | MCP (`~/.copilot/mcp-config.json`) + `.github/copilot-instructions.md` | model-driven |
+| opencode | MCP (`~/.config/opencode/opencode.json`) + `~/.config/opencode/AGENTS.md` | model-driven |
+| Cursor | MCP (`~/.cursor/mcp.json`) + `.cursor/rules/recall.mdc` | model-driven |
+| Windsurf | MCP (`~/.codeium/windsurf/mcp_config.json`) + global rules | model-driven |
+
+Runtimes without a lifecycle-hook API can't be called on prompt/tool/session events, so Recall installs a managed rules block instructing the agent to call `capture_correction` and `query` itself. Capture there depends on the model following it — the hook-based runtimes do not.
+
 Install + setup behavior:
 
 - Routine app launch, daemon start, and daemon restart are non-mutating for agent integrations. They do not re-add hooks or repo instruction files after you remove them.

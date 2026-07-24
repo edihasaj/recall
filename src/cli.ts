@@ -291,6 +291,12 @@ setupCmd
           console.log(`  file:      ${agent.claude_md_path}`);
         }
       }
+      if (agent.rules) {
+        console.log(`  rules:    ${formatSetupStep(agent.rules)}`);
+        if (agent.rules_path) {
+          console.log(`  file:     ${agent.rules_path}`);
+        }
+      }
     }
   });
 
@@ -2576,8 +2582,19 @@ function formatSetupStep(step: { enabled: boolean; ok: boolean; message: string 
   return step.ok ? `ok (${step.message})` : `error (${step.message})`;
 }
 
+const AGENT_LABELS: Record<string, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  "github-copilot": "GitHub Copilot",
+  opencode: "opencode",
+  cursor: "Cursor",
+  windsurf: "Windsurf",
+  "gemini-cli": "Gemini CLI",
+  qwen: "Qwen",
+};
+
 function formatAgentName(agent: string) {
-  return agent === "claude-code" ? "Claude Code" : "Codex";
+  return AGENT_LABELS[agent] ?? agent;
 }
 
 function collectAgents(value: string, previous: string[]) {

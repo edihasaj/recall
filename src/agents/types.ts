@@ -14,8 +14,17 @@ export const hookProfileV1 = [
 ] as const;
 
 export type HookProfile = readonly CanonicalEventName[];
-export type AgentName = "claude-code" | "codex" | "gemini-cli" | "qwen";
+export type AgentName =
+  | "claude-code"
+  | "codex"
+  | "gemini-cli"
+  | "qwen"
+  | "github-copilot"
+  | "opencode"
+  | "cursor"
+  | "windsurf";
 export type AdapterDetection = "installed" | "not-installed";
+export type SetupScope = "global" | "project";
 
 export interface RecentToolCall {
   name: string;
@@ -76,13 +85,54 @@ export interface InstallResult {
   message: string;
 }
 
+/** Status of a Recall-managed block inside an agent's rules/instructions file. */
+export type RulesStatus = "missing" | "current" | "stale" | "absent_no_file";
+
+/** Overrides the user home used to resolve an agent's config paths. Mainly for tests and `recall doctor`. */
+export interface HomeDirOption {
+  homeDir?: string;
+}
+
+export interface McpFallbackOptions extends HomeDirOption {
+  /** Absolute path to the node binary that launches the MCP entrypoint. */
+  nodePath?: string;
+  /** Absolute path to the Recall MCP entrypoint (dist/mcp.js). */
+  mcpPath?: string;
+  /** Override the JSON config file that receives the server entry. */
+  configPath?: string;
+  /** Global (user) config vs project-local config, where the agent supports both. */
+  scope?: SetupScope;
+  /** Project root used to resolve project-scoped configs. Defaults to process.cwd(). */
+  cwd?: string;
+}
+
+export interface RulesInstallOptions extends HomeDirOption {
+  /** Override the rules/instructions file path. */
+  configPath?: string;
+  /** Project root used to resolve project-scoped rules files. Defaults to process.cwd(). */
+  cwd?: string;
+}
+
 export interface AgentAdapter {
   name: AgentName;
-  configPath(): string;
-  detect(): AdapterDetection;
+  configPath(options?: HomeDirOption): string;
+  detect(options?: HomeDirOption): AdapterDetection;
   capabilities(): AdapterCapabilities;
   installHooks(profile: HookProfile): InstallResult;
   uninstallHooks(): InstallResult;
   envMapping: Partial<Record<CanonicalEventName, EnvShape>>;
-  writeMcpFallback(): InstallResult;
+  writeMcpFallback(options?: McpFallbackOptions): InstallResult;
+  /** Undo writeMcpFallback. Only implemented by adapters that register via a JSON config. */
+  removeMcpFallback?(options?: McpFallbackOptions): InstallResult;
+  /** Whether the Recall MCP server is currently registered in the agent's config. */
+  hasMcpRegistration?(options?: McpFallbackOptions): boolean;
+  /**
+   * Hookless agents route memory through a rules/instructions file instead of
+   * lifecycle hooks. Implemented only by adapters where that applies.
+   */
+  installRules?(options?: RulesInstallOptions): InstallResult;
+  uninstallRules?(options?: RulesInstallOptions): InstallResult;
+  checkRules?(options?: RulesInstallOptions): { status: RulesStatus; config_path: string };
+  /** Whether the rules file is user-global or lives inside the project. */
+  rulesScope?: SetupScope;
 }

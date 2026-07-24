@@ -28,6 +28,27 @@ Where to set them:
 - **At install time**: pass `--no-prompt-injection` to `recall setup` (or `recall setup local`) and the opt-out is written inline into the agent hook command — survives shell rc edits.
 - **Daemon-wide** (affects hooks invoked through the daemon transport only): edit `~/Library/LaunchAgents/com.recall.daemon.plist` under `EnvironmentVariables`, then `recall daemon restart`.
 
+## Runtimes without lifecycle hooks
+
+GitHub Copilot, opencode, Cursor and Windsurf expose no hook API, so nothing can observe their prompts, tool calls, or session lifecycle. `recall setup --yes` still wires them, using the two levers they do offer:
+
+1. **MCP registration** — the Recall server is merged into the runtime's own JSON config. Existing servers and unrelated keys are preserved, and the previous file is copied to `<config>.recall.bak.<timestamp>` before any rewrite.
+2. **A managed rules block** — a fenced `<!-- recall:managed:memory -->` block telling the agent to call `capture_correction` when corrected and `query` before non-trivial work. Re-running setup replaces the block in place and leaves the rest of the file alone.
+
+| Runtime | MCP config | Rules file | Rules scope |
+|---|---|---|---|
+| GitHub Copilot | `~/.copilot/mcp-config.json` (honours `COPILOT_HOME`) | `.github/copilot-instructions.md` | project |
+| opencode | `~/.config/opencode/opencode.json` (servers nest under `mcp`) | `~/.config/opencode/AGENTS.md` | global |
+| Cursor | `~/.cursor/mcp.json`, or `.cursor/mcp.json` with `--scope project` | `.cursor/rules/recall.mdc` (owned by Recall) | project |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `~/.codeium/windsurf/memories/global_rules.md` | global |
+
+Consequences worth knowing:
+
+- **Capture is model-driven.** Nothing forces these runtimes to save a correction; they save it if they follow the rules block. Hook-based runtimes (Claude Code, Codex) do not have that gap.
+- **`--uninstall-hooks` removes the rules block and leaves MCP registered**, matching the behavior for hook-based runtimes. Use `--mcp-only` to skip the rules block entirely.
+- **A config Recall cannot parse is never rewritten.** Comments or trailing commas (e.g. a hand-maintained `opencode.jsonc`) make setup report a failed step and tell you to add the server manually, rather than silently dropping your edits.
+- `recall doctor` lists these runtimes only once detected, and reports `rules:` instead of `hooks:`.
+
 ## Capture path (LLM-primary)
 
 When a user prompt arrives on `UserPromptSubmit`, Recall has to decide whether anything in it is a durable rule worth saving. There are two paths, and the right one is picked automatically.

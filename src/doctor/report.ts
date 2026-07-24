@@ -7,9 +7,11 @@ import { getLaunchAgentStatus } from "../daemon/launchd.js";
 import { getSystemdStatus } from "../daemon/systemd.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
 import { checkClaudeCodeMemoryOverride } from "../agents/claude-code.js";
+import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index.js";
+import type { AgentName, RulesStatus } from "../agents/types.js";
 
 export interface AgentDoctorEntry {
-  agent: "claude-code" | "codex";
+  agent: AgentName;
   detected: boolean;
   mcp: boolean;
   hooks: boolean;
@@ -19,6 +21,11 @@ export interface AgentDoctorEntry {
   /** Only set for Claude Code — managed CLAUDE.md memory-override block status. */
   claude_md?: "current" | "stale" | "missing" | "absent_no_file";
   claude_md_path?: string;
+  /** True for agents with no lifecycle-hook API — they integrate via MCP + a rules file. */
+  hookless?: boolean;
+  /** Only set for hookless agents — managed rules-block status. */
+  rules?: RulesStatus;
+  rules_path?: string;
   notes: string[];
 }
 
@@ -250,7 +257,11 @@ function computeUpgradeSignal(agents: AgentDoctorEntry[]): UpgradeSignal {
     }
     if (agent.mcp && !agent.hooks) {
       reasons.push(
-        `${agent.agent}: MCP configured but lifecycle hooks missing — memory injection depends on the model calling query`,
+        agent.hookless
+          // These agents can never install hooks, so the rules block is the
+          // only thing that gets them capturing memory at all.
+          ? `${agent.agent}: MCP configured but the Recall rules block is missing or stale — run \`recall setup\``
+          : `${agent.agent}: MCP configured but lifecycle hooks missing — memory injection depends on the model calling query`,
       );
     }
   }
@@ -262,7 +273,47 @@ export function inspectAgentInstalls(homeDir?: string): AgentDoctorEntry[] {
   return [
     inspectClaudeCodeInstall(home),
     inspectCodexInstall(home),
+    // Hookless agents are only listed once detected — most users have none of
+    // them and four permanent "not detected" rows would just be noise.
+    ...listAgentNames()
+      .filter((agent) => isHooklessAgent(agent))
+      .map((agent) => inspectHooklessInstall(agent, home))
+      .filter((entry): entry is AgentDoctorEntry => entry !== null),
   ];
+}
+
+function inspectHooklessInstall(agent: AgentName, home: string): AgentDoctorEntry | null {
+  const adapter = resolveAdapter(agent);
+  if (adapter.detect({ homeDir: home }) !== "installed") return null;
+
+  const configPath = adapter.configPath({ homeDir: home });
+  const mcp = adapter.hasMcpRegistration?.({ homeDir: home }) ?? false;
+  const rules = adapter.checkRules?.({ homeDir: home });
+  const notes: string[] = [];
+
+  if (!mcp) {
+    notes.push(`Recall MCP server not registered in ${configPath} — run \`recall setup\``);
+  }
+  if (rules && rules.status !== "current") {
+    notes.push(
+      rules.status === "stale"
+        ? `Recall rules block in ${rules.config_path} is out of date — run \`recall setup\``
+        : `No Recall rules block in ${rules.config_path} — ${agent} will not capture memories on its own`,
+    );
+  }
+
+  return {
+    agent,
+    detected: true,
+    mcp,
+    // No hook API exists, so "hooks" tracks the rules block that stands in for it.
+    hooks: rules?.status === "current",
+    hookless: true,
+    config_path: configPath,
+    rules: rules?.status,
+    rules_path: rules?.config_path,
+    notes,
+  };
 }
 
 function inspectClaudeCodeInstall(home: string): AgentDoctorEntry {
@@ -408,18 +459,21 @@ export function formatDoctorReport(report: DoctorReport): string {
 
   lines.push("", "## Agents");
   for (const agent of report.agents) {
-    const label = agent.agent.padEnd(12);
+    const label = agent.agent.padEnd(14);
     if (!agent.detected) {
       lines.push(`${label} not detected`);
       continue;
     }
     const mcp = agent.mcp ? "ok" : "MISSING";
-    const hooks = agent.hooks ? "ok" : "MISSING";
     const legacy = agent.legacy_notify_bridge ? " (legacy notify bridge)" : "";
     const claudeMd = agent.claude_md
       ? ` claude.md:${agent.claude_md === "current" ? "ok" : agent.claude_md.toUpperCase()}`
       : "";
-    lines.push(`${label} mcp:${mcp} hooks:${hooks}${claudeMd}${legacy}`);
+    // Hookless agents have no hooks to report — the rules block is the equivalent.
+    const wiring = agent.hookless
+      ? ` rules:${agent.rules === "current" ? "ok" : (agent.rules ?? "missing").toUpperCase()}`
+      : ` hooks:${agent.hooks ? "ok" : "MISSING"}`;
+    lines.push(`${label} mcp:${mcp}${wiring}${claudeMd}${legacy}`);
     for (const note of agent.notes) {
       lines.push(`             - ${note}`);
     }

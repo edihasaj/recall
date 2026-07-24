@@ -9,34 +9,40 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const ALL_AGENTS = [
+  "claude-code",
+  "codex",
+  "github-copilot",
+  "opencode",
+  "cursor",
+  "windsurf",
+  "gemini-cli",
+  "qwen",
+] as const;
+
 describe("agent adapter resolver", () => {
   it("lists the available adapters including v2 stubs", () => {
-    expect(listAgentNames()).toEqual(["claude-code", "codex", "gemini-cli", "qwen"]);
+    expect(listAgentNames()).toEqual([...ALL_AGENTS]);
   });
 
   it("resolves known adapters", () => {
-    expect(resolveAdapter("claude-code").name).toBe("claude-code");
-    expect(resolveAdapter("codex").name).toBe("codex");
-    expect(resolveAdapter("gemini-cli").name).toBe("gemini-cli");
-    expect(resolveAdapter("qwen").name).toBe("qwen");
+    for (const name of ALL_AGENTS) {
+      expect(resolveAdapter(name).name).toBe(name);
+    }
   });
 
   it("throws on unknown adapters", () => {
-    expect(() => resolveAdapter("cursor")).toThrow(
-      "Unknown agent adapter: cursor. Supported adapters: claude-code, codex, gemini-cli, qwen. Reserved v2 stubs: gemini-cli, qwen.",
+    expect(() => resolveAdapter("aider")).toThrow(
+      "Unknown agent adapter: aider. Supported adapters: claude-code, codex, github-copilot, opencode, cursor, windsurf, gemini-cli, qwen. Reserved v2 stubs: gemini-cli, qwen.",
     );
   });
 
   it("filters installed adapters via detect()", () => {
-    const claude = resolveAdapter("claude-code");
-    const codex = resolveAdapter("codex");
-    const gemini = resolveAdapter("gemini-cli");
-    const qwen = resolveAdapter("qwen");
-
-    vi.spyOn(claude, "detect").mockReturnValue("installed");
-    vi.spyOn(codex, "detect").mockReturnValue("not-installed");
-    vi.spyOn(gemini, "detect").mockReturnValue("not-installed");
-    vi.spyOn(qwen, "detect").mockReturnValue("not-installed");
+    for (const name of ALL_AGENTS) {
+      vi.spyOn(resolveAdapter(name), "detect").mockReturnValue(
+        name === "claude-code" ? "installed" : "not-installed",
+      );
+    }
 
     expect(detectInstalledAdapters().map((adapter) => adapter.name)).toEqual(["claude-code"]);
   });
