@@ -1,5 +1,18 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  chmodSync,
+  constants,
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 import { getDbPath } from "../db/client.js";
 
 export const DEFAULT_BACKUP_RETENTION = 2;
@@ -41,12 +54,15 @@ export function ensureDailyBackup(
   const target = join(dir, `recall-${stamp}.db`);
 
   if (!existsSync(target)) {
-    copyFileSync(dbPath, target);
+    atomicCopyFile(dbPath, target);
     result.created = target;
+  } else if (!isRegularFileWithoutSymlink(target)) {
+    throw new Error(`Refusing unsafe backup path: ${target}`);
   }
 
   const entries = readdirSync(dir)
     .filter((name) => /^recall-\d{4}-\d{2}-\d{2}\.db$/.test(name))
+    .filter((name) => isRegularFileWithoutSymlink(join(dir, name)))
     .map((name) => ({ name, path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime);
 
@@ -67,6 +83,7 @@ export function listBackups(dbPath: string = getDbPath()): Array<{ date: string;
       const match = name.match(/^recall-(\d{4}-\d{2}-\d{2})\.db$/);
       if (!match) return null;
       const path = join(dir, name);
+      if (!isRegularFileWithoutSymlink(path)) return null;
       return { date: match[1], path, size_bytes: statSync(path).size };
     })
     .filter((v): v is { date: string; path: string; size_bytes: number } => v !== null)
@@ -77,16 +94,67 @@ export function restoreBackup(
   date: string,
   options: { dbPath?: string } = {},
 ): { restored: boolean; from: string; to: string } {
+  validateBackupDate(date);
   const dbPath = options.dbPath ?? getDbPath();
   const dir = getBackupsDir(dbPath);
   const from = join(dir, `recall-${date}.db`);
   if (!existsSync(from)) {
     return { restored: false, from, to: dbPath };
   }
+  if (!isRegularFileWithoutSymlink(from)) {
+    throw new Error(`Refusing unsafe backup path: ${from}`);
+  }
   for (const suffix of ["-shm", "-wal"]) {
     const sidecar = `${dbPath}${suffix}`;
     if (existsSync(sidecar)) rmSync(sidecar, { force: true });
   }
-  copyFileSync(from, dbPath);
+  atomicCopyFile(from, dbPath);
   return { restored: true, from, to: dbPath };
+}
+
+function validateBackupDate(date: string): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Backup date must use YYYY-MM-DD");
+  }
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new Error("Backup date is not a real calendar date");
+  }
+}
+
+function isRegularFileWithoutSymlink(path: string): boolean {
+  try {
+    const stat = lstatSync(path);
+    return stat.isFile() && !stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function atomicCopyFile(source: string, target: string): void {
+  if (!isRegularFileWithoutSymlink(source)) {
+    throw new Error(`Refusing unsafe backup source: ${source}`);
+  }
+  const temp = join(
+    dirname(target),
+    `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    copyFileSync(source, temp, constants.COPYFILE_EXCL);
+    chmodSync(temp, 0o600);
+    renameSync(temp, target);
+  } catch (error) {
+    try {
+      unlinkSync(temp);
+    } catch (cleanupError) {
+      if (
+        !(cleanupError instanceof Error) ||
+        !("code" in cleanupError) ||
+        cleanupError.code !== "ENOENT"
+      ) {
+        throw cleanupError;
+      }
+    }
+    throw error;
+  }
 }

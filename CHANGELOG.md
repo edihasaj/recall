@@ -13,6 +13,7 @@
 - **Daemon JSON parsing is bounded and fail-closed.** Requests are capped at 1 MiB, malformed JSON returns 400, oversized bodies return 413, and internal failures no longer expose raw exception messages.
 - **Provider calls reject redirects and time out after two minutes.** Embedding failures use structured logs, CLI paths cannot forge log lines, and the optional HyDE cache uses atomic owner-only writes.
 - **Repository scanning refuses symlinked content files.** A malicious checkout can no longer make Recall ingest package, README, Makefile, or agent-instruction data from outside the selected repository.
+- **Database snapshots validate restore dates and refuse symlinked sources.** Backup and restore copies are atomic, mode 0600, and cannot traverse via a crafted date.
 - **Windows tray installs now start the Recall daemon.** The tray resolves the per-user global npm package installed by `install.ps1`, and database backups use the platform-native parent directory instead of treating Windows paths as relative.
 - **Automatic releases now publish Windows binaries.** The release automation explicitly dispatches the Windows tray workflow after creating a tag, builds the tagged source, and creates the GitHub Release before attaching both `arm64` and `amd64` assets.
 

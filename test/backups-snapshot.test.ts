@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   DEFAULT_BACKUP_RETENTION,
@@ -29,6 +36,9 @@ describe("daily database snapshot", () => {
     expect(result.created).toMatch(/recall-2026-04-17\.db$/);
     expect(result.retained).toHaveLength(1);
     expect(existsSync(result.created!)).toBe(true);
+    if (process.platform !== "win32") {
+      expect(lstatSync(result.created!).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("is idempotent within the same day", () => {
@@ -81,5 +91,22 @@ describe("daily database snapshot", () => {
     const dbPath = freshDbPath();
     const result = restoreBackup("1999-01-01", { dbPath });
     expect(result.restored).toBe(false);
+  });
+
+  it("rejects invalid or traversing restore dates", () => {
+    const dbPath = freshDbPath();
+    expect(() => restoreBackup("../../secret", { dbPath })).toThrow(/YYYY-MM-DD/);
+    expect(() => restoreBackup("2026-02-31", { dbPath })).toThrow(/calendar date/);
+  });
+
+  it.runIf(process.platform !== "win32")("refuses symlinked backup sources", () => {
+    const dbPath = freshDbPath();
+    const dir = getBackupsDir(dbPath);
+    const outside = join(dirname(dir), "outside.db");
+    writeFileSync(outside, "outside");
+    symlinkSync(outside, join(dir, "recall-2026-04-15.db"));
+
+    expect(() => restoreBackup("2026-04-15", { dbPath })).toThrow(/unsafe backup/);
+    expect(readFileSync(dbPath, "utf-8")).toBe("original-db-bytes");
   });
 });
