@@ -61,6 +61,9 @@ describe("callLlm — OpenAI", () => {
       (120 / 1_000_000) * 0.15 + (40 / 1_000_000) * 0.6,
       8,
     );
+    const init = fetchSpy!.mock.calls[0][1] as RequestInit;
+    expect(init.redirect).toBe("error");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
 
     const rows = db.select().from(llmUsage).all();
     expect(rows).toHaveLength(1);
@@ -93,6 +96,9 @@ describe("callLlm — Anthropic", () => {
     expect(res.usage.prompt_tokens).toBe(50);
     expect(res.usage.completion_tokens).toBe(25);
     expect(res.usage.total_tokens).toBe(75);
+    const init = fetchSpy!.mock.calls[0][1] as RequestInit;
+    expect(init.redirect).toBe("error");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
 
     const rows = db.select().from(llmUsage).all();
     expect(rows[0].model).toBe("claude-haiku-4-5-20251001");

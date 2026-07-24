@@ -11,6 +11,7 @@
 - **Parsed objects can no longer mutate object prototypes.** Redaction, dedupe, hook cleanup, and service-config parsing use own-property writes; Windows opens the dashboard without a command shell.
 - **Generated instruction and repo-context files now use no-follow reads and atomic, owner-only writes.** This closes symlink and check/write races while preserving user content.
 - **Daemon JSON parsing is bounded and fail-closed.** Requests are capped at 1 MiB, malformed JSON returns 400, oversized bodies return 413, and internal failures no longer expose raw exception messages.
+- **Provider calls reject redirects and time out after two minutes.** Embedding failures use structured logs, CLI paths cannot forge log lines, and the optional HyDE cache uses atomic owner-only writes.
 - **Windows tray installs now start the Recall daemon.** The tray resolves the per-user global npm package installed by `install.ps1`, and database backups use the platform-native parent directory instead of treating Windows paths as relative.
 - **Automatic releases now publish Windows binaries.** The release automation explicitly dispatches the Windows tray workflow after creating a tag, builds the tagged source, and creates the GitHub Release before attaching both `arm64` and `amd64` assets.
 

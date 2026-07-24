@@ -12,11 +12,15 @@
  * reproducible without repeated LLM spend.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RecallDb } from "../db/client.js";
 import { callLlm, type LlmProvider } from "../llm/client.js";
 import { hasProviderConfigured } from "../credentials/keychain.js";
+import {
+  atomicWriteUtf8File,
+  readUtf8FileIfExists,
+} from "../security/atomic-file.js";
 
 const HYDE_SYSTEM_PROMPT =
   "Generate a single short sentence that plausibly answers the user's question. " +
@@ -52,9 +56,11 @@ function loadDiskCache(): void {
   if (diskCacheLoaded) return;
   diskCacheLoaded = true;
   const path = process.env.RECALL_HYDE_CACHE_PATH;
-  if (!path || !existsSync(path)) return;
+  if (!path) return;
   try {
-    diskCache = JSON.parse(readFileSync(path, "utf-8"));
+    const raw = readUtf8FileIfExists(path);
+    if (raw === null) return;
+    diskCache = JSON.parse(raw);
   } catch {
     diskCache = {};
   }
@@ -65,7 +71,7 @@ function persistDiskCache(): void {
   if (!path) return;
   try {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(diskCache, null, 2));
+    atomicWriteUtf8File(path, JSON.stringify(diskCache, null, 2));
   } catch {
     // cache is a perf optimization; never let IO break retrieval
   }

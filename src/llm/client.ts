@@ -114,6 +114,8 @@ async function callOpenAi(
   const started = Date.now();
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -218,6 +220,8 @@ async function callAnthropic(
   const started = Date.now();
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,

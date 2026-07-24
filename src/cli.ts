@@ -628,10 +628,10 @@ program
       .filter((mem) => mem != null);
     const activeCount = scanned.filter((mem) => mem.status === "active").length;
     const candidateCount = scanned.filter((mem) => mem.status === "candidate").length;
-    console.log(`Scanned ${repoPath}`);
+    console.log("Scanned repo:", { path: repoPath });
     console.log(`Created ${ids.length} memories (${activeCount} active, ${candidateCount} candidate).`);
     if (artifact.output_path) {
-      console.log(`Updated ${artifact.output_path}`);
+      console.log("Updated context artifact:", { path: artifact.output_path });
     }
     createActivityEvent(db, {
       session_id: opts.session ?? null,
@@ -986,7 +986,7 @@ program
       console.error(`Could not write repo-local context for ${repoPath}`);
       process.exit(1);
     }
-    console.log(`Wrote ${artifact.output_path}`);
+    console.log("Wrote context artifact:", { path: artifact.output_path });
   });
 
 const historyCmd = program

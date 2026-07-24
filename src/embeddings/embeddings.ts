@@ -374,7 +374,10 @@ export function queueMemoryEmbeddingSync(
     .then(() => undefined)
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[recall] embedding sync failed for ${memoryId.slice(0, 8)}: ${message}`);
+      console.error("[recall] embedding sync failed:", {
+        memory_id: memoryId.slice(0, 8),
+        error: message,
+      });
     })
     .finally(() => {
       pendingEmbeddingJobs.delete(job);
