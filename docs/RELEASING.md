@@ -15,6 +15,11 @@ On pushes to `main`, `.github/workflows/auto-release.yml` watches `CHANGELOG.md`
 
 When the current `package.json` version has no matching `vX.Y.Z` tag and `CHANGELOG.md` contains a matching `## X.Y.Z` section, the workflow creates the tag and dispatches `.github/workflows/release.yml` plus `.github/workflows/windows-tray.yml`.
 
+All workflow actions are pinned to immutable commits. Checkouts do not persist
+GitHub credentials, native prebuilds have read-only repository permission, and
+manual release dispatches fail unless the requested tag is an existing
+`vX.Y.Z` tag. Keep those controls intact when changing release automation.
+
 ## Checklist
 
 1. Update `package.json` version.

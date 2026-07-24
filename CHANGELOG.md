@@ -16,6 +16,7 @@
 - **Database snapshots validate restore dates and refuse symlinked sources.** Backup and restore copies are atomic, mode 0600, and cannot traverse via a crafted date.
 - **Windows tray installs now start the Recall daemon.** The tray resolves the per-user global npm package installed by `install.ps1`, and database backups use the platform-native parent directory instead of treating Windows paths as relative.
 - **Automatic releases now publish Windows binaries.** The release automation explicitly dispatches the Windows tray workflow after creating a tag, builds the tagged source, and creates the GitHub Release before attaching both `arm64` and `amd64` assets.
+- **Release and CI workflows no longer trust mutable action tags or persisted checkout credentials.** Every action is pinned to an immutable commit, manual releases accept only existing `vX.Y.Z` tags, native prebuilds use read-only repository permissions, and pull requests reject dependency changes with moderate-or-higher advisories.
 
 ## 0.8.19 - 2026-07-23
 

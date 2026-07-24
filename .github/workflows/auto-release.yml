@@ -19,9 +19,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect releasable version
         id: version
@@ -52,14 +53,23 @@ jobs:
 
       - name: Create tag
         if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ steps.version.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$tag" -m "$tag"
-          git push origin "refs/tags/$tag"
+          tag_sha="$(
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+              -f tag="$tag" \
+              -f message="$tag" \
+              -f object="$GITHUB_SHA" \
+              -f type=commit \
+              --jq '.sha'
+          )"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$tag" \
+            -f sha="$tag_sha"
 
       - name: Dispatch release workflows
         if: steps.version.outputs.release == 'true'

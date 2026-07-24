@@ -6,6 +6,12 @@ Recall stores local repo memory, activity history, and embeddings on the user's 
 
 Security fixes target the latest release.
 
+## Supply-chain controls
+
+GitHub Actions are pinned to immutable commits, checkout credentials are not
+persisted into build worktrees, release inputs must select an existing semantic
+version tag, and pull requests run dependency review at moderate severity.
+
 ## Reporting
 
 Email security reports to Edi Hasaj at edihasaj@gmail.com. Please include:

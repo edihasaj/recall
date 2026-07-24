@@ -38,15 +38,23 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Check out release tag
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout "$env:RELEASE_TAG"
+      - name: Validate and select release tag
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+            Write-Error "release tag must be vX.Y.Z; got $env:RELEASE_TAG"
+            exit 1
+          }
+          git show-ref --verify --quiet "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git checkout --detach "refs/tags/$env:RELEASE_TAG"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.22"
           cache-dependency-path: windows/tray/go.sum
@@ -57,7 +65,7 @@ jobs:
           go build -ldflags "-H windowsgui -X main.version=${{ env.RELEASE_TAG }}" -o ../../recall-tray-${{ matrix.arch }}.exe ./cmd/recall-tray
 
       - name: upload artifact (build inspection)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: recall-tray-${{ matrix.arch }}
           path: recall-tray-${{ matrix.arch }}.exe

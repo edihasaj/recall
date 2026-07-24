@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   npm:
@@ -23,16 +23,24 @@ jobs:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Check out release tag
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout "$RELEASE_TAG"
+      - name: Validate and select release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag must be vX.Y.Z; got $RELEASE_TAG"
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          git checkout --detach "refs/tags/$RELEASE_TAG"
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
@@ -69,6 +77,8 @@ jobs:
     name: Build and publish macOS app
     runs-on: macos-15
     timeout-minutes: 35
+    permissions:
+      contents: write
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       # Both taps stay in sync. `homebrew-tap` is the canonical multi-cask tap
@@ -78,16 +88,24 @@ jobs:
       HOMEBREW_TAP_REPOS: "edihasaj/homebrew-tap edihasaj/homebrew-recall"
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Check out release tag
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout "$RELEASE_TAG"
+      - name: Validate and select release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag must be vX.Y.Z; got $RELEASE_TAG"
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          git checkout --detach "refs/tags/$RELEASE_TAG"
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
