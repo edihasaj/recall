@@ -9,6 +9,7 @@
 - **Credential listings no longer reveal API-key fragments.** Provider status now reports only that a credential is configured, and the native-prebuild workflow pins every action to an immutable commit.
 - **Known npm advisories are patched across both lockfiles.** Vitest, Vite, React Router, native image/runtime packages, protocol transports, parsers, and build-tool transitives are constrained to fixed releases.
 - **Parsed objects can no longer mutate object prototypes.** Redaction, dedupe, hook cleanup, and service-config parsing use own-property writes; Windows opens the dashboard without a command shell.
+- **Generated instruction and repo-context files now use no-follow reads and atomic, owner-only writes.** This closes symlink and check/write races while preserving user content.
 - **Windows tray installs now start the Recall daemon.** The tray resolves the per-user global npm package installed by `install.ps1`, and database backups use the platform-native parent directory instead of treating Windows paths as relative.
 - **Automatic releases now publish Windows binaries.** The release automation explicitly dispatches the Windows tray workflow after creating a tag, builds the tagged source, and creates the GitHub Release before attaching both `arm64` and `amd64` assets.
 

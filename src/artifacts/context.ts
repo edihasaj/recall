@@ -1,9 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { RecallDb } from "../db/client.js";
 import { exportMarkdown } from "../adapters/markdown.js";
 import { inferRepoSlugFromPath, resolveLocalRepoPath } from "../repo/discovery.js";
+import {
+  atomicWriteUtf8File,
+  readUtf8FileIfExists,
+} from "../security/atomic-file.js";
 
 export interface RepoContextArtifactResult {
   repo: string | null;
@@ -56,9 +60,9 @@ export function writeRepoContextArtifact(
   ensureRepoContextExcluded(repoPath);
 
   const content = renderRepoContextArtifact(db, repo);
-  const existing = existsSync(outputPath) ? readFileSync(outputPath, "utf-8") : null;
+  const existing = readUtf8FileIfExists(outputPath);
   if (existing !== content) {
-    writeFileSync(outputPath, content);
+    atomicWriteUtf8File(outputPath, content);
   }
 
   return {
@@ -78,12 +82,15 @@ function ensureRepoContextExcluded(repoPath: string): void {
     ).trim();
     if (!excludePath) return;
 
-    const existing = existsSync(excludePath) ? readFileSync(excludePath, "utf-8") : "";
+    const absoluteExcludePath = isAbsolute(excludePath)
+      ? excludePath
+      : resolve(repoPath, excludePath);
+    const existing = readUtf8FileIfExists(absoluteExcludePath) ?? "";
     if (existing.split("\n").some((line) => line.trim() === ".recall/")) return;
 
     const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
-    writeFileSync(
-      excludePath,
+    atomicWriteUtf8File(
+      absoluteExcludePath,
       `${existing}${prefix}# Recall generated context\n.recall/\n`,
     );
   } catch {

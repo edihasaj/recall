@@ -8,6 +8,10 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineOwn, deleteOwn } from "../security/object.js";
+import {
+  atomicWriteUtf8File,
+  readUtf8FileIfExists,
+} from "../security/atomic-file.js";
 import { hasCommand, resolveUserHomeDir } from "./utils.js";
 import type {
   AgentAdapter,
@@ -408,10 +412,7 @@ export function installClaudeCodeMemoryOverride(
   }
 
   const desired = buildClaudeMdBlock();
-  let existingContent = "";
-  if (existsSync(targetPath)) {
-    existingContent = readFileSync(targetPath, "utf-8");
-  }
+  const existingContent = readUtf8FileIfExists(targetPath) ?? "";
 
   // Already present and up-to-date — no write.
   if (existingContent.includes(CLAUDE_MD_BEGIN) && existingContent.includes(desired.trim())) {
@@ -438,7 +439,7 @@ export function installClaudeCodeMemoryOverride(
     nextContent = `${existingContent}${separator}${desired}`;
   }
 
-  writeFileSync(targetPath, nextContent);
+  atomicWriteUtf8File(targetPath, nextContent);
   return {
     ok: true,
     changed: true,
@@ -453,7 +454,8 @@ export function uninstallClaudeCodeMemoryOverride(
   options: ClaudeMdInstallOptions = {},
 ): InstallResult {
   const targetPath = options.configPath ?? claudeMdPath();
-  if (!existsSync(targetPath)) {
+  const existingContent = readUtf8FileIfExists(targetPath);
+  if (existingContent === null) {
     return {
       ok: true,
       changed: false,
@@ -461,7 +463,6 @@ export function uninstallClaudeCodeMemoryOverride(
       message: "CLAUDE.md not present",
     };
   }
-  const existingContent = readFileSync(targetPath, "utf-8");
   CLAUDE_MD_BLOCK_RE.lastIndex = 0;
   if (!CLAUDE_MD_BLOCK_RE.test(existingContent)) {
     return {
@@ -477,9 +478,12 @@ export function uninstallClaudeCodeMemoryOverride(
     // File was nothing but our block — leave the file in place but empty
     // to avoid surprising the user, who can delete it themselves if they
     // want.
-    writeFileSync(targetPath, "");
+    atomicWriteUtf8File(targetPath, "");
   } else {
-    writeFileSync(targetPath, stripped.endsWith("\n") ? stripped : `${stripped}\n`);
+    atomicWriteUtf8File(
+      targetPath,
+      stripped.endsWith("\n") ? stripped : `${stripped}\n`,
+    );
   }
   return {
     ok: true,
