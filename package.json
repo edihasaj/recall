@@ -60,12 +60,44 @@
     "sqlite-vec": "^0.1.9",
     "zod": "^3.24.4"
   },
+  "overrides": {
+    "@hono/node-server": "2.0.11",
+    "@protobufjs/utf8": "1.1.2",
+    "adm-zip": "0.6.0",
+    "body-parser": "2.3.0",
+    "esbuild": "0.28.1",
+    "fast-uri": "3.1.4",
+    "hono": "4.12.31",
+    "ip-address": "10.2.0",
+    "postcss": "8.5.22",
+    "protobufjs": "7.6.5",
+    "qs": "6.15.3",
+    "sharp": "0.35.3",
+    "vite": "7.3.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "@hono/node-server": "2.0.11",
+      "@protobufjs/utf8": "1.1.2",
+      "adm-zip": "0.6.0",
+      "body-parser": "2.3.0",
+      "esbuild": "0.28.1",
+      "fast-uri": "3.1.4",
+      "hono": "4.12.31",
+      "ip-address": "10.2.0",
+      "postcss": "8.5.22",
+      "protobufjs": "7.6.5",
+      "qs": "6.15.3",
+      "sharp": "0.35.3",
+      "vite": "7.3.5"
+    }
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.3",
     "drizzle-kit": "^0.31.1",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.2"
+    "vitest": "^3.2.7"
   }
 }
