@@ -121,6 +121,22 @@ describe("daemon /graph REST routes (live HTTP)", () => {
     expect(r.status).toBe(404);
   });
 
+  it("rejects malformed and oversized JSON bodies", async () => {
+    const malformed = await fetch(`${baseUrl}/correct`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    expect(malformed.status).toBe(400);
+
+    const oversized = await fetch(`${baseUrl}/correct`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "x".repeat(1024 * 1024) }),
+    });
+    expect(oversized.status).toBe(413);
+  });
+
   it("GET /graph/stats returns numeric entity/relation counts", async () => {
     const r = await get("/graph/stats");
     expect(r.status).toBe(200);

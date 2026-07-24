@@ -78,6 +78,7 @@ import {
   handleToolHook,
 } from "./cli/hook.js";
 import { authorizeLocalRequest } from "./daemon/http-security.js";
+import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -105,20 +106,7 @@ const qualitySnapshotConfig = {
 };
 let qualitySnapshotRunning = false;
 
-function parseBody(req: import("node:http").IncomingMessage): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString()));
-      } catch {
-        resolve({});
-      }
-    });
-    req.on("error", reject);
-  });
-}
+const parseBody = parseJsonBody;
 
 function resolveRepo(body: Record<string, any>): string | undefined {
   return body.repo ?? inferRepoSlugFromPath(body.repo_path) ?? undefined;
@@ -1120,8 +1108,11 @@ const server = createServer(async (req, res) => {
     send(res, 404, { error: "not found" });
   } catch (err: any) {
     // Report the unhandled request failure (no-op unless SENTRY_DSN is set).
+    if (err instanceof JsonBodyError) {
+      return send(res, err.status, { error: err.message });
+    }
     Sentry.captureException(err);
-    send(res, 500, { error: err.message });
+    send(res, 500, { error: "internal server error" });
   }
 });
 

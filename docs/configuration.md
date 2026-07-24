@@ -259,6 +259,9 @@ hostname. Redirects are rejected so the sync bearer token cannot be forwarded
 to another destination. Azure OpenAI credentials accept only the standard
 `https://<resource>.openai.azure.com` endpoint form.
 
+The local daemon accepts JSON request bodies up to 1 MiB. Malformed JSON is
+rejected with HTTP 400 and oversized bodies with HTTP 413.
+
 ## Error reporting (Sentry) — opt-in, off by default
 
 Recall is open source and **never phones home by default**. There is no telemetry, no analytics, and no crash reporting unless _you_, the operator, explicitly turn it on.
