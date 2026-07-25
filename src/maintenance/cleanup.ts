@@ -11,7 +11,7 @@ import { getMemory, queryMemories } from "../models/memory.js";
 import { memoryDedupeKey } from "../models/dedupe.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { checkContradiction } from "../contradictions/detector.js";
-import { isDestructiveRisky } from "../capture/correction.js";
+import { isDestructiveRisky, isNonUserCaptureContext } from "../capture/correction.js";
 import { isGenericScannedToolingMemory } from "../scanner/signal.js";
 
 const SUPPRESS_INJECTION_FLOOR = 50;
@@ -472,6 +472,13 @@ const RULE_FILLER_PREFIX_RE =
   /^\s*(?:always|never|must|don't|do not|prefer|required)\s+(?:just|now|uh|um|so|like|maybe|kinda|sort\s+of)\b/i;
 const VAGUE_SPEECH_FRAGMENT_RE =
   /\b(?:or whatever|and stuff like that|stuff like that|something like that|things like that)\b/i;
+const NEVER_THE_LESS_FRAGMENT_RE = /^\s*never\s+the\s+less\b/i;
+const VAGUE_PREFERENCE_FRAGMENT_RE =
+  /^\s*prefer\s+(?:to\s+as\b|or\s+because\b|a\s+clone\s+of\b.+\bor\s+we\s+have\s+our\s+own\b)/i;
+const MISSING_SUBJECT_FRAGMENT_RE =
+  /^\s*(?:must|required)\s+(?:be\s+)?(?:called\b|write\b|directly\s+follow\b)/i;
+const MALFORMED_REPLACEMENT_RE =
+  /(?:^\s*do\s+not\s+use\s+(?:if|to|with)\b|\bremoe\s+these\b)/i;
 const WORKSPACE_ONLY_RULE_RE =
   /^\s*(?:always\s+)?keep\s+(?:all\s+)?(?:edits|work|changes)\s+inside\s+(?:(?:the\s+)?current\s+|(?:the\s+)?specified\s+|the\s+)?workspace(?:\s+at\s+\S+)?\.?\s*$/i;
 const BENCHMARK_ARTIFACT_RULE_RE =
@@ -493,6 +500,11 @@ const ACTIVE_FRAGMENT_REASONS = new Set([
   "tool_embargo_task_rule",
   "e2e_verification_artifact",
   "embedded_question",
+  "non_user_capture_context",
+  "never_the_less_fragment",
+  "vague_preference_fragment",
+  "missing_subject_fragment",
+  "malformed_replacement",
 ]);
 // Anything past this length is almost certainly a voice ramble, not a rule.
 // Detailed verifier/workflow directives in the live corpus legitimately reach
@@ -509,6 +521,7 @@ export function planRejectFragments(db: RecallDb): RejectFragmentPlan[] {
   const rows = db.select({
     id: memories.id,
     text: memories.text,
+    evidence: memories.evidence,
     source: memories.source,
     status: memories.status,
   })
@@ -519,6 +532,9 @@ export function planRejectFragments(db: RecallDb): RejectFragmentPlan[] {
   const out: RejectFragmentPlan[] = [];
   for (const row of rows) {
     const reasons = qualityReasons(row.text);
+    if (hasNonUserEvidenceContext(row.evidence)) {
+      reasons.push("non_user_capture_context");
+    }
     const actionableReasons = row.status === "active"
       ? reasons.filter((reason) => ACTIVE_FRAGMENT_REASONS.has(reason))
       : reasons;
@@ -534,6 +550,15 @@ export function planRejectFragments(db: RecallDb): RejectFragmentPlan[] {
   return out;
 }
 
+function hasNonUserEvidenceContext(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const context = (item as { context?: unknown }).context;
+    return typeof context === "string" && isNonUserCaptureContext(context);
+  });
+}
+
 export function qualityReasons(rawText: string): string[] {
   const text = rawText.trim();
   const reasons: string[] = [];
@@ -546,6 +571,10 @@ export function qualityReasons(rawText: string): string[] {
   if (DANGLING_CONNECTOR_RE.test(text)) reasons.push("dangling_connector");
   if (RULE_FILLER_PREFIX_RE.test(text)) reasons.push("filler_prefix");
   if (VAGUE_SPEECH_FRAGMENT_RE.test(text)) reasons.push("vague_speech_fragment");
+  if (NEVER_THE_LESS_FRAGMENT_RE.test(text)) reasons.push("never_the_less_fragment");
+  if (VAGUE_PREFERENCE_FRAGMENT_RE.test(text)) reasons.push("vague_preference_fragment");
+  if (MISSING_SUBJECT_FRAGMENT_RE.test(text)) reasons.push("missing_subject_fragment");
+  if (MALFORMED_REPLACEMENT_RE.test(text)) reasons.push("malformed_replacement");
   if (WORKSPACE_ONLY_RULE_RE.test(text)) reasons.push("workspace_only_runtime_rule");
   if (BENCHMARK_ARTIFACT_RULE_RE.test(text)) reasons.push("benchmark_artifact_rule");
   if (TOOL_EMBARGO_TASK_RULE_RE.test(text)) reasons.push("tool_embargo_task_rule");

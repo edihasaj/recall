@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gte, inArray, or } from "drizzle-orm";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import type { RecallDb } from "../db/client.js";
-import { memoryValueEvents } from "../db/schema.js";
+import { memories, memoryValueEvents } from "../db/schema.js";
 import type { EmbeddingConfig } from "../types.js";
 import { getMemory } from "../models/memory.js";
+import { textMatchScore } from "../text/match.js";
 import { bootstrapEmbeddings, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import {
   RetrievalEvalCase,
@@ -198,23 +199,40 @@ export async function runValueRetrievalEval(
   } = {},
 ): Promise<ValueRetrievalEvalReport> {
   const since = options.sinceIso ?? new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const caseLimit = options.limit ?? 50;
   const conditions = [
     gte(memoryValueEvents.created_at, since),
     inArray(memoryValueEvents.event_type, ["retrieval_miss", "used"]),
+    eq(memories.auto_inject, true),
+    or(
+      and(
+        eq(memoryValueEvents.event_type, "retrieval_miss"),
+        inArray(memories.status, ["active", "candidate"]),
+      ),
+      and(
+        eq(memoryValueEvents.event_type, "used"),
+        eq(memories.status, "active"),
+      ),
+    )!,
   ];
   if (options.repo) conditions.push(eq(memoryValueEvents.repo, options.repo));
 
-  const rows = db.select()
+  const rows = db.select({ ...getTableColumns(memoryValueEvents) })
     .from(memoryValueEvents)
+    .innerJoin(memories, eq(memoryValueEvents.memory_id, memories.id))
     .where(and(...conditions))
     .orderBy(desc(memoryValueEvents.created_at))
-    .limit(options.limit ?? 50)
+    // Filtering happens below because eligibility depends on the current
+    // memory state. Scan past rejected/stale historical events so `--limit`
+    // means useful eval cases, not raw rows encountered.
+    .limit(Math.max(caseLimit * 10, 500))
     .all();
 
   let skippedEvents = 0;
   const sourceEvents = { retrieval_miss: 0, used: 0 };
   const cases: RetrievalEvalFileType["cases"] = [];
   for (const row of rows) {
+    if (cases.length >= caseLimit) break;
     if (row.event_type === "retrieval_miss") sourceEvents.retrieval_miss += 1;
     if (row.event_type === "used") sourceEvents.used += 1;
 
@@ -240,6 +258,15 @@ export async function runValueRetrievalEval(
       ? firstNonEmpty(evidence.correction_text, evidence.query_text)
       : firstNonEmpty(evidence.completion_excerpt, evidence.context);
     if (!queryText) {
+      skippedEvents += 1;
+      continue;
+    }
+    if (
+      row.event_type === "used" &&
+      textMatchScore(queryText, memory.text).score < 0.45 &&
+      !(typeof evidence.semantic_similarity === "number" &&
+        evidence.semantic_similarity >= 0.78)
+    ) {
       skippedEvents += 1;
       continue;
     }

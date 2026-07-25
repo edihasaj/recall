@@ -1,5 +1,5 @@
 import { useMemo, useState, type CSSProperties } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { api, type ActivityEvent } from "../lib/api";
 import { useLiveEvents } from "../lib/events";
 import { useLoadMore } from "../lib/useLoadMore";

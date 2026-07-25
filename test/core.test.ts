@@ -57,6 +57,50 @@ describe("memory CRUD", () => {
     expect(mem!.confidence).toBe(0.45);
   });
 
+  it("normalizes unreachable repo/path scopes to the broadest valid scope", () => {
+    const db = freshDb();
+    const missingRepo = createMemory(db, {
+      type: "rule",
+      text: "Remember this everywhere",
+      scope: "repo",
+      source: "user_correction",
+      confidence: 0.7,
+    });
+    const missingPath = createMemory(db, {
+      type: "rule",
+      text: "Remember this in the repository",
+      scope: "path",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.7,
+    });
+    const dirtyGlobal = createMemory(db, {
+      type: "rule",
+      text: "Remember this globally",
+      scope: "global",
+      repo: "stale/repo",
+      path_scope: "src/",
+      source: "user_correction",
+      confidence: 0.7,
+    });
+
+    expect(getMemory(db, missingRepo)).toMatchObject({
+      scope: "global",
+      repo: null,
+      path_scope: null,
+    });
+    expect(getMemory(db, missingPath)).toMatchObject({
+      scope: "repo",
+      repo: "test/repo",
+      path_scope: null,
+    });
+    expect(getMemory(db, dirtyGlobal)).toMatchObject({
+      scope: "global",
+      repo: null,
+      path_scope: null,
+    });
+  });
+
   it("auto-assigns status from confidence", () => {
     const db = freshDb();
 
@@ -812,6 +856,29 @@ describe("compiler", () => {
 
     expect(result.memories_included).toContain(globalId);
     expect(result.text).toContain("Use uv for Python dependency management");
+  });
+
+  it("treats stored confidence at the configured decimal threshold as inclusive", async () => {
+    const db = freshDb();
+    process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+
+    createMemory(db, {
+      type: "rule",
+      text: "Always use .agent/config.json as the local main config file.",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.1 + 0.58,
+    });
+
+    const result = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "agent local config file path",
+      config: { confidence_threshold: 0.68 },
+      embedding_config: null,
+    });
+
+    expect(result.text).toContain(".agent/config.json");
   });
 
   it("hybrid compile returns only the top two relevant query matches", async () => {

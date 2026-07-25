@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes, Navigate } from "react-router-dom";
+import { NavLink, Route, Routes, Navigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./lib/api";
 import { MemoriesPage } from "./pages/MemoriesPage";

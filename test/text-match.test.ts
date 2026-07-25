@@ -37,8 +37,30 @@ describe("text match normalization", () => {
     ).score).toBeGreaterThanOrEqual(0.62);
   });
 
+  it("does not treat a bare negation as distinctive evidence", () => {
+    expect(textMatchScore(
+      "must not",
+      "Do not infer broad coverage; blocked results must include the blocker.",
+    ).score).toBeLessThan(0.62);
+  });
+
   it("normalizes ES version phrasing for module rules", () => {
     expect(matchTokens("Use ES2022 modules")).toContain("es");
     expect(textMatches("Use modern ES modules", "Use ES2022 modules", 0.62)).toBe(true);
+  });
+
+  it("normalizes plural words ending in es", () => {
+    expect(matchTokens("Avoid em dashes")).toContain("dash");
+    expect(textMatchScore(
+      "em dash writing",
+      "Never use em dashes in written output.",
+    ).score).toBeGreaterThanOrEqual(0.45);
+  });
+
+  it("splits camelCase identifiers for natural-language queries", () => {
+    expect(textMatchScore(
+      "kubernetes privileged security context",
+      "Do not set securityContext.privileged=true.",
+    ).score).toBeGreaterThanOrEqual(0.45);
   });
 });

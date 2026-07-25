@@ -28,6 +28,7 @@ const QUERY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const QUERY_TEXT_MATCH_FLOOR = 0.45;
 const HISTORY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const HISTORY_LEXICAL_RELEVANCE_FLOOR = 0.01;
+const CONFIDENCE_EPSILON = 1e-9;
 
 /**
  * Strip harness boilerplate from a hook-supplied prompt before we hand it
@@ -105,10 +106,10 @@ export function compileContext(
 
   // 3. Apply hard confidence threshold
   const passing = scoped.filter(
-    (m) => m.confidence >= config.confidence_threshold,
+    (m) => m.confidence + CONFIDENCE_EPSILON >= config.confidence_threshold,
   );
   const dropped = scoped.filter(
-    (m) => m.confidence < config.confidence_threshold,
+    (m) => m.confidence + CONFIDENCE_EPSILON < config.confidence_threshold,
   );
 
   if (passing.length === 0 && selectedHistory.length === 0) {
@@ -243,7 +244,7 @@ export async function compileContextHybrid(
   const candidateConfidenceFloor = Math.min(config.confidence_threshold, 0.45);
   const passing = scoped.filter((memory) => {
     if (memory.status === "active") {
-      return memory.confidence >= config.confidence_threshold;
+      return memory.confidence + CONFIDENCE_EPSILON >= config.confidence_threshold;
     }
     if (memory.status === "candidate" && config.include_candidates) {
       return memory.confidence >= candidateConfidenceFloor;
@@ -275,15 +276,24 @@ export async function compileContextHybrid(
   );
   if (effectiveQuery) {
     for (const memory of passing) {
-      if (retrievalById.has(memory.id)) continue;
       const lexical = textMatchScore(effectiveQuery, memory.text);
       if (lexical.score < QUERY_TEXT_MATCH_FLOOR) continue;
-      retrievalById.set(memory.id, {
-        memory,
-        score: lexical.score,
-        similarity: 0,
-        lexical_score: lexical.score,
-      });
+      const existing = retrievalById.get(memory.id);
+      retrievalById.set(
+        memory.id,
+        existing
+          ? {
+              ...existing,
+              score: Math.max(existing.score, lexical.score),
+              lexical_score: Math.max(existing.lexical_score, lexical.score),
+            }
+          : {
+              memory,
+              score: lexical.score,
+              similarity: 0,
+              lexical_score: lexical.score,
+            },
+      );
     }
   }
 

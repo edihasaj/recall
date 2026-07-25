@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { api, type ActivityEvent, type SessionRow } from "../lib/api";
 import { useLoadMore } from "../lib/useLoadMore";
 import { LoadMore } from "../lib/LoadMore";

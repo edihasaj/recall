@@ -2,6 +2,7 @@ const STOP_WORDS = new Set([
   "a",
   "an",
   "and",
+  "always",
   "are",
   "as",
   "at",
@@ -19,13 +20,16 @@ const STOP_WORDS = new Set([
   "it",
   "its",
   "just",
+  "must",
   "of",
   "on",
   "only",
   "or",
   "our",
   "please",
+  "required",
   "run",
+  "should",
   "that",
   "the",
   "this",
@@ -89,7 +93,9 @@ export function textMatchScore(left: string, right: string): TextMatchScore {
   // user's retrieval intent. Sentence-to-sentence one-token overlap remains
   // unboosted because neither side collapses to one content token.
   const exactSingleTokenScore =
-    intersection === 1 && smaller === 1
+    intersection === 1 &&
+      smaller === 1 &&
+      !["not"].includes([...leftSet].find((token) => rightSet.has(token)) ?? "")
       ? 0.7
       : 0;
   const score = Math.max(jaccard, containment * containmentWeight, exactSingleTokenScore);
@@ -106,6 +112,7 @@ export function textMatchScore(left: string, right: string): TextMatchScore {
 
 export function matchTokens(text: string): string[] {
   return text
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
     .replace(/\bdo\s+not\b/g, " not ")
     .replace(/\bdon['’]?t\b/g, " dont ")
@@ -120,6 +127,9 @@ function normalizeToken(token: string): string {
   if (token === "ran" || token === "running" || token === "runs") return "run";
   if (token === "using" || token === "used" || token === "uses") return "use";
   if (token.endsWith("ies") && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (/(?:ches|shes|sses|xes|zes)$/.test(token) && token.length > 4) {
+    return token.slice(0, -2);
+  }
   if (token.endsWith("ing") && token.length > 5) return token.slice(0, -3);
   if (token.endsWith("ed") && token.length > 4) return token.slice(0, -2);
   if (token.endsWith("s") && token.length > 3) return token.slice(0, -1);

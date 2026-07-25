@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.2 - 2026-07-25
+
+### Fixed
+
+- **Generated agent contracts no longer become user memories.** Probeport,
+  evaluation, hook, and extraction scaffolding is quarantined at capture time;
+  deterministic cleanup also rejects historical rows whose original evidence
+  proves they came from those contexts.
+- **Questions and pasted task specifications no longer become durable rules.**
+  Capture distinguishes direct imperatives such as `Do not ...` from questions,
+  while cleanup removes historical Jira, PR, goal, transcript, and malformed
+  fragment artifacts using their original evidence.
+- **Generic modal fragments no longer create false retrieval misses.** Bare
+  phrases such as `must not` cannot match a detailed rule merely through modal
+  and negation tokens; distinctive one-token tool queries remain supported.
+- **Hybrid retrieval handles real configuration language precisely.** Existing
+  FTS hits can be upgraded by stronger normalized lexical evidence, camelCase
+  identifiers match natural-language queries, and confidence values at a
+  decimal threshold remain inclusively eligible despite storage precision.
+- **Invalid scope combinations are normalized at creation.** Global memories
+  cannot retain repo/path fields, and repo/path scopes without their required
+  identifiers safely fall back to a valid broader scope.
+- **Web UI dependencies include current security fixes.** React Router moves to
+  its supported v8 package, and React/PostCSS resolve the latest disclosed
+  request-forgery and source-map traversal advisories.
+- **Value retrieval evals filter stale telemetry in SQL.** Rejected, transient,
+  disabled, and otherwise ineligible memories no longer consume the requested
+  case limit or produce misleading quality scores.
+
 ## 0.9.1 - 2026-07-25
 
 ### Fixed

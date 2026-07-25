@@ -15,6 +15,7 @@ import {
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 import { recordMemoryValueEvent } from "../src/models/memory-value.js";
 import { computeQualityReport, recordQualitySnapshot } from "../src/maintenance/quality.js";
+import { compileContextHybrid } from "../src/compiler/context.js";
 
 let dbCounter = 0;
 
@@ -39,6 +40,33 @@ afterEach(async () => {
 });
 
 describe("retrieval eval runner", () => {
+  it("upgrades a weak FTS hit with exact short-tool lexical evidence", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "Use Shotport first for screenshots.",
+      scope: "global",
+      source: "user_correction",
+      confidence: 0.95,
+    });
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    installMockEmbeddingProvider(() => [1, ...Array(511).fill(0)]);
+
+    const compiled = await compileContextHybrid(db, {
+      repo: "unrelated/repo",
+      query_text: "shotport",
+      embedding_config: {
+        provider: "nomic",
+        model: "test",
+        dimensions: 512,
+        version: "test-v1",
+        similarity_threshold: 0.8,
+      },
+    });
+
+    expect(compiled.text).toContain("Use Shotport first for screenshots.");
+  });
+
   it("shows hybrid improvement over baseline on fixture cases", async () => {
     const db = freshDb();
     delete process.env.RECALL_EMBEDDINGS_DISABLED;
@@ -126,6 +154,57 @@ describe("retrieval eval runner", () => {
     expect(text).toContain("retrieval_miss=1 used=0");
   });
 
+  it("filters newer events whose memories are no longer retrievable", async () => {
+    const db = freshDb();
+    const usefulId = createMemory(db, {
+      type: "command",
+      text: "Run pytest -q",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    const staleId = createMemory(db, {
+      type: "rule",
+      text: "Always use stale generated instructions.",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: usefulId,
+      session_id: "older-useful",
+      repo: "test/repo",
+      event_type: "retrieval_miss",
+      source: "cli",
+      evidence: { correction_text: "Always run pytest -q." },
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: staleId,
+      session_id: "newer-stale",
+      repo: "test/repo",
+      event_type: "retrieval_miss",
+      source: "cli",
+      evidence: { correction_text: "Always use stale generated instructions." },
+    });
+    db.$client.prepare(
+      "update memories set status = 'rejected', dedupe_key = null where id = ?",
+    ).run(staleId);
+    db.$client.prepare(
+      "update memory_value_events set created_at = '2099-01-01T00:00:00.000Z' where memory_id = ?",
+    ).run(staleId);
+
+    const report = await runValueRetrievalEval(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+      limit: 1,
+    });
+
+    expect(report.generated_cases).toBe(1);
+    expect(report.skipped_events).toBe(0);
+    expect(report.retrieval.cases[0].hybrid.included_texts).toContain("Run pytest -q");
+  });
+
   it("builds value eval cases from used completion evidence", async () => {
     const db = freshDb();
     const memoryId = createMemory(db, {
@@ -157,6 +236,33 @@ describe("retrieval eval runner", () => {
     expect(report.generated_cases).toBe(1);
     expect(report.source_events).toEqual({ retrieval_miss: 0, used: 1 });
     expect(report.retrieval.summary.hybrid_expected_any_hit_rate).toBe(1);
+  });
+
+  it("skips historical used events without current relevance evidence", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "command",
+      text: "Use uv for Python dependency management.",
+      scope: "global",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    recordMemoryValueEvent(db, {
+      memory_id: memoryId,
+      session_id: "false-used",
+      event_type: "used",
+      source: "cli",
+      evidence: {
+        completion_excerpt: "Shipped and verified both Macs; cloud sync converged.",
+      },
+    });
+
+    const report = await runValueRetrievalEval(db, {
+      sinceIso: "1970-01-01T00:00:00.000Z",
+    });
+
+    expect(report.generated_cases).toBe(0);
+    expect(report.skipped_events).toBe(1);
   });
 
   it("recovers used memory through normalized lexical fallback when FTS is too strict", async () => {

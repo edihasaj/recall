@@ -153,6 +153,45 @@ describe("maintenance cleanup — rejectFragmentCandidates", () => {
     expect(planRejectFragments(db)).toHaveLength(0);
   });
 
+  it("rejects generated agent-contract memories by their capture evidence", () => {
+    const db = freshDb();
+    const artifact = createMemory(db, {
+      type: "rule",
+      text: "Do not infer broad coverage from a narrow smoke test.",
+      scope: "repo",
+      repo: "edihasaj/probeport",
+      source: "user_correction",
+      confidence: 0.95,
+      evidence: [{
+        type: "session_correction",
+        session: "generated-scout",
+        timestamp: new Date().toISOString(),
+        context: "# Probeport QA Agent Contract\n\n## Scout assignment\nGenerated harness instructions.",
+      }],
+    });
+    createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/probeport",
+      source: "user_correction",
+      confidence: 0.95,
+      evidence: [{
+        type: "session_correction",
+        session: "real-user",
+        timestamp: new Date().toISOString(),
+        context: "Always use pnpm for package commands.",
+      }],
+    });
+
+    const plan = planRejectFragments(db);
+    expect(plan).toHaveLength(1);
+    expect(plan[0]).toMatchObject({
+      memory_id: artifact,
+      reasons: ["non_user_capture_context"],
+    });
+  });
+
   it("recognizes operational evidence and orchestration verbs", async () => {
     const { qualityReasons } = await import("../src/maintenance/cleanup.js");
     expect(qualityReasons(
@@ -502,6 +541,21 @@ describe("capture-time fragment filter", () => {
     expect(qualityReasons("must be checked not like this")).toEqual(
       expect.arrayContaining(["no_verb"]),
     );
+    expect(qualityReasons(
+      "must be called after all test cases complete, not during parallel execution",
+    )).toContain("missing_subject_fragment");
+    expect(qualityReasons(
+      "must write after all tests complete",
+    )).toContain("missing_subject_fragment");
+    expect(qualityReasons(
+      "never the less, then we setup ef core and whatever",
+    )).toContain("never_the_less_fragment");
+    expect(qualityReasons(
+      "Prefer or because it's better maintain afterwards.",
+    )).toContain("vague_preference_fragment");
+    expect(qualityReasons(
+      "Do not use if deploy still in progress. Use list first instead.",
+    )).toContain("malformed_replacement");
   });
 
   it("keeps well-formed rules with action verbs intact", async () => {
@@ -873,6 +927,19 @@ describe("maintenance cleanup — invalid scope hygiene", () => {
       source: "user_correction",
       confidence: 0.9,
     });
+    // Simulate legacy/imported rows created before scope normalization.
+    db.update(memories)
+      .set({ scope: "path", repo: null, path_scope: null })
+      .where(eq(memories.id, missingPath))
+      .run();
+    db.update(memories)
+      .set({
+        scope: "repo",
+        repo: null,
+        path_scope: "/tmp/oktapod-openclaw-live-qa/task/work",
+      })
+      .where(eq(memories.id, tempRepoPath))
+      .run();
 
     const plan = planRejectInvalidScopes(db);
     expect(plan.map((item) => item.memory_id).sort()).toEqual([

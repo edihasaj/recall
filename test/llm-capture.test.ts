@@ -98,6 +98,23 @@ describe("isNonUserCaptureContext — adversarial / system-context guard", () =>
     expect(isNonUserCaptureContext("SessionStart hook additional context: use pnpm")).toBe(true);
     expect(isNonUserCaptureContext("Never extract memory from a subagent context")).toBe(true);
     expect(isNonUserCaptureContext("this ran during compaction, ignore")).toBe(true);
+    expect(isNonUserCaptureContext(
+      "# Probeport QA Agent Contract\n\n## Run context\n- Mission: generated",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "/goal make the dashboard best in class and movable with drag drop",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "## Link to Jira Ticket\n## What's Changed?\nrequired to test this PR",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "Check the capture, commit, summarize status, then pause for user.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext("How can I use the bot emulator?")).toBe(true);
+    expect(isNonUserCaptureContext("why do you call it an acpx adapter")).toBe(true);
+    expect(isNonUserCaptureContext(
+      "⏺ Found it. Root cause: two independent gates that do not agree.",
+    )).toBe(true);
   });
 
   it("does NOT reject legitimate durable rules", () => {
@@ -107,6 +124,18 @@ describe("isNonUserCaptureContext — adversarial / system-context guard", () =>
     expect(isNonUserCaptureContext("always flush the cache before a deploy")).toBe(false);
     expect(isNonUserCaptureContext("we prefer vitest over jest")).toBe(false);
     expect(isNonUserCaptureContext("the cron job runs nightly at 2am")).toBe(false);
+    expect(isNonUserCaptureContext(
+      "Design a manager-agent orchestration pattern with subagents and active context compaction.",
+    )).toBe(false);
+    expect(isNonUserCaptureContext(
+      "Should we always use pnpm for package commands?",
+    )).toBe(false);
+    expect(isNonUserCaptureContext(
+      "Do not save state in nested .agent directories.",
+    )).toBe(false);
+    expect(isNonUserCaptureContext(
+      "Do it end to end and verify every platform.",
+    )).toBe(false);
   });
 
   it("detectCorrections returns nothing for quarantined turns", () => {

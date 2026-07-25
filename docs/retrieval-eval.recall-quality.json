@@ -1,0 +1,105 @@
+{
+  "cases": [
+    {
+      "name": "global screenshot workflow",
+      "repo": "unrelated/repo",
+      "query_text": "shotport screenshot capture failed",
+      "expected_any_texts": [
+        "Use Shotport first for screenshots, and if a capture is empty or fails, retry with the correct active app/session invocation before opening System Settings."
+      ],
+      "forbidden_texts": [
+        "Use `uv` for Python dependency management"
+      ]
+    },
+    {
+      "name": "global Python dependency manager",
+      "repo": "unrelated/repo",
+      "query_text": "python package dependency manager",
+      "expected_any_texts": [
+        "Use `uv` for Python dependency management"
+      ],
+      "forbidden_texts": [
+        "Use Shotport first for screenshots, and if a capture is empty or fails, retry with the correct active app/session invocation before opening System Settings."
+      ]
+    },
+    {
+      "name": "global writing punctuation",
+      "repo": "unrelated/repo",
+      "query_text": "em dash writing punctuation",
+      "expected_any_texts": [
+        "Never use em dashes (—) in any written output; use a period, comma, or semicolon instead."
+      ],
+      "forbidden_texts": [
+        "Use `uv` for Python dependency management"
+      ]
+    },
+    {
+      "name": "Recall package manager",
+      "repo": "edihasaj/recall",
+      "query_text": "node package manager for recall",
+      "expected_any_texts": [
+        "Use pnpm as the package manager"
+      ],
+      "forbidden_texts": [
+        "Use `uv` for Python dependency management"
+      ]
+    },
+    {
+      "name": "agent local config path",
+      "repo": "edihasaj/agent",
+      "query_text": "agent local config file path",
+      "expected_any_texts": [
+        "Always use .agent/config.json as the local main config file; do not use repo-root agent.json as the primary local config path."
+      ],
+      "forbidden_texts": [
+        "Always create or change database tables through the repo schema/migration path, using Drizzle schema and generated/checked-in migrations; do not manually create tables directly in SQLite for agent runtime state."
+      ]
+    },
+    {
+      "name": "agent schema migration policy",
+      "repo": "edihasaj/agent",
+      "query_text": "drizzle database schema generated migration",
+      "expected_any_texts": [
+        "Always create or change database tables through the repo schema/migration path, using Drizzle schema and generated/checked-in migrations; do not manually create tables directly in SQLite for agent runtime state."
+      ],
+      "forbidden_texts": [
+        "Always use .agent/config.json as the local main config file; do not use repo-root agent.json as the primary local config path."
+      ]
+    },
+    {
+      "name": "eunify privileged security context",
+      "repo": "eunify",
+      "query_text": "kubernetes privileged security context",
+      "expected_any_texts": [
+        "Do not set securityContext.privileged=true."
+      ],
+      "forbidden_texts": [
+        "Present the assistant as an eUnifier assistant and do not claim to be GPT, Google Drive, Compass AI, or any other external service or product."
+      ]
+    },
+    {
+      "name": "Dayshape no fabricated numbers",
+      "repo": "dayshape/dayshape",
+      "query_text": "missing data numbers answer",
+      "expected_any_texts": [
+        "Never fabricate numbers. If the data does not contain what the user needs, say so"
+      ]
+    },
+    {
+      "name": "payroll latest billable price",
+      "repo": "TG-Payroll/payroll-backend",
+      "query_text": "billables latest price",
+      "expected_any_texts": [
+        "Always pick the latest price when used in billables"
+      ]
+    },
+    {
+      "name": "Scriptix migration generation",
+      "repo": "scriptix-io/api-scriptix",
+      "query_text": "database migration autogenerate local docker",
+      "expected_any_texts": [
+        "must run db migration autorevision autogenerate in local docker"
+      ]
+    }
+  ]
+}

@@ -48,13 +48,22 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
   const id = randomUUID();
   const confidence = input.confidence ?? 0.35; // default: low candidate
   const status = statusFromConfidence(confidence);
+  let scope = input.scope;
+  let repo = input.repo ?? null;
+  let pathScope = input.path_scope ?? null;
+  if (scope === "path" && !pathScope) scope = repo ? "repo" : "global";
+  if (scope === "repo" && !repo) scope = "global";
+  if (scope === "global") {
+    repo = null;
+    pathScope = null;
+  }
   const dedupeKey = input.dedupe === false
     ? null
     : memoryDedupeKey({
         type: input.type,
-        scope: input.scope,
-        repo: input.repo ?? null,
-        path_scope: input.path_scope ?? null,
+        scope,
+        repo,
+        path_scope: pathScope,
         text: input.text,
       });
 
@@ -75,9 +84,9 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       id,
       type: input.type,
       text: input.text,
-      scope: input.scope,
-      path_scope: input.path_scope ?? null,
-      repo: input.repo ?? null,
+      scope,
+      path_scope: pathScope,
+      repo,
       status,
       confidence,
       source: input.source,

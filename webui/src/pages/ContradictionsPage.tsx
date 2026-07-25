@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { api, type ContradictionRow } from "../lib/api";
 import { useLoadMore } from "../lib/useLoadMore";
 import { LoadMore } from "../lib/LoadMore";
