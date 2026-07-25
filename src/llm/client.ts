@@ -15,6 +15,7 @@ export interface LlmCallInput {
   system: string;
   user: string;
   max_output_tokens?: number;
+  json_output?: boolean;
   temperature?: number;
   task_kind: string;
   task_id?: string | null;
@@ -127,7 +128,9 @@ async function callOpenAi(
         { role: "user", content: input.user },
       ],
       max_completion_tokens: input.max_output_tokens ?? 2048,
-      temperature: input.temperature ?? 0,
+      ...(!isReasoningModel(model) ? { temperature: input.temperature ?? 0 } : {}),
+      ...(input.json_output ? { response_format: { type: "json_object" } } : {}),
+      ...(isReasoningModel(model) ? { reasoning_effort: "low" } : {}),
     }),
   });
 
@@ -180,7 +183,9 @@ async function callAzureOpenAi(
         { role: "user", content: input.user },
       ],
       max_completion_tokens: input.max_output_tokens ?? 2048,
-      temperature: input.temperature ?? 0,
+      ...(!isReasoningModel(deployment) ? { temperature: input.temperature ?? 0 } : {}),
+      ...(input.json_output ? { response_format: { type: "json_object" } } : {}),
+      ...(isReasoningModel(deployment) ? { reasoning_effort: "low" } : {}),
     }),
   });
 
@@ -274,6 +279,11 @@ function computeCost(model: string, inputTokens: number, outputTokens: number): 
     (inputTokens / 1_000_000) * rates.input +
     (outputTokens / 1_000_000) * rates.output
   );
+}
+
+function isReasoningModel(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  return normalized.startsWith("gpt-5") || /^o[134](?:-|$)/.test(normalized);
 }
 
 async function recordUsage(

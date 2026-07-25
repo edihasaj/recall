@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.4 - 2026-07-25
+
+### Fixed
+
+- **Azure GPT-5 maintenance returns valid structured results.** JSON mode, low
+  reasoning effort, a larger extraction budget, and reasoning-model parameter
+  compatibility prevent hidden reasoning tokens from consuming the full
+  response before consolidation output is produced.
+- **Keychain write failures no longer expose credential material.** Errors now
+  report only the provider and storage destination instead of including the
+  secret-bearing command arguments.
+
 ## 0.9.3 - 2026-07-25
 
 ### Fixed

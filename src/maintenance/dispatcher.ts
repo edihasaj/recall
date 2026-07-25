@@ -140,6 +140,7 @@ async function runSingle(
       system: prompt.system,
       user: prompt.user,
       max_output_tokens: prompt.max_output_tokens,
+      json_output: true,
       task_kind: claimed.kind,
       task_id: claimed.id,
       repo: claimed.repo,
@@ -315,7 +316,7 @@ function buildExtractRulesFromPromptPrompt(task: MaintenanceTask): Prompt {
     'Return JSON: {"rules": [{"text": string, "type": "rule"|"decision"|"review_pattern"|"command"|"gotcha", "scope": "session"|"path"|"repo"|"team"|"global", "path_scope": string|null, "confidence": number, "is_destructive_risky": boolean, "rationale": string}], "dropped_reason": string?}',
     'When the prompt contains no durable rule, return {"rules": []} with a brief dropped_reason.',
   ].join("\n");
-  return { system, user, max_output_tokens: 800 };
+  return { system, user, max_output_tokens: 1600 };
 }
 
 function summarizeRecentToolCalls(value: unknown): string | null {

@@ -87,6 +87,42 @@ describe("Azure OpenAI provider", () => {
     expect(body.model).toBeUndefined(); // Azure uses deployment in the URL
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0]).toEqual({ role: "system", content: "s" });
+    expect(body.response_format).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it("uses JSON mode and low reasoning effort for GPT-5 maintenance calls", async () => {
+    const db = freshDb();
+    process.env.AZURE_OPENAI_ENDPOINT = "https://myresource.openai.azure.com";
+    process.env.AZURE_OPENAI_DEPLOYMENT = "gpt-5.4-mini-1";
+    process.env.AZURE_OPENAI_API_VERSION = "2024-10-21";
+    process.env.AZURE_OPENAI_API_KEY = "az-test-key";
+
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "{\"rules\":[]}" } }],
+          usage: { prompt_tokens: 10, completion_tokens: 12, total_tokens: 22 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await callLlm(db, {
+      provider: "azure-openai",
+      system: "s",
+      user: "u",
+      max_output_tokens: 1600,
+      json_output: true,
+      task_kind: "extract_rules_from_prompt",
+    });
+
+    const init = fetchSpy!.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.max_completion_tokens).toBe(1600);
+    expect(body.response_format).toEqual({ type: "json_object" });
+    expect(body.reasoning_effort).toBe("low");
+    expect(body.temperature).toBeUndefined();
   });
 
   it("rejects non-Azure credential destinations before fetch", async () => {

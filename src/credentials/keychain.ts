@@ -205,18 +205,22 @@ function azureSource(): "keychain" | "env" {
 
 function writeKeychain(provider: LlmProvider, value: string): void {
   // -U updates in place when an entry already exists.
-  execFileSync(
-    "security",
-    [
-      "add-generic-password",
-      "-U",
-      "-s", KEYCHAIN_SERVICE,
-      "-a", provider,
-      "-w", value,
-      "-T", "",
-    ],
-    { stdio: "ignore" },
-  );
+  try {
+    execFileSync(
+      "security",
+      [
+        "add-generic-password",
+        "-U",
+        "-s", KEYCHAIN_SERVICE,
+        "-a", provider,
+        "-w", value,
+        "-T", "",
+      ],
+      { stdio: "ignore" },
+    );
+  } catch {
+    throw new Error(`Unable to store ${provider} credential in macOS Keychain`);
+  }
 }
 
 function previewKey(_key: string): string {

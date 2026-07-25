@@ -49,4 +49,17 @@ describe("keychain credential helper — env fallback", () => {
     const creds = listCredentials();
     expect(creds.map((c) => c.provider).sort()).toEqual(["anthropic", "openai"]);
   });
+
+  it("does not expose a credential when a Keychain write fails", async () => {
+    process.env.PATH = "/nonexistent";
+    const { setApiKey } = await loadModule();
+    const sensitive = "sensitive-key-material";
+    let message = "";
+    try {
+      setApiKey("openai", sensitive);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain(sensitive);
+  });
 });

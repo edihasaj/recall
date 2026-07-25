@@ -51,6 +51,7 @@ describe("callLlm — OpenAI", () => {
       user: "summarize",
       task_kind: "compact",
       repo: "edihasaj/recall",
+      json_output: true,
     });
 
     expect(res.text).toBe("compacted summary");
@@ -64,6 +65,8 @@ describe("callLlm — OpenAI", () => {
     const init = fetchSpy!.mock.calls[0][1] as RequestInit;
     expect(init.redirect).toBe("error");
     expect(init.signal).toBeInstanceOf(AbortSignal);
+    const body = JSON.parse(init.body as string);
+    expect(body.response_format).toEqual({ type: "json_object" });
 
     const rows = db.select().from(llmUsage).all();
     expect(rows).toHaveLength(1);
