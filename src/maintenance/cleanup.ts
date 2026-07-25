@@ -11,7 +11,8 @@ import { getMemory, queryMemories } from "../models/memory.js";
 import { memoryDedupeKey } from "../models/dedupe.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { checkContradiction } from "../contradictions/detector.js";
-import { isDestructiveRisky, isNonUserCaptureContext } from "../capture/correction.js";
+import { isDestructiveRisky } from "../capture/correction.js";
+import { isNonUserCaptureContext } from "../capture/context.js";
 import { isGenericScannedToolingMemory } from "../scanner/signal.js";
 
 const SUPPRESS_INJECTION_FLOOR = 50;

@@ -13,6 +13,7 @@ import {
   loadEmbeddingConfigFromEnv,
 } from "../embeddings/embeddings.js";
 import { ApplyError, applyTaskResult } from "./appliers.js";
+import { isNonUserCaptureContext } from "../capture/context.js";
 import type {
   MaintenanceTask,
   MaintenanceTaskKind,
@@ -363,6 +364,13 @@ function taskTargetReasons(db: RecallDb, task: TaskRow): string[] {
       ))
       .all();
     if (live.length < 2) return ["merge_candidates_not_live"];
+  }
+
+  if (task.kind === "extract_rules_from_prompt") {
+    const rawPrompt = payloadString(payload, "raw_prompt");
+    if (rawPrompt && isNonUserCaptureContext(rawPrompt)) {
+      return ["non_user_capture_context"];
+    }
   }
 
   return [];
@@ -862,10 +870,10 @@ const SummarizeHistoryResult = z.object({
 
 const MergeDuplicatesResult = z.object({
   winner_id: z.string().uuid(),
-  winner_text: z.string().min(1).max(4000).optional(),
-  winner_scope: MemoryScope.optional(),
+  winner_text: z.string().min(1).max(4000).nullable().optional(),
+  winner_scope: MemoryScope.nullable().optional(),
   winner_path_scope: z.string().max(512).nullable().optional(),
-  rationale: z.string().max(2000).optional(),
+  rationale: z.string().max(2000).nullable().optional(),
 });
 
 const SummarizeSessionResult = z.object({
@@ -886,12 +894,12 @@ const ExtractedRule = z.object({
   path_scope: z.string().max(512).nullable().optional(),
   confidence: z.number().min(0).max(1),
   is_destructive_risky: z.boolean().optional(),
-  rationale: z.string().max(500).optional(),
+  rationale: z.string().max(500).nullable().optional(),
 });
 
 const ExtractRulesFromPromptResult = z.object({
   rules: z.array(ExtractedRule).max(10),
-  dropped_reason: z.string().max(500).optional(),
+  dropped_reason: z.string().max(500).nullable().optional(),
 });
 
 const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
@@ -1123,6 +1131,31 @@ export function submitTask(
 
 export interface ReleaseResult {
   status: "released" | "not-claimed" | "not-found";
+}
+
+export function abandonClaimedTask(
+  db: RecallDb,
+  taskId: string,
+  agent: string,
+  reason: string,
+): boolean {
+  const existing = getTask(db, taskId);
+  if (!existing || existing.status !== "claimed" || existing.claimed_by !== agent) {
+    return false;
+  }
+  const now = new Date().toISOString();
+  const result = db.update(memoryMaintenanceTasks)
+    .set({
+      status: "abandoned",
+      claimed_by: null,
+      claimed_at: null,
+      claim_expires_at: null,
+      failure_reason: reason.slice(0, 500),
+      completed_at: now,
+    })
+    .where(eq(memoryMaintenanceTasks.id, taskId))
+    .run();
+  return result.changes > 0;
 }
 
 export function releaseTask(

@@ -135,8 +135,8 @@ describe("dispatcher — refine_candidate end-to-end", () => {
   });
 });
 
-describe("dispatcher — malformed JSON releases the task", () => {
-  it("returns released when the model emits unparseable text", async () => {
+describe("dispatcher — malformed JSON counts as a failed attempt", () => {
+  it("returns rejected when the model emits unparseable text", async () => {
     const db = freshDb();
     process.env.OPENAI_API_KEY = "sk-test";
     const memoryId = createMemory(db, {
@@ -157,10 +157,11 @@ describe("dispatcher — malformed JSON releases the task", () => {
     stubOpenAi("I'm sorry, I cannot respond with JSON right now.");
 
     const report = await dispatchPendingTasks(db, { provider: "openai" });
-    expect(report.released).toBe(1);
+    expect(report.rejected).toBe(1);
     expect(report.applied).toBe(0);
     const pending = listTasks(db, { status: "pending" });
     expect(pending).toHaveLength(1);
+    expect(pending[0].attempts).toBe(1);
   });
 });
 
@@ -190,5 +191,127 @@ describe("dispatcher — code-fenced JSON is accepted", () => {
 
     const report = await dispatchPendingTasks(db, { provider: "openai" });
     expect(report.applied).toBe(1);
+  });
+});
+
+describe("dispatcher task contracts", () => {
+  it("sends merge candidates to the model and applies its selected winner", async () => {
+    const db = freshDb();
+    process.env.OPENAI_API_KEY = "sk-test";
+    const first = createMemory(db, {
+      type: "rule",
+      text: "Always use pnpm.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    const second = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.7,
+    });
+    insertTaskIdempotent(db, {
+      kind: "merge_duplicates",
+      target: first,
+      repo: "edihasaj/recall",
+      payload: {
+        repo: "edihasaj/recall",
+        candidates: [
+          { id: first, text: "Always use pnpm.", scope: "repo", path_scope: null },
+          { id: second, text: "Use pnpm for package commands.", scope: "repo", path_scope: null },
+        ],
+      },
+    });
+    stubOpenAi(JSON.stringify({
+      winner_id: first,
+      winner_text: null,
+      winner_scope: null,
+      winner_path_scope: null,
+      rationale: null,
+    }));
+
+    const report = await dispatchPendingTasks(db, { provider: "openai" });
+
+    expect(report.applied).toBe(1);
+    const request = JSON.parse(fetchSpy!.mock.calls[0][1]!.body as string);
+    expect(request.messages[1].content).toContain(first);
+    expect(request.messages[1].content).toContain(second);
+  });
+
+  it("abandons queued non-user extraction prompts before calling the model", async () => {
+    const db = freshDb();
+    process.env.OPENAI_API_KEY = "sk-test";
+    insertTaskIdempotent(db, {
+      kind: "extract_rules_from_prompt",
+      target: "generated-contract",
+      repo: "edihasaj/probeport",
+      payload: {
+        raw_prompt: "# Probeport QA Agent Contract\nGenerated harness instructions.",
+        repo: "edihasaj/probeport",
+      },
+    });
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const report = await dispatchPendingTasks(db, { provider: "openai" });
+
+    expect(report.attempted).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(listTasks(db, { status: "abandoned" })).toHaveLength(1);
+  });
+
+  it("accepts null dropped_reason for an empty extraction result", async () => {
+    const db = freshDb();
+    process.env.OPENAI_API_KEY = "sk-test";
+    insertTaskIdempotent(db, {
+      kind: "extract_rules_from_prompt",
+      target: "real-rule",
+      repo: "edihasaj/recall",
+      payload: {
+        raw_prompt: "Always use pnpm for package commands.",
+        repo: "edihasaj/recall",
+      },
+    });
+    stubOpenAi(JSON.stringify({ rules: [], dropped_reason: null }));
+
+    const report = await dispatchPendingTasks(db, { provider: "openai" });
+
+    expect(report.applied).toBe(1);
+    expect(report.rejected).toBe(0);
+  });
+
+  it("abandons a provider-filtered task instead of retrying forever", async () => {
+    const db = freshDb();
+    process.env.OPENAI_API_KEY = "sk-test";
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Candidate text.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.5,
+    });
+    insertTaskIdempotent(db, {
+      kind: "verify_capture",
+      target: memoryId,
+      repo: "edihasaj/recall",
+      payload: { memory_id: memoryId, text: "Candidate text." },
+    });
+    fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { code: "content_filter" } }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const report = await dispatchPendingTasks(db, { provider: "openai" });
+
+    expect(report.rejected).toBe(1);
+    expect(report.outcomes[0].reason).toBe("provider content filter");
+    expect(listTasks(db, { status: "pending" })).toHaveLength(0);
+    expect(listTasks(db, { status: "abandoned" })).toHaveLength(1);
   });
 });

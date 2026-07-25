@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.5 - 2026-07-25
+
+### Fixed
+
+- **Duplicate consolidation receives its candidate set.** The dispatcher now
+  sends the task's real `candidates` payload instead of an empty legacy field,
+  accepts nullable optional model fields, and applies the selected live winner.
+- **Historical generated prompts are quarantined before dispatch.** Old agent
+  contracts and evaluation scaffolding already queued before capture hardening
+  are abandoned without an LLM call.
+- **Permanent model failures no longer retry forever.** Malformed JSON consumes
+  a bounded task attempt, while provider content-filter refusals are abandoned
+  with an explicit reason and leave the candidate memory unchanged.
+
 ## 0.9.4 - 2026-07-25
 
 ### Fixed

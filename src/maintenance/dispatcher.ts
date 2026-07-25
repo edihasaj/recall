@@ -2,12 +2,19 @@ import type { RecallDb } from "../db/client.js";
 import type { MaintenanceTask, MaintenanceTaskKind } from "../types.js";
 import {
   TaskClaimConflictError,
+  abandonInvalidOpenTasks,
+  abandonClaimedTask,
   claimTask,
   listTasks,
   releaseTask,
   submitTask,
 } from "./tasks.js";
-import { callLlm, LlmCredentialError, type LlmProvider } from "../llm/client.js";
+import {
+  callLlm,
+  LlmCredentialError,
+  LlmRequestError,
+  type LlmProvider,
+} from "../llm/client.js";
 import { hasProviderConfigured } from "../credentials/keychain.js";
 
 const DISPATCH_AGENT = "recall:dispatcher";
@@ -64,6 +71,7 @@ export async function dispatchPendingTasks(
   };
   if (!provider) return report;
 
+  abandonInvalidOpenTasks(db);
   const pending = listTasks(db, {
     status: "pending",
     kinds: options.kinds,
@@ -148,12 +156,12 @@ async function runSingle(
 
     const parsed = parseJson(llmResult.text);
     if (!parsed) {
-      releaseTask(db, claimed.id, DISPATCH_AGENT);
+      submitTask(db, claimed.id, DISPATCH_AGENT, {});
       return {
         task_id: claimed.id,
         kind: claimed.kind,
         repo: claimed.repo,
-        status: "released",
+        status: "rejected",
         reason: "llm did not return valid JSON",
         prompt_tokens: llmResult.usage.prompt_tokens,
         completion_tokens: llmResult.usage.completion_tokens,
@@ -189,12 +197,27 @@ async function runSingle(
       duration_ms: llmResult.duration_ms,
     };
   } catch (err) {
-    releaseTask(db, claimed.id, DISPATCH_AGENT);
     const reason = err instanceof LlmCredentialError
       ? err.message
       : err instanceof Error
         ? err.message
         : String(err);
+    if (err instanceof LlmRequestError && reason.includes("content_filter")) {
+      abandonClaimedTask(
+        db,
+        claimed.id,
+        DISPATCH_AGENT,
+        "provider_content_filter",
+      );
+      return {
+        task_id: claimed.id,
+        kind: claimed.kind,
+        repo: claimed.repo,
+        status: "rejected",
+        reason: "provider content filter",
+      };
+    }
+    releaseTask(db, claimed.id, DISPATCH_AGENT, reason);
     return {
       task_id: claimed.id,
       kind: claimed.kind,
@@ -414,7 +437,7 @@ function buildSummarizeHistoryPrompt(task: MaintenanceTask): Prompt {
 
 function buildMergeDuplicatesPrompt(task: MaintenanceTask): Prompt {
   const payload = task.payload as {
-    cluster?: Array<{ id: string; text: string; confidence?: number; scope?: string; path_scope?: string | null }>;
+    candidates?: Array<{ id: string; text: string; confidence?: number; scope?: string; path_scope?: string | null }>;
     repo?: string | null;
   };
   const system = [
@@ -425,7 +448,7 @@ function buildMergeDuplicatesPrompt(task: MaintenanceTask): Prompt {
   const user = [
     `Repo: ${JSON.stringify(payload.repo ?? null)}`,
     `Cluster:`,
-    JSON.stringify(payload.cluster ?? [], null, 2),
+    JSON.stringify(payload.candidates ?? [], null, 2),
     "",
     'Return JSON: {"winner_id": uuid, "winner_text"?: string, "winner_scope"?: "session"|"path"|"repo"|"team", "winner_path_scope"?: string|null, "rationale"?: string}',
   ].join("\n");

@@ -23,6 +23,9 @@ import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { qualityReasons } from "../maintenance/cleanup.js";
 import { normalizeDedupeText } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
+import { isNonUserCaptureContext } from "./context.js";
+
+export { isNonUserCaptureContext } from "./context.js";
 
 // --- Detection patterns ---
 
@@ -97,88 +100,6 @@ export function isTriggerTemplateRule(text: string): boolean {
 
 export function isHighRiskRule(text: string): boolean {
   return isDestructiveRisky(text) || isTriggerTemplateRule(text);
-}
-
-// --- Non-user / adversarial capture-context guard ---
-//
-// Some turns must never be mined for durable memory because they are not Edi
-// expressing a preference. Two classes:
-//
-//   1. SYSTEM SCAFFOLDING — harness-generated text that gets re-fed into a turn:
-//      SessionStart history blocks, task notifications, hook-activity recaps,
-//      maintenance/compaction summaries. Mining these produced junk like
-//      "[correction_summary] ..." and "always on PATH)".
-//
-//   2. AGENT-DIRECTED / PROMPT-INJECTION ARTIFACTS — task specs aimed at a model
-//      under test ("required exact reply: ...", "Required generated files: ...",
-//      "use private/runtime state for this answer instead"). These flooded the
-//      oktapod scope while running an agent-scorecard eval: the benchmark's
-//      adversarial prompts were captured as if they were Edi's rules, then
-//      re-injected into unrelated sessions — a self-inflicted prompt-injection
-//      channel.
-//
-// This enforces in CODE the long-standing intent that previously lived only as
-// an (un-enforced) memory: "Never extract memory from cron, subagent,
-// compaction, flush, or system repair contexts if those appear in the turn
-// text." Patterns are precision-tuned: bare `flush`/`cron` are deliberately
-// omitted (they occur in legitimate rules like "always flush the cache"); the
-// retained markers effectively never appear in a genuine durable preference.
-
-const SYSTEM_SCAFFOLD_RE =
-  /(?:^\s*[⏺⎿❯✻※]|<\/?task-notification>|task-notification|hook activity|\[correction_summary\]|correction_summary|session(?:start| start| end) hook|stop hook|<system-reminder>|<\/?command-(?:name|message)>|recent_tool_calls|probeport qa agent contract|you extract durable memory candidates for a personal agent runtime|required schema_version:\s*memory_extraction|##\s*(?:run context|scout assignment|lead verifier assignment|available tool commands|mapped local files|allowed secret environment names))/i;
-
-const NON_USER_CONTEXT_RE =
-  /\b(?:sub-?agent (?:context|transcript|output|notification)|(?:during|after) compaction|compaction (?:context|summary|transcript)|compacting (?:the )?(?:context|conversation)|system repair (?:context|transcript)|self[- ]repair context|repair context|cron context)\b/i;
-
-const INJECTION_ARTIFACT_RE = new RegExp(
-  [
-    "ignore (?:all |any |the )?(?:previous|prior|above|earlier) (?:instructions|prompts?|messages?|rules?)",
-    "disregard (?:all |any |the )?(?:previous|prior|above|earlier)\\b",
-    "\\bexact reply\\b",
-    "reply (?:with )?exactly\\b",
-    "use (?:private|runtime|internal)(?:/[a-z]+)* state for this answer",
-    "do not use tools\\b[^.]*\\b(?:answer|state|reply|instead)",
-    "required generated files?\\b",
-    "verify the generated (?:scorecard|artifact|output|file)",
-    "must preserve the visible labels?\\b",
-    "promised\\b[^.]*\\bactions\\b[^.]*\\bexecuted",
-    "\\bACP actions\\b",
-  ].join("|"),
-  "i",
-);
-
-const EPHEMERAL_TASK_CONTEXT_RE =
-  /(?:^\s*\/goal\b|pause for (?:the )?user\b|this is task def(?:inition)?:|key details\s+description\s+(?:goal|background)\b|link to jira ticket|what(?:'|’)s changed\?|this article lists the tools we use for development|required software on node)/i;
-
-function looksLikeQuestionContext(text: string): boolean {
-  if (/\b(?:always|never|remember|memorize|save this|from now on|by default|make it a rule)\b/i.test(text)) {
-    return false;
-  }
-  if (/^\s*(?:how|why|what|where|which|who)\b/i.test(text)) {
-    return true;
-  }
-  if (/^\s*(?:can|could|should|would)\s+(?:i|we|you|they|it)\b/i.test(text)) {
-    return true;
-  }
-  if (!text.includes("?")) return false;
-  return (
-    /\?\s*$/.test(text.trim()) ||
-    /(?:^|[.!?]\s+)(?:how|why|what|where|which|who|can|could|should|would|do|does|did|is|are|was|were|have|has)\b/i.test(text)
-  );
-}
-
-// True when a turn carries non-user/system/adversarial scaffolding or an
-// obviously ephemeral task/question context and must be excluded from memory
-// capture entirely. Operates on the FULL turn text, so one marker quarantines
-// every fragment in that turn.
-export function isNonUserCaptureContext(text: string): boolean {
-  return (
-    SYSTEM_SCAFFOLD_RE.test(text) ||
-    NON_USER_CONTEXT_RE.test(text) ||
-    INJECTION_ARTIFACT_RE.test(text) ||
-    EPHEMERAL_TASK_CONTEXT_RE.test(text) ||
-    looksLikeQuestionContext(text)
-  );
 }
 
 // Multi-language pre-screen for the LLM-primary capture path. Cheap regex
