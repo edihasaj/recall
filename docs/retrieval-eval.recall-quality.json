@@ -14,7 +14,7 @@
     {
       "name": "global Python dependency manager",
       "repo": "unrelated/repo",
-      "query_text": "python package dependency manager",
+      "query_text": "python package manager",
       "expected_any_texts": [
         "Use `uv` for Python dependency management"
       ],

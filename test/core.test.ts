@@ -939,6 +939,36 @@ describe("compiler", () => {
     expect(result.text).not.toContain("Use pnpm as package manager");
   });
 
+  it("prefers a narrower repo rule over a similar global rule", async () => {
+    const db = freshDb();
+    process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+
+    createMemory(db, {
+      type: "command",
+      text: "Use uv for Python dependency management",
+      scope: "global",
+      source: "user_correction",
+      confidence: 1,
+    });
+    createMemory(db, {
+      type: "command",
+      text: "Use pnpm as the package manager",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.7,
+    });
+
+    const result = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "node package manager",
+      embedding_config: null,
+    });
+
+    expect(result.text).toContain("Use pnpm as the package manager");
+    expect(result.text).not.toContain("Use uv for Python dependency management");
+  });
+
   it("keeps candidate memories opt-in for hybrid compile", async () => {
     const db = freshDb();
     delete process.env.RECALL_EMBEDDINGS_DISABLED;

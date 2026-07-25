@@ -494,13 +494,35 @@ function dedupeMemoriesForInjection(memories: MemoryItem[]): MemoryItem[] {
 
 function dedupeRankedMemoriesForInjection<T extends { memory: MemoryItem }>(ranked: T[]): T[] {
   const seen = new Set<string>();
-  return ranked.filter((item) => {
+  const selected: T[] = [];
+  for (const item of ranked) {
     const key = canonicalInjectionText(item.memory);
-    if (!key) return false;
-    if (seen.has(key)) return false;
+    if (!key || seen.has(key)) continue;
+
+    const scopedOverrideIndex = selected.findIndex((existing) =>
+      existing.memory.scope === "global" &&
+      item.memory.scope !== "global" &&
+      existing.memory.type === item.memory.type &&
+      textMatchScore(existing.memory.text, item.memory.text).score >= 0.6
+    );
+    if (scopedOverrideIndex >= 0) {
+      seen.add(key);
+      selected[scopedOverrideIndex] = item;
+      continue;
+    }
+
+    const hasNarrowerEquivalent = selected.some((existing) =>
+      existing.memory.scope !== "global" &&
+      item.memory.scope === "global" &&
+      existing.memory.type === item.memory.type &&
+      textMatchScore(existing.memory.text, item.memory.text).score >= 0.6
+    );
+    if (hasNarrowerEquivalent) continue;
+
     seen.add(key);
-    return true;
-  });
+    selected.push(item);
+  }
+  return selected;
 }
 
 function canonicalInjectionText(memory: MemoryItem): string {

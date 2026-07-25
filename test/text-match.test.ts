@@ -63,4 +63,11 @@ describe("text match normalization", () => {
       "Do not set securityContext.privileged=true.",
     ).score).toBeGreaterThanOrEqual(0.45);
   });
+
+  it("matches package-manager language to dependency-management rules", () => {
+    expect(textMatchScore(
+      "python package manager",
+      "Use uv for Python dependency management.",
+    ).score).toBeGreaterThanOrEqual(0.45);
+  });
 });

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.3 - 2026-07-25
+
+### Fixed
+
+- **Natural package-manager queries retrieve dependency-management rules.**
+  Hybrid lexical matching now treats package/dependency and
+  manager/management wording as equivalent, so a normal query such as
+  `python package manager` retrieves the global `uv` rule without depending on
+  vector similarity.
+
 ## 0.9.2 - 2026-07-25
 
 ### Fixed

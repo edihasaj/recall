@@ -123,6 +123,8 @@ export function matchTokens(text: string): string[] {
 
 function normalizeToken(token: string): string {
   if (NEGATION_WORDS.has(token)) return "not";
+  if (["dependencies", "dependency", "packages"].includes(token)) return "package";
+  if (token === "manager" || token === "management") return "manage";
   if (/^es\d+$/.test(token)) return "es";
   if (token === "ran" || token === "running" || token === "runs") return "run";
   if (token === "using" || token === "used" || token === "uses") return "use";
