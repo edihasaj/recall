@@ -98,7 +98,7 @@ Opt out:
 
 ### Tuning the dispatcher for LLM-primary capture
 
-The dispatcher's default `RECALL_DISPATCHER_INTERVAL_SECONDS=86400` (daily) made sense for batch maintenance, but it's too slow for capture: a rule captured today wouldn't be judged until tomorrow. The `/dispatch/wake` endpoint fixes the common case (hook fires it on every enqueue, debounced), but you can also lower the timer-based interval if you frequently work offline from the daemon:
+The dispatcher's default `RECALL_DISPATCHER_INTERVAL_SECONDS=86400` (daily) made sense for batch maintenance, but it's too slow for capture: a rule captured today wouldn't be judged until tomorrow. The `/dispatch/wake` endpoint fixes the common case (hook fires it on every enqueue, debounced). The maintenance loop uses the same wake path when it leaves new tasks pending, and full successful batches continue until drained. Transient provider failures pause the continuation instead of creating a retry storm. You can also lower the timer-based interval if you frequently work offline from the daemon:
 
 ```bash
 RECALL_DISPATCHER_INTERVAL_SECONDS=900  # 15 min — captures land within 15m even if the wake endpoint is unreachable

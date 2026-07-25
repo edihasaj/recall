@@ -63,6 +63,10 @@ import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
 import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
+import {
+  dispatchBatchNeedsContinuation,
+  maintenanceCreatedDispatchableTasks,
+} from "./maintenance/dispatch-scheduling.js";
 import { runDeterministicCleanup } from "./maintenance/cleanup.js";
 import { computeQualityReport, listQualitySnapshots, recordQualitySnapshot } from "./maintenance/quality.js";
 import { runValueRetrievalEval, summarizeValueRetrievalEval } from "./eval/retrieval.js";
@@ -123,6 +127,9 @@ function scheduleMaintenanceLoop() {
       if (shouldLogMaintenance(result)) {
         console.log(formatMaintenanceSummary(result));
       }
+      if (maintenanceCreatedDispatchableTasks(result)) {
+        wakeDispatcherDebounced();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
       console.error(`[recall] maintenance failed: ${message}`);
@@ -173,6 +180,9 @@ async function runDispatcherOnce(): Promise<void> {
         applied: report.applied,
         rejected: report.rejected,
       });
+    }
+    if (dispatchBatchNeedsContinuation(report, dispatcherConfig.maxTasksPerRun)) {
+      wakeDispatcherDebounced();
     }
   } catch (error) {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);

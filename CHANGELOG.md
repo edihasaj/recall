@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.6 - 2026-07-25
+
+### Fixed
+
+- **Background maintenance now wakes its dispatcher.** New summary and
+  consolidation tasks trigger the same debounced path as prompt capture, and
+  full successful batches continue until drained. Transient provider failures
+  pause continuation to avoid retry storms.
+
 ## 0.9.5 - 2026-07-25
 
 ### Fixed
