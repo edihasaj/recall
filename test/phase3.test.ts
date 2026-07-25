@@ -18,7 +18,7 @@ import { pruneMemories, formatPruneReport } from "../src/pruning/pruner.js";
 import { recordAudit, getAuditTrail, getRecentAudit, formatAuditTrail, diffSnapshots, rollbackMemory, recordAuditWithSnapshot } from "../src/audit/trail.js";
 import { recordSignal } from "../src/feedback/implicit.js";
 import { eq } from "drizzle-orm";
-import { memories } from "../src/db/schema.js";
+import { contradictions, memories } from "../src/db/schema.js";
 
 let dbCounter = 0;
 
@@ -237,6 +237,61 @@ describe("contradiction detection", () => {
     expect(found.length).toBeGreaterThanOrEqual(1);
     const conflict = found.find((c) => c.contradiction_type === "conflicting_rules");
     expect(conflict).toBeDefined();
+  });
+
+  it("does not confuse unrelated use rules with contradictions", () => {
+    const db = freshDb();
+    makeMemory(db, { text: "use commas in prose lists", type: "rule", confidence: 0.8 });
+    makeMemory(db, { text: "use uv for Python packages", type: "rule", confidence: 0.8 });
+    const mems = queryMemories(db, { repo: "test/repo" });
+    for (const memory of mems) confirmMemory(db, memory.id);
+
+    expect(detectContradictions(db, "test/repo")).toHaveLength(0);
+  });
+
+  it("does not call same-direction replacement rules contradictions", () => {
+    const db = freshDb();
+    makeMemory(db, {
+      text: "Never use em dashes in written output; use periods, commas, or semicolons instead.",
+      type: "rule",
+      confidence: 0.8,
+    });
+    makeMemory(db, {
+      text: "Do not write em dashes; use commas instead.",
+      type: "rule",
+      confidence: 0.8,
+    });
+    const mems = queryMemories(db, { repo: "test/repo" });
+    for (const memory of mems) confirmMemory(db, memory.id);
+
+    expect(detectContradictions(db, "test/repo")).toHaveLength(0);
+  });
+
+  it("resolves historical rows that no longer satisfy contradiction rules", () => {
+    const db = freshDb();
+    const idA = makeMemory(db, { text: "use commas in prose lists", type: "rule", confidence: 0.8 });
+    const idB = makeMemory(db, { text: "use uv for Python packages", type: "rule", confidence: 0.8 });
+    confirmMemory(db, idA);
+    confirmMemory(db, idB);
+    db.insert(contradictions).values({
+      id: "stale-false-positive",
+      memory_a_id: idA,
+      memory_b_id: idB,
+      contradiction_type: "scope_overlap",
+      severity: "low",
+      description: "legacy similarity-only match",
+      resolved: false,
+      detected_at: new Date().toISOString(),
+    }).run();
+
+    detectContradictions(db, "test/repo");
+
+    expect(listContradictions(db, { resolved: true })).toEqual([
+      expect.objectContaining({
+        id: "stale-false-positive",
+        resolution: "Auto-resolved: pair no longer satisfies contradiction rules",
+      }),
+    ]);
   });
 
   it("resolves contradiction manually", () => {

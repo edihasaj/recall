@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.1 - 2026-07-25
+
+### Fixed
+
+- **Short tool-name queries retrieve their rules.** Exact queries such as `uv`,
+  `pnpm`, and `shotport` now count as strong normalized lexical matches, while
+  hybrid compile keeps a wider candidate window before applying its precise
+  two-memory query-pack cap.
+- **Prose such as `app/session invocation` is no longer mis-scoped as a file
+  path.** The ambiguous `app/` root needs explicit path wording or code quoting,
+  preventing cross-project tool preferences from becoming unreachable path
+  candidates.
+- **Value retrieval evals measure retrieval instead of prompt length.** Miss
+  cases replay the concise repeated correction, and historical rows that are
+  no longer eligible for injection are skipped.
+- **Automatic followed telemetry requires observable evidence.** A random tool
+  call in the same repo no longer marks every injected repo/global rule as
+  followed or inflates its confidence; unverifiable outcomes stay unresolved.
+- **Contradiction detection is precision-first.** Different `use X` rules need
+  a substantive shared context, similarity alone is not called a contradiction,
+  and stale historical false-positive rows auto-resolve on the next detection.
+- **Cleanup recognizes operational verbs.** Valid evidence/verification rules
+  using `capture`, `record`, `invoke`, `dispatch`, `rerun`, or `cancel` are no
+  longer queued as verb-less fragments.
+
 ## 0.9.0 - 2026-07-24
 
 ### Added

@@ -153,6 +153,19 @@ describe("maintenance cleanup — rejectFragmentCandidates", () => {
     expect(planRejectFragments(db)).toHaveLength(0);
   });
 
+  it("recognizes operational evidence and orchestration verbs", async () => {
+    const { qualityReasons } = await import("../src/maintenance/cleanup.js");
+    expect(qualityReasons(
+      "Capture inspectable evidence and report verdicts tied to the exact revision.",
+    )).not.toContain("no_verb");
+    expect(qualityReasons(
+      "Never dispatch, rerun, or cancel a CI workflow from a Probeport job.",
+    )).not.toContain("no_verb");
+    expect(qualityReasons(
+      "Do not invoke Probeport recursively from inside a Probeport job.",
+    )).not.toContain("no_verb");
+  });
+
   it("only acts on candidate user_correction memories", () => {
     const db = freshDb();
     createMemory(db, {
@@ -460,8 +473,8 @@ describe("capture-time fragment filter", () => {
     // Filler-prefix: "always just now …", "never uh …" — speech artifacts.
     expect(qualityReasons("always just now remove if we can't fix")).toContain("filler_prefix");
     expect(qualityReasons("never uh skip the linter")).toContain("filler_prefix");
-    // Length cap: voice-transcript rambles past 300 chars.
-    const ramble = "always " + "blah ".repeat(80);
+    // Length cap: very long voice-transcript rambles.
+    const ramble = "always " + "blah ".repeat(120);
     expect(qualityReasons(ramble)).toContain("too_long");
   });
 
@@ -495,6 +508,9 @@ describe("capture-time fragment filter", () => {
     const { qualityReasons } = await import("../src/maintenance/cleanup.js");
     expect(qualityReasons("Always use pnpm not npm in this repo")).toHaveLength(0);
     expect(qualityReasons("Never commit secrets to the repo")).toHaveLength(0);
+    expect(qualityReasons(
+      "Act as an independent large-model verifier that reads every scout verdict, inspects cited artifacts, challenges unproven claims, runs additional checks to close critical gaps, deduplicates findings, and does not pass if critical behavior was skipped, blocked, inferred, or supported only by source inspection.",
+    )).toHaveLength(0);
     expect(qualityReasons("Run tests for this PR before merging")).toHaveLength(0);
     expect(qualityReasons("Do not set securityContext.privileged=true")).toHaveLength(0);
     expect(qualityReasons(

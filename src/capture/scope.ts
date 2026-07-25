@@ -234,21 +234,25 @@ function inferPathScope(filePath: string): string {
 
 function hasSpecificFileReference(text: string): boolean {
   return /\b[\w-]+\.(ts|js|py|rs|go|swift|java|rb|tsx|jsx|vue|svelte)\b/.test(text) ||
-    /\b(src|lib|app|components|utils|test|spec)\//.test(text);
+    /\b(src|lib|components|utils|test|spec)\/[\w/.-]+/.test(text) ||
+    /\b(?:in|under|inside|path|file|directory|folder)\s+(?:the\s+)?app\/[\w/.-]+/i.test(text) ||
+    /`app\/[\w/.-]+`/.test(text);
 }
 
 function extractPathFromText(text: string): string | null {
-  // Try to extract a file path
+  // `app/session invocation` is normal prose, not necessarily a filesystem
+  // path. Treat the ambiguous `app/` root as a path only when explicitly
+  // framed as one or code-quoted; the other conventional roots are reliable.
   const pathMatch = text.match(
-    /\b((?:src|lib|app|components|utils|test|spec)\/[\w/.-]+)/,
+    /\b((?:src|lib|components|utils|test|spec)\/[\w/.-]+)/,
   );
   if (pathMatch) return `${pathMatch[1]}**`;
 
-  // Try to extract just a directory reference
-  const dirMatch = text.match(
-    /\b((?:src|lib|app|components|utils|test|spec)\/[\w/-]*)/,
+  const explicitAppPath = text.match(
+    /(?:`(app\/[\w/.-]+)`|\b(?:in|under|inside|path|file|directory|folder)\s+(?:the\s+)?(app\/[\w/.-]+))/i,
   );
-  if (dirMatch) return `${dirMatch[1]}/**`;
+  const appPath = explicitAppPath?.[1] ?? explicitAppPath?.[2];
+  if (appPath) return `${appPath}**`;
 
   return null;
 }

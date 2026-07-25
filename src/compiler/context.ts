@@ -19,7 +19,11 @@ const DEFAULT_CONFIG: CompilerConfig = {
   token_budget: 2000,
   include_candidates: false,
 };
-const QUERY_RESULT_LIMIT = 2;
+// Keep enough candidates for the compiler's confidence/scope/type reranker.
+// Two results starved retrieval whenever the vector/FTS top hits were stale,
+// duplicates, or later filtered by path/status.
+const QUERY_RESULT_LIMIT = 8;
+const QUERY_SELECTION_LIMIT = 2;
 const QUERY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const QUERY_TEXT_MATCH_FLOOR = 0.45;
 const HISTORY_VECTOR_RELEVANCE_FLOOR = 0.7;
@@ -331,6 +335,7 @@ export async function compileContextHybrid(
   let lineCount = 0;
 
   for (const item of dedupedRanked) {
+    if (effectiveQuery && selected.length >= QUERY_SELECTION_LIMIT) break;
     const memory = item.memory;
     const memLines = renderMemoryText(memory).split("\n").length;
 

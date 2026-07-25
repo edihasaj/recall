@@ -5,6 +5,7 @@ import { memoryInjections } from "../db/schema.js";
 import type { FeedbackOutcome, MemoryInjection, MemoryItem } from "../types.js";
 import { getMemory } from "./memory.js";
 import type { RecentToolCall } from "../agents/types.js";
+import { textMatchScore } from "../text/match.js";
 
 type MemoryInjectionRow = typeof memoryInjections.$inferSelect;
 
@@ -131,12 +132,23 @@ export function toolCallTouchesMemory(
   mem: MemoryItem,
   toolCall: RecentToolCall,
 ): boolean {
-  if (toolCall.path && pathMatchesMemory(mem, toolCall.path)) return true;
-  if (toolCall.input_summary) {
-    const inferredPath = extractPath(toolCall.input_summary);
-    if (inferredPath && pathMatchesMemory(mem, inferredPath)) return true;
-  }
-  return mem.scope === "repo" || mem.scope === "team" || mem.scope === "global";
+  const inferredPath = toolCall.input_summary
+    ? extractPath(toolCall.input_summary)
+    : undefined;
+  const targetPath = toolCall.path ?? inferredPath;
+  if (targetPath && !pathMatchesMemory(mem, targetPath)) return false;
+
+  // Scope says where a rule applies, not whether it was followed. The former
+  // implementation treated every successful tool call as proof for every
+  // repo/team/global memory, producing near-100% followed rates and inflating
+  // confidence. Require observable action/text overlap; unverifiable rules
+  // remain pending instead of receiving invented positive evidence.
+  const evidence = [
+    toolCall.name,
+    toolCall.input_summary,
+    toolCall.path,
+  ].filter((value): value is string => Boolean(value)).join(" ");
+  return textMatchScore(evidence, mem.text).score >= 0.45;
 }
 
 function rowToMemoryInjection(row: MemoryInjectionRow): MemoryInjection {

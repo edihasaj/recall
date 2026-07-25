@@ -223,9 +223,21 @@ export async function runValueRetrievalEval(
       skippedEvents += 1;
       continue;
     }
+    const includeCandidates = row.event_type === "retrieval_miss";
+    const currentlyRetrievable =
+      memory.auto_inject &&
+      (memory.status === "active" ||
+        (includeCandidates && memory.status === "candidate"));
+    if (!currentlyRetrievable) {
+      skippedEvents += 1;
+      continue;
+    }
     const evidence = normalizeEvidence(row.evidence);
     const queryText = row.event_type === "retrieval_miss"
-      ? firstNonEmpty(evidence.query_text, evidence.correction_text)
+      // A miss means a repeated correction named the expected memory. Replaying
+      // the whole prompt (often thousands of unrelated characters) measured
+      // prompt length, not retrieval quality.
+      ? firstNonEmpty(evidence.correction_text, evidence.query_text)
       : firstNonEmpty(evidence.completion_excerpt, evidence.context);
     if (!queryText) {
       skippedEvents += 1;
@@ -242,7 +254,7 @@ export async function runValueRetrievalEval(
       repo,
       path: typeof evidence.prompt_path === "string" ? evidence.prompt_path : undefined,
       query_text: queryText,
-      include_candidates: row.event_type === "retrieval_miss",
+      include_candidates: includeCandidates,
       max_lines: 3,
       max_commands: 2,
       max_gotchas: 2,

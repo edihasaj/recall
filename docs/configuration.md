@@ -63,7 +63,11 @@ The hook does **not** try to extract rules with regex. Instead:
 4. The LLM extracts zero or more durable rules from the prompt, in any language, and returns one canonical English sentence per rule with confidence and scope. Empty list is a valid answer ("nothing worth saving here").
 5. The applier creates one candidate memory per rule with semantic dedup against existing same-repo memories. Duplicate hook deliveries for the same prompt share one extraction task, and near-identical high-risk candidates are deduped even when the LLM varies the rule type. Promotion still flows through repetition or explicit confirm — the LLM judges, never auto-activates.
 6. History snippets can supplement prompt-time memory only when they have a lexical match or clear vector relevance. Weak semantic matches are dropped so stale summaries do not steer unrelated turns.
-7. Strong normalized lexical matches remain eligible when embeddings are enabled, including global memories outside the repo-filtered vector slice.
+7. Strong normalized lexical matches remain eligible when embeddings are
+   enabled, including global memories outside the repo-filtered vector slice.
+   Exact short tool queries such as `uv`, `pnpm`, and `shotport` count as
+   strong lexical matches; Recall keeps a wider retrieval window before
+   scope/confidence reranking so an early stale hit cannot starve a useful rule.
 
 ### Path B — Regex fallback (no provider configured, or LLM explicitly disabled)
 
@@ -192,6 +196,9 @@ retrieval quality become visible via `recall maintenance quality --history`
 over time. The retrieval metric is built from recent `retrieval_miss` and
 `used` value events: Recall turns those events back into eval cases and checks
 whether hybrid retrieval finds the same valuable memory again.
+Retrieval-miss cases replay the concise repeated correction rather than the
+whole surrounding prompt, and skip memories that are no longer retrievable
+(rejected, transient, or auto-injection disabled).
 
 `recall maintenance quality` also reports the value ledger for the same window:
 injected memory count, estimated injection tokens, estimated tokens saved when
@@ -200,6 +207,10 @@ misses where a repeated correction matched memory that had not been injected,
 and top memories by saved-token estimate.
 Saved-token estimates are conservative: they use the memory text the user did
 not have to repeat, not a vendor billing claim.
+Automatic `followed` outcomes are conservative too: a tool invocation must
+overlap the memory's observable action or tool text. Merely invoking any tool
+inside the same repo/scope is not proof; unverifiable injections remain
+unresolved.
 
 | Variable | Default | Effect |
 |---|---|---|

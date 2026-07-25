@@ -83,7 +83,16 @@ export function textMatchScore(left: string, right: string): TextMatchScore {
   const smaller = Math.min(leftSet.size, rightSet.size);
   const containment = smaller === 0 ? 0 : intersection / smaller;
   const containmentWeight = smaller < 2 ? 0 : smaller === 2 ? 0.75 : 0.9;
-  const score = Math.max(jaccard, containment * containmentWeight);
+  // Short tool/product queries are common ("uv", "pnpm", "shotport").
+  // A one-token side is normally too weak for correction matching, but when
+  // that whole distinctive token occurs on the other side it is exactly the
+  // user's retrieval intent. Sentence-to-sentence one-token overlap remains
+  // unboosted because neither side collapses to one content token.
+  const exactSingleTokenScore =
+    intersection === 1 && smaller === 1
+      ? 0.7
+      : 0;
+  const score = Math.max(jaccard, containment * containmentWeight, exactSingleTokenScore);
 
   return {
     score,

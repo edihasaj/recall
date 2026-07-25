@@ -59,6 +59,17 @@ describe("memory quality phase 2 rich context", () => {
     expect(result.reason).toContain("recent tool path context");
   });
 
+  it("does not mistake app/session prose for a filesystem path", () => {
+    const result = inferScope(
+      "Use Shotport first for screenshots, and retry with the correct active app/session invocation.",
+      undefined,
+      undefined,
+    );
+
+    expect(result.scope).toBe("repo");
+    expect(result.path_scope).toBeNull();
+  });
+
   it("hook prompt captures correction-shaped prompts through the same fallback path", async () => {
     const db = freshDb();
     expect(detectCorrections("don't use pip, use uv")).toHaveLength(1);

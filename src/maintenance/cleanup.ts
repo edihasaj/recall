@@ -449,7 +449,8 @@ const VERB_HINTS = [
   "load", "save", "ignore", "accept", "reject", "update", "create",
   "delete", "rename", "move", "copy", "validate", "verify", "check",
   "follow", "read", "write", "open", "close", "send", "receive",
-  "treat", "propose",
+  "treat", "propose", "capture", "record", "report", "preserve",
+  "inspect", "challenge", "invoke", "dispatch", "rerun", "cancel",
   "configure", "enable", "disable",
 ];
 
@@ -494,9 +495,9 @@ const ACTIVE_FRAGMENT_REASONS = new Set([
   "embedded_question",
 ]);
 // Anything past this length is almost certainly a voice ramble, not a rule.
-// Real rules in the corpus stay well under this; long ones can still be
-// re-captured as multiple smaller rules or saved via explicit confirm.
-const MAX_RULE_LENGTH = 300;
+// Detailed verifier/workflow directives in the live corpus legitimately reach
+// the low 300s, so leave enough room for one complete, actionable instruction.
+const MAX_RULE_LENGTH = 500;
 // Minimum useful rule length. Bumped from 14: in production we saw a
 // long tail of short fragments ("always be used." 15ch, "always can
 // you find" 19ch) that were all incomplete thoughts. Real, durable

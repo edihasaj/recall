@@ -26,6 +26,17 @@ describe("text match normalization", () => {
     expect(score.score).toBeLessThan(0.62);
   });
 
+  it("recovers exact short tool-name queries", () => {
+    expect(textMatchScore(
+      "uv",
+      "Use uv for Python dependency management.",
+    ).score).toBeGreaterThanOrEqual(0.62);
+    expect(textMatchScore(
+      "shotport",
+      "Use Shotport first for screenshots.",
+    ).score).toBeGreaterThanOrEqual(0.62);
+  });
+
   it("normalizes ES version phrasing for module rules", () => {
     expect(matchTokens("Use ES2022 modules")).toContain("es");
     expect(textMatches("Use modern ES modules", "Use ES2022 modules", 0.62)).toBe(true);

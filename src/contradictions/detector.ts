@@ -17,6 +17,7 @@ import { contradictions, memories } from "../db/schema.js";
 import { queryMemories, demoteMemory, getMemory } from "../models/memory.js";
 import { recordAudit } from "../audit/trail.js";
 import type { Contradiction, MemoryItem } from "../types.js";
+import { matchTokens, textMatchScore } from "../text/match.js";
 
 // --- Detect contradictions ---
 
@@ -89,6 +90,33 @@ export function detectContradictions(
         }
       }
     }
+  }
+
+  // Reconcile historical rows after detector rules improve or memories change
+  // status/scope. Similarity-only false positives otherwise remain unresolved
+  // forever and keep depressing the quality score.
+  const now = new Date().toISOString();
+  const unresolved = db.select()
+    .from(contradictions)
+    .where(eq(contradictions.resolved, false))
+    .all();
+  for (const row of unresolved) {
+    const a = getMemory(db, row.memory_a_id);
+    const b = getMemory(db, row.memory_b_id);
+    if (repo && a?.repo !== repo && b?.repo !== repo) continue;
+    const eligible =
+      a && b
+      && (a.status === "active" || a.status === "candidate")
+      && (b.status === "active" || b.status === "candidate");
+    if (eligible && checkContradiction(a, b)) continue;
+    db.update(contradictions)
+      .set({
+        resolved: true,
+        resolution: "Auto-resolved: pair no longer satisfies contradiction rules",
+        resolved_at: now,
+      })
+      .where(eq(contradictions.id, row.id))
+      .run();
   }
 
   return found;
@@ -177,19 +205,29 @@ function checkConflictingRules(
   if (a.type !== b.type) return null;
   if (a.type !== "rule" && a.type !== "command") return null;
 
-  // "use X" vs "use Y" for the same context
-  const useA = a.text.match(/\buse\s+(\S+)/i);
-  const useB = b.text.match(/\buse\s+(\S+)/i);
+  // Compare only clear affirmative replacement directives. A broad
+  // `\buse X` match also captures the forbidden side of "never use em dashes;
+  // use commas", articles, placeholders, and punctuation. Those generated
+  // large clusters of same-direction rules mislabeled as contradictions.
+  const useA = extractAffirmativeUseDirective(a.text);
+  const useB = extractAffirmativeUseDirective(b.text);
 
   if (useA && useB) {
-    const toolA = useA[1].toLowerCase().replace(/[,.:;]/g, "");
-    const toolB = useB[1].toLowerCase().replace(/[,.:;]/g, "");
+    const toolA = useA.choice;
+    const toolB = useB.choice;
 
     if (toolA !== toolB) {
       // Check if they're about the same category
-      const contextA = extractContext(a.text);
-      const contextB = extractContext(b.text);
-      if (contextA && contextB && wordOverlap(contextA, contextB) > 0.3) {
+      const contextA = useA.context;
+      const contextB = useB.context;
+      // Require an explicit, substantive shared context ("for package
+      // management"). Generic boilerplate overlap is not evidence that two
+      // different "use X" rules are alternatives.
+      if (
+        matchTokens(contextA).length >= 2 &&
+        matchTokens(contextB).length >= 2 &&
+        textMatchScore(contextA, contextB).score >= 0.72
+      ) {
         return {
           type: "conflicting_rules",
           severity: "medium",
@@ -197,17 +235,6 @@ function checkConflictingRules(
         };
       }
     }
-  }
-
-  // High text similarity but different content → suspicious
-  const sim = wordOverlap(a.text, b.text);
-  if (sim > 0.6 && sim < 0.95 && a.text !== b.text) {
-    // Very similar but not identical — might be conflicting versions
-    return {
-      type: "scope_overlap",
-      severity: "low",
-      description: `Very similar memories (${(sim * 100).toFixed(0)}% overlap): "${a.text.slice(0, 50)}" vs "${b.text.slice(0, 50)}"`,
-    };
   }
 
   return null;
@@ -336,12 +363,16 @@ function extractSubject(text: string): string {
     .toLowerCase();
 }
 
-function extractContext(text: string): string {
-  // Strip the "use X" part to get surrounding context
-  return text
-    .replace(/\buse\s+\S+/i, "")
-    .trim()
-    .toLowerCase();
+function extractAffirmativeUseDirective(
+  text: string,
+): { choice: string; context: string } | null {
+  const match = text.trim().match(
+    /^(?:always\s+|prefer\s+)?use\s+([a-z0-9][\w.+-]*)\s+(?:for|when|on|as)\s+(.+)$/i,
+  );
+  if (!match) return null;
+  const choice = match[1].toLowerCase();
+  if (["a", "an", "the", "this", "that", "it"].includes(choice)) return null;
+  return { choice, context: match[2].trim().toLowerCase() };
 }
 
 function wordOverlap(a: string, b: string): number {

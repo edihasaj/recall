@@ -144,8 +144,9 @@ describe("memory quality phase 3 outcome-after-injection", () => {
       {
         session_id: "sess-2",
         repo: "edihasaj/recall",
-        name: "Edit",
+        name: "Bash",
         path: "src/cli.ts",
+        input_summary: "pnpm test",
         exit_code: 0,
         agent: "codex",
       },
@@ -164,6 +165,38 @@ describe("memory quality phase 3 outcome-after-injection", () => {
     expect(report.net_tokens_estimate).toBe(report.saved_tokens_estimate - report.injected_tokens_estimate);
     expect(report.net_tokens_estimate).toBe(0);
     expect(report.top_savers[0].memory_id).toBe(memoryId);
+  });
+
+  it("does not call an unrelated tool proof that a repo rule was followed", async () => {
+    const db = freshDb();
+    const memoryId = createMemory(db, {
+      type: "rule",
+      text: "Use pnpm for package commands.",
+      scope: "repo",
+      repo: "edihasaj/recall",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+
+    compileContext(db, {
+      repo: "edihasaj/recall",
+      session_id: "sess-unrelated-tool",
+    });
+    await handleToolHook({
+      session_id: "sess-unrelated-tool",
+      repo: "edihasaj/recall",
+      name: "Edit",
+      path: "src/cli.ts",
+      input_summary: "update the navigation title",
+      exit_code: 0,
+      agent: "codex",
+    }, { db, source: "cli" });
+
+    expect(getMemoryFeedback(db, memoryId)).toHaveLength(0);
+    const pending = db.$client.prepare(
+      "select outcome from memory_injections where memory_id = ? and session_id = ?",
+    ).get(memoryId, "sess-unrelated-tool") as { outcome: string | null };
+    expect(pending.outcome).toBeNull();
   });
 
   it("records completion-use evidence for injected memories without changing confidence", async () => {
