@@ -2,7 +2,7 @@
   "cases": [
     {
       "name": "hybrid compile should retrieve the global screenshot rule",
-      "repo": "edihasaj/recall",
+      "repo": "unrelated/repo",
       "query_text": "shotport screenshot",
       "expected_any_texts": [
         "Use Shotport first for screenshots, and if a capture is empty or fails, retry with the correct active app/session invocation before opening System Settings."
@@ -13,7 +13,7 @@
     },
     {
       "name": "hybrid compile should retrieve the global Python dependency rule",
-      "repo": "edihasaj/recall",
+      "repo": "unrelated/repo",
       "query_text": "python package manager uv",
       "expected_any_texts": [
         "Use `uv` for Python dependency management"
