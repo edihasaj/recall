@@ -1,7 +1,12 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import {
+  readDaemonProviderEnvironment,
+  resolveDaemonProviderEnvironment,
+  type DaemonProviderEnvironment,
+} from "./provider-env.js";
 
 const DEFAULT_LABEL = "com.recall.daemon";
 
@@ -33,7 +38,8 @@ export function installLaunchAgent(opts: LaunchdOptions = {}): LaunchdStatus {
   mkdirSync(dirname(cfg.plistPath), { recursive: true });
   mkdirSync(dirname(cfg.stdoutPath), { recursive: true });
 
-  writeFileSync(cfg.plistPath, renderPlist(cfg));
+  writeFileSync(cfg.plistPath, renderPlist(cfg), { mode: 0o600 });
+  chmodSync(cfg.plistPath, 0o600);
 
   tryRun("launchctl", ["bootout", domainTarget(), cfg.plistPath]);
   execFileSync("launchctl", ["bootstrap", domainTarget(), cfg.plistPath], stdioOpts());
@@ -149,6 +155,7 @@ function resolveConfig(opts: LaunchdOptions) {
   );
   const plistPath = join(home, "Library", "LaunchAgents", `${label}.plist`);
   const logDir = join(dataDir, "logs");
+  const installed = readInstalledConfig(plistPath);
 
   return {
     label,
@@ -164,11 +171,15 @@ function resolveConfig(opts: LaunchdOptions) {
     embeddingProvider: opts.embeddingProvider ?? process.env.RECALL_EMBEDDING_PROVIDER,
     embeddingDims: opts.embeddingDims ?? process.env.RECALL_EMBEDDING_DIMS,
     embeddingsDisabled: opts.embeddingsDisabled ?? process.env.RECALL_EMBEDDINGS_DISABLED,
+    providerEnvironment: resolveDaemonProviderEnvironment(
+      process.env,
+      installed?.providerEnvironment,
+    ),
   };
 }
 
 function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
-  const env = {
+  const env: Record<string, string> = {
     RECALL_PORT: String(cfg.port),
     RECALL_MAINTENANCE_INTERVAL_SECONDS: String(cfg.maintenanceIntervalSeconds),
     RECALL_DATA_DIR: cfg.dataDir,
@@ -177,7 +188,12 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
     ...(cfg.embeddingProvider ? { RECALL_EMBEDDING_PROVIDER: cfg.embeddingProvider } : {}),
     ...(cfg.embeddingDims ? { RECALL_EMBEDDING_DIMS: cfg.embeddingDims } : {}),
     ...(cfg.embeddingsDisabled ? { RECALL_EMBEDDINGS_DISABLED: cfg.embeddingsDisabled } : {}),
+    ...cfg.providerEnvironment,
   };
+  const environmentXml = Object.entries(env)
+    .map(([key, value]) => `    <key>${escapeXml(key)}</key>
+    <string>${escapeXml(value)}</string>`)
+    .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -192,23 +208,8 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key>
-    <string>${escapeXml(env.PATH)}</string>
-    <key>RECALL_PORT</key>
-    <string>${escapeXml(env.RECALL_PORT)}</string>
-    <key>RECALL_MAINTENANCE_INTERVAL_SECONDS</key>
-    <string>${escapeXml(env.RECALL_MAINTENANCE_INTERVAL_SECONDS)}</string>
-    <key>RECALL_DATA_DIR</key>
-    <string>${escapeXml(env.RECALL_DATA_DIR)}</string>
-${env.RECALL_REPO_ROOTS ? `    <key>RECALL_REPO_ROOTS</key>
-    <string>${escapeXml(env.RECALL_REPO_ROOTS)}</string>
-` : ""}${env.RECALL_EMBEDDING_PROVIDER ? `    <key>RECALL_EMBEDDING_PROVIDER</key>
-    <string>${escapeXml(env.RECALL_EMBEDDING_PROVIDER)}</string>
-` : ""}${env.RECALL_EMBEDDING_DIMS ? `    <key>RECALL_EMBEDDING_DIMS</key>
-    <string>${escapeXml(env.RECALL_EMBEDDING_DIMS)}</string>
-` : ""}${env.RECALL_EMBEDDINGS_DISABLED ? `    <key>RECALL_EMBEDDINGS_DISABLED</key>
-    <string>${escapeXml(env.RECALL_EMBEDDINGS_DISABLED)}</string>
-` : ""}  </dict>
+${environmentXml}
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -271,6 +272,7 @@ function readInstalledConfig(plistPath: string): {
       embeddingProvider?: string;
       embeddingDims?: string;
       embeddingsDisabled?: string;
+      providerEnvironment?: DaemonProviderEnvironment;
       stdoutPath?: string;
       stderrPath?: string;
 } | null {
@@ -292,6 +294,9 @@ function readInstalledConfig(plistPath: string): {
       embeddingProvider: parsed?.EnvironmentVariables?.RECALL_EMBEDDING_PROVIDER,
       embeddingDims: parsed?.EnvironmentVariables?.RECALL_EMBEDDING_DIMS,
       embeddingsDisabled: parsed?.EnvironmentVariables?.RECALL_EMBEDDINGS_DISABLED,
+      providerEnvironment: readDaemonProviderEnvironment(
+        parsed?.EnvironmentVariables ?? {},
+      ),
       stdoutPath: parsed?.StandardOutPath,
       stderrPath: parsed?.StandardErrorPath,
     };

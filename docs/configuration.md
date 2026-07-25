@@ -130,6 +130,10 @@ Give Recall an API key and it will run maintenance itself on a schedule, with no
    `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or the Azure quartet
    `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`,
    `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_API_KEY`.
+   `recall daemon install` carries these provider variables into the launchd
+   or systemd service, preserves an existing service value when the install
+   shell does not define it, and restricts the service config file to the
+   current user.
 2. Verify:
    ```bash
    recall maintenance credentials

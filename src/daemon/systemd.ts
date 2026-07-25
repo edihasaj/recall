@@ -1,9 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { defineOwn } from "../security/object.js";
+import {
+  readDaemonProviderEnvironment,
+  resolveDaemonProviderEnvironment,
+  type DaemonProviderEnvironment,
+} from "./provider-env.js";
 
 const DEFAULT_LABEL = "recall-daemon";
 
@@ -35,7 +40,8 @@ export function installSystemdUnit(opts: SystemdOptions = {}): SystemdStatus {
   mkdirSync(dirname(cfg.unitPath), { recursive: true });
   mkdirSync(cfg.logDir, { recursive: true });
 
-  writeFileSync(cfg.unitPath, renderUnit(cfg));
+  writeFileSync(cfg.unitPath, renderUnit(cfg), { mode: 0o600 });
+  chmodSync(cfg.unitPath, 0o600);
 
   systemctl(["--user", "daemon-reload"]);
   systemctl(["--user", "enable", "--now", `${cfg.label}.service`]);
@@ -143,6 +149,7 @@ function resolveConfig(opts: SystemdOptions) {
   const configHome = process.env.XDG_CONFIG_HOME ?? join(home, ".config");
   const unitPath = join(configHome, "systemd", "user", `${label}.service`);
   const logDir = join(dataDir, "logs");
+  const installed = readInstalledConfig(unitPath);
 
   return {
     label,
@@ -157,6 +164,10 @@ function resolveConfig(opts: SystemdOptions) {
     embeddingProvider: opts.embeddingProvider ?? process.env.RECALL_EMBEDDING_PROVIDER,
     embeddingDims: opts.embeddingDims ?? process.env.RECALL_EMBEDDING_DIMS,
     embeddingsDisabled: opts.embeddingsDisabled ?? process.env.RECALL_EMBEDDINGS_DISABLED,
+    providerEnvironment: resolveDaemonProviderEnvironment(
+      process.env,
+      installed?.providerEnvironment,
+    ),
   };
 }
 
@@ -177,6 +188,9 @@ function renderUnit(cfg: ReturnType<typeof resolveConfig>): string {
   if (cfg.embeddingProvider) envLines.push(`Environment=RECALL_EMBEDDING_PROVIDER=${cfg.embeddingProvider}`);
   if (cfg.embeddingDims) envLines.push(`Environment=RECALL_EMBEDDING_DIMS=${cfg.embeddingDims}`);
   if (cfg.embeddingsDisabled) envLines.push(`Environment=RECALL_EMBEDDINGS_DISABLED=${cfg.embeddingsDisabled}`);
+  for (const [key, value] of Object.entries(cfg.providerEnvironment)) {
+    envLines.push(`Environment="${key}=${escapeSystemdValue(value)}"`);
+  }
 
   return `[Unit]
 Description=Recall local daemon
@@ -204,15 +218,13 @@ function readInstalledConfig(unitPath: string): {
   embeddingProvider?: string;
   embeddingDims?: string;
   embeddingsDisabled?: string;
+  providerEnvironment?: DaemonProviderEnvironment;
 } | null {
   if (!existsSync(unitPath)) return null;
   try {
     const raw = readFileSync(unitPath, "utf8");
     const exec = raw.match(/^ExecStart=(.+)$/m)?.[1]?.trim().split(/\s+/);
-    const env: Record<string, string> = {};
-    for (const m of raw.matchAll(/^Environment=([^=]+)=(.+)$/gm)) {
-      defineOwn(env, m[1], m[2]);
-    }
+    const env = parseSystemdEnvironment(raw);
     return {
       nodePath: exec?.[0],
       daemonScript: exec?.[1],
@@ -223,10 +235,39 @@ function readInstalledConfig(unitPath: string): {
       embeddingProvider: env.RECALL_EMBEDDING_PROVIDER,
       embeddingDims: env.RECALL_EMBEDDING_DIMS,
       embeddingsDisabled: env.RECALL_EMBEDDINGS_DISABLED,
+      providerEnvironment: readDaemonProviderEnvironment(env),
     };
   } catch {
     return null;
   }
+}
+
+export function parseSystemdEnvironment(raw: string): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const match of raw.matchAll(/^Environment=(?:"([^=]+)=(.*)"|([^=]+)=(.*))$/gm)) {
+    const key = match[1] ?? match[3];
+    const value = match[2] != null
+      ? unescapeSystemdValue(match[2])
+      : match[4];
+    if (key && value != null) {
+      defineOwn(environment, key, value);
+    }
+  }
+  return environment;
+}
+
+function escapeSystemdValue(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("%", "%%");
+}
+
+function unescapeSystemdValue(value: string): string {
+  return value
+    .replaceAll("%%", "%")
+    .replaceAll('\\"', '"')
+    .replaceAll("\\\\", "\\");
 }
 
 function systemctl(args: string[]) {

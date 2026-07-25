@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.7 - 2026-07-25
+
+### Fixed
+
+- **Daemon reinstalls preserve LLM provider credentials.** launchd and systemd
+  carry configured OpenAI, Anthropic, and Azure variables into the service,
+  retain existing provider values when the install shell does not define them,
+  and restrict credential-bearing service configuration files to the current
+  user.
+
 ## 0.9.6 - 2026-07-25
 
 ### Fixed
