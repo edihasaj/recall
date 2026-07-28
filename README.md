@@ -167,6 +167,29 @@ Install + setup behavior:
 - `recall doctor` checks install state; `recall doctor --fix` or `recall setup --yes` wires MCP + hooks for supported agent runtimes.
 - Repo-local `.recall/context.md` is an optional export/fallback, not the primary integration.
 
+### Permanently erase local data
+
+Preview every local item Recall will remove:
+
+```bash
+recall data purge --dry-run
+```
+
+Then permanently erase it:
+
+```bash
+recall data purge --yes
+```
+
+The purge removes the entire Recall data directory, including the database,
+WAL files, backups, logs, caches, local models, and sync state. It also removes
+Recall-managed Keychain credentials, generated `.recall/context.md` exports,
+the daemon service, agent hooks and rules, and Recall MCP registrations. The
+Recall executable or app remains installed. The command is safe to rerun and
+supports `--json` for automation. Use `--keep-integrations` only when you want
+hooks and MCP wiring to remain and recreate a clean local store on next use.
+Environment variables and user-authored files are never rewritten.
+
 ## First Run
 
 Initialize DB:

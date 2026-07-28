@@ -62,4 +62,10 @@ describe("keychain credential helper — env fallback", () => {
     }
     expect(message).not.toContain(sensitive);
   });
+
+  it("reports no Keychain credential on non-macOS or failed lookup", async () => {
+    process.env.PATH = "/nonexistent";
+    const { hasKeychainApiKey } = await loadModule();
+    expect(hasKeychainApiKey("openai")).toBe(false);
+  });
 });

@@ -60,6 +60,10 @@ import { formatDoctorReport, getDoctorReport } from "./doctor/report.js";
 import { ensureDailyBackup, listBackups, restoreBackup } from "./backups/snapshot.js";
 import { getHookCallStats } from "./hooks/calls.js";
 import {
+  purgeLocalData,
+  type LocalDataPurgeResult,
+} from "./data/purge.js";
+import {
   defaultServiceLabel,
   getServiceInfo,
   installService,
@@ -229,6 +233,46 @@ dbCmd
       process.exit(1);
     }
     console.log(`Restored ${result.from} -> ${result.to}`);
+  });
+
+const dataCmd = program
+  .command("data")
+  .description("Manage all local Recall data");
+
+dataCmd
+  .command("purge")
+  .description("Permanently erase local Recall data, credentials, exports, and integrations")
+  .option("--dry-run", "Show what would be erased without changing anything")
+  .option("--yes", "Confirm permanent erasure without an interactive prompt")
+  .option("--json", "Emit a stable JSON result")
+  .option("--keep-integrations", "Keep daemon, hooks, rules, and MCP registrations")
+  .option("--data-dir <dir>", "Override the Recall data directory")
+  .action(async (opts) => {
+    if (!opts.dryRun && !opts.yes) {
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        console.error("Refusing to purge without --yes in non-interactive mode.");
+        process.exitCode = 2;
+        return;
+      }
+      const confirmed = await confirmLocalDataPurge();
+      if (!confirmed) {
+        console.error("Aborted local data purge.");
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    const result = purgeLocalData({
+      dataDir: opts.dataDir,
+      dryRun: opts.dryRun,
+      keepIntegrations: opts.keepIntegrations,
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printLocalDataPurgeResult(result);
+    }
+    if (result.failures > 0) process.exitCode = 1;
   });
 
 const setupCmd = program
@@ -2625,6 +2669,39 @@ async function confirmSetupWrite(scope: string): Promise<boolean> {
     return /^(y|yes)$/i.test(answer.trim());
   } finally {
     rl.close();
+  }
+}
+
+async function confirmLocalDataPurge(): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    console.log(
+      "This permanently erases Recall databases, backups, logs, model caches, " +
+      "Keychain credentials, generated repo context, daemon service, hooks, rules, and MCP registrations.",
+    );
+    const answer = await rl.question('Type "PURGE" to continue: ');
+    return answer.trim() === "PURGE";
+  } finally {
+    rl.close();
+  }
+}
+
+function printLocalDataPurgeResult(result: LocalDataPurgeResult): void {
+  console.log(result.dry_run ? "Recall local data purge plan:" : "Recall local data purge:");
+  for (const action of result.actions) {
+    const detail = action.detail ? ` (${action.detail})` : "";
+    console.log(`  ${action.status.padEnd(8)} ${action.target}${detail}`);
+  }
+  if (result.dry_run) {
+    console.log("No changes made. Run with --yes to permanently erase these items.");
+  } else if (result.failures === 0) {
+    console.log("Local Recall data erased.");
+  } else {
+    console.error(`Purge incomplete: ${result.failures} action(s) failed.`);
   }
 }
 

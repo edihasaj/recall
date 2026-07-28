@@ -97,6 +97,20 @@ export function deleteApiKey(provider: LlmProvider): boolean {
   }
 }
 
+export function hasKeychainApiKey(provider: LlmProvider): boolean {
+  if (process.platform !== "darwin") return false;
+  try {
+    execFileSync(
+      "security",
+      ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", provider],
+      { stdio: "ignore" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function listCredentials(): StoredCredential[] {
   const results: StoredCredential[] = [];
   for (const provider of ["openai", "anthropic"] as const) {

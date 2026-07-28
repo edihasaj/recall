@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.8 - 2026-07-28
+
+### Added
+
+- **Complete local privacy erasure.** `recall data purge` previews or
+  permanently deletes the database, WAL files, backups, logs, caches, models,
+  sync state, Recall-managed Keychain credentials, generated repo context,
+  daemon service, hooks, rules, and MCP registrations. It is idempotent,
+  supports stable JSON output, protects unsafe directory targets, and requires
+  explicit confirmation.
+
 ## 0.9.7 - 2026-07-25
 
 ### Fixed

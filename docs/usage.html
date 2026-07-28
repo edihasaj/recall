@@ -350,6 +350,20 @@ recall embeddings rebuild-index</code></pre>
         </div>
       </section>
 
+      <section class="doc-section" id="privacy" data-reveal="7">
+        <p class="eyebrow">Local privacy</p>
+        <h2>Erase every local Recall copy.</h2>
+        <p><code>db reset</code> keeps backups and integrations. The complete
+          purge removes the database, snapshots, logs, caches, model files,
+          Keychain credentials, generated repo context, daemon service, hooks,
+          rules, and Recall MCP registrations. The app itself stays installed.</p>
+        <pre><code>recall data purge --dry-run
+recall data purge --yes</code></pre>
+        <p>The command is idempotent. Add <code>--json</code> for automation or
+          <code>--keep-integrations</code> when you deliberately want hooks and
+          MCP wiring to recreate an empty store later.</p>
+      </section>
+
       <section class="doc-section" id="maintenance" data-reveal="7">
         <p class="eyebrow">05 · Maintenance</p>
         <h2>Memory rethinking, with or without an API key.</h2>

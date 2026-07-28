@@ -96,6 +96,37 @@ Opt out:
 - `recall setup --no-claude-md` (one-shot)
 - `RECALL_SETUP_SKIP_CLAUDE_MD=1` (persistent in `~/.zshrc` / `~/.bashrc`)
 
+## Local data erasure
+
+`recall db reset` creates a fresh database but intentionally leaves backups,
+logs, credentials, generated exports, and integrations intact. For complete
+local erasure, use:
+
+```bash
+recall data purge --dry-run
+recall data purge --yes
+```
+
+By default the purge removes:
+
+- the resolved Recall data directory (`RECALL_DATA_DIR` or `~/.recall`),
+  including its database, WAL files, snapshots, logs, caches, models, and sync
+  state;
+- Recall-managed OpenAI, Anthropic, and Azure OpenAI entries from the macOS
+  Keychain;
+- generated `.recall/context.md` files under `RECALL_REPO_ROOTS` or
+  `~/Projects`, but never a user-authored file at that path;
+- the Recall daemon service;
+- Recall-managed hooks, instruction blocks, rules, and MCP registrations for
+  detected supported agents.
+
+The installed npm package or Recall app is not removed. Shell environment
+variables are user-managed and remain unchanged. `--keep-integrations` retains
+the daemon and agent wiring; those integrations may create a new empty data
+store when they next run. `--json` emits a stable action report for scripts.
+Non-interactive erasure requires `--yes`; an interactive run requires typing
+`PURGE`.
+
 ### Tuning the dispatcher for LLM-primary capture
 
 The dispatcher's default `RECALL_DISPATCHER_INTERVAL_SECONDS=86400` (daily) made sense for batch maintenance, but it's too slow for capture: a rule captured today wouldn't be judged until tomorrow. The `/dispatch/wake` endpoint fixes the common case (hook fires it on every enqueue, debounced). The maintenance loop uses the same wake path when it leaves new tasks pending, and full successful batches continue until drained. Transient provider failures pause the continuation instead of creating a retry storm. You can also lower the timer-based interval if you frequently work offline from the daemon:
