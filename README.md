@@ -9,6 +9,7 @@ Cross-tool coding memory + instruction compiler.
 Recall is a local repo-memory compiler for coding agents. It learns from corrections, review feedback, repo scans, and session outcomes, then injects compact trusted instructions through CLI, MCP, daemon endpoints, and lifecycle hooks.
 
 - Website: <https://recallmemory.dev/>
+- Recall Cloud login: <https://app.recallmemory.dev/login>
 - Releases: <https://github.com/edihasaj/recall/releases>
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Comparison vs other memory systems: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md)
