@@ -10,6 +10,7 @@ Recall is a local repo-memory compiler for coding agents. It learns from correct
 
 - Website: <https://recallmemory.dev/>
 - Recall Cloud login: <https://app.recallmemory.dev/login>
+- Support: <mailto:support@recallmemory.dev>
 - Releases: <https://github.com/edihasaj/recall/releases>
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Comparison vs other memory systems: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md)
