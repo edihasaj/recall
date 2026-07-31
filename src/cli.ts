@@ -2,7 +2,7 @@
 import "./observability/instrument.js";
 import { Command } from "commander";
 import { resolve } from "node:path";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { initDb, getDbPath, resetDb } from "./db/client.js";
 import { runUmpServer } from "./ump/serve.js";
@@ -53,7 +53,7 @@ import { runLocalSetup } from "./setup/local.js";
 import { runRecallSetup } from "./setup/local.js";
 import type { SyncConfig, EmbeddingConfig } from "./types.js";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { listHistorySnippets } from "./history/snippets.js";
 import { searchHistorySnippets } from "./history/retrieval.js";
 import { formatDoctorReport, getDoctorReport } from "./doctor/report.js";
@@ -97,6 +97,10 @@ const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
 
 const program = new Command();
+
+export function defaultRecallAppPath(platform = process.platform): string | undefined {
+  return platform === "darwin" ? "/Applications/Recall.app" : undefined;
+}
 
 program
   .name("recall")
@@ -280,7 +284,7 @@ const setupCmd = program
   .description("Setup Recall for local use");
 
 setupCmd
-  .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
+  .option("--app-path <path>", "Override Recall.app path", defaultRecallAppPath())
   .option("--hooks-only", "Install hooks only")
   .option("--mcp-only", "Install MCP wiring only")
   .option("--agent <agent>", "Restrict setup to a single agent (repeatable)", collectAgents, [])
@@ -347,7 +351,7 @@ setupCmd
 setupCmd
   .command("local")
   .description("Configure local agent MCP + hooks against the installed Recall.app")
-  .option("--app-path <path>", "Override Recall.app path", "/Applications/Recall.app")
+  .option("--app-path <path>", "Override Recall.app path", defaultRecallAppPath())
   .option("--codex-only", "Configure only Codex")
   .option("--claude-only", "Configure only Claude")
   .option("--no-prompt-injection", "Opt out of per-prompt memory injection (writes RECALL_HOOK_INJECT_PROMPT=false inline into the agent hook command)")
@@ -2724,6 +2728,15 @@ function findByPrefix(db: ReturnType<typeof initDb>, prefix: string) {
 
 export { program };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function isDirectCliInvocation(moduleUrl: string, argvPath?: string): boolean {
+  if (!argvPath) return false;
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectCliInvocation(import.meta.url, process.argv[1])) {
   await program.parseAsync(process.argv);
 }
