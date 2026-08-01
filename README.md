@@ -514,4 +514,4 @@ npm test
 npm run build
 ```
 
-Release and Homebrew publishing notes live in [docs/RELEASING.md](docs/RELEASING.md). The landing page is static HTML/CSS in [docs/](docs/) and deploys with GitHub Pages.
+Release and Homebrew publishing notes live in [docs/RELEASING.md](docs/RELEASING.md). The landing page is static HTML/CSS in [docs/](docs/) and deploys with GitHub Pages. Public crawl configuration lives in [docs/robots.txt](docs/robots.txt), with canonical landing-page URLs listed in [docs/sitemap.xml](docs/sitemap.xml).
