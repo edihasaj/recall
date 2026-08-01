@@ -344,8 +344,7 @@ The DSN is **not** baked into the source or committed anywhere — it comes only
 # Optional, opt-in error reporting. Project applifyer/recall.
 # Leave empty to disable (default). Only the operator enables this.
 SENTRY_DSN=
-# Owner's instance uses:
-# SENTRY_DSN=https://26ec00513792f62bf5765b33f88ae152@o4510266463813632.ingest.de.sentry.io/4511711476318288
+# Owner's instance uses 1Password item `GlitchTip DSN - recall-cli`.
 ```
 | `RECALL_HOOK_LOG_MAX_BYTES` | `1048576` (1 MiB) | Rotates `~/.recall/logs/hook-errors.log` to `hook-errors.log.1` once it reaches this size. Set `0` to keep appending forever. |
 
