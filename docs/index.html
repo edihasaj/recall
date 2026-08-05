@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Recall - repo memory for coding agents</title>
+    <title>Recall - one memory for every coding agent</title>
     <meta
       name="description"
-      content="Your coding agents keep forgetting. Recall learns from your corrections and feeds the right rules back into every session — on macOS, Linux, and Windows, through CLI, MCP, and hooks."
+      content="Teach Recall once. Every coding agent gets the right context across sessions, projects, and devices. Local-first, open source, with optional encrypted cloud sync."
     />
     <meta name="theme-color" content="#2f211a" />
     <link rel="canonical" href="https://recallmemory.dev/" />
@@ -14,14 +14,14 @@
     <meta property="og:title" content="Recall" />
     <meta
       property="og:description"
-      content="Your coding agents keep forgetting. Recall learns from your corrections and feeds the right rules back into every session. macOS menu bar app, Linux daemon, Windows tray companion."
+      content="One trusted memory for every coding agent. Local-first, open source, and available everywhere with optional Recall Cloud sync."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://recallmemory.dev/" />
     <meta property="og:image" content="https://recallmemory.dev/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Recall — the SessionStart hook injecting a repo's rules and gotchas into a coding agent's context." />
+    <meta property="og:image:alt" content="Recall, showing trusted repo memory ready for every coding agent." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://recallmemory.dev/og-image.png" />
 
@@ -44,7 +44,7 @@
       </a>
       <nav aria-label="Primary links">
         <a href="#install">Install</a>
-        <a href="#how">How it works</a>
+        <a href="#why">Why Recall</a>
         <a href="./usage.html">Usage</a>
         <a href="#cloud" class="nav-cloud">Cloud</a>
         <a href="https://github.com/edihasaj/recall">GitHub</a>
@@ -55,149 +55,75 @@
     <main id="top">
       <section class="hero">
         <div class="hero-copy" data-reveal="2">
-          <h1>Recall</h1>
+          <p class="hero-kicker"><span></span> Portable memory for coding agents</p>
+          <h1>One memory.<br /><em>Every agent.</em></h1>
           <p class="lede">
-            Your coding agents keep forgetting. Recall remembers — it learns from your corrections
-            and feeds the right rules back into every session, automatically.
+            Teach Recall how you work once. Claude, Codex, Cursor, and the rest pick up the right
+            context in every session, on every device.
           </p>
 
-          <div class="hero-actions" id="install">
-            <a class="button primary" href="https://github.com/edihasaj/recall/releases/latest">Download latest</a>
-            <a class="button secondary" href="https://github.com/edihasaj/recall">View source</a>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/edihasaj/recall/releases/latest">Get Recall free</a>
+            <a class="button secondary" href="#how">See how it works</a>
           </div>
 
-          <div class="os-tabs" role="tablist" aria-label="Choose your platform">
-            <button type="button" role="tab" class="os-tab is-active" data-os="macos" aria-selected="true" aria-controls="install-macos">macOS</button>
-            <button type="button" role="tab" class="os-tab" data-os="linux" aria-selected="false" aria-controls="install-linux">Linux</button>
-            <button type="button" role="tab" class="os-tab" data-os="windows" aria-selected="false" aria-controls="install-windows">Windows</button>
-          </div>
-
-          <div id="install-macos" role="tabpanel" aria-label="macOS install commands">
-            <div class="install-strip">
-              <code data-install-cmd>brew install --cask edihasaj/tap/recall</code>
-              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-                </svg>
-                <span>Copy</span>
-              </button>
-            </div>
-            <div class="install-strip">
-              <code data-install-cmd>npm i -g @edihasaj/recall</code>
-              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-                </svg>
-                <span>Copy</span>
-              </button>
-            </div>
-          </div>
-
-          <div id="install-linux" role="tabpanel" aria-label="Linux install commands" hidden>
-            <div class="install-strip">
-              <code data-install-cmd>curl -fsSL https://recallmemory.dev/install.sh | bash</code>
-              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-                </svg>
-                <span>Copy</span>
-              </button>
-            </div>
-            <div class="install-strip">
-              <code data-install-cmd>npm i -g @edihasaj/recall</code>
-              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-                </svg>
-                <span>Copy</span>
-              </button>
-            </div>
-          </div>
-
-          <div id="install-windows" role="tabpanel" aria-label="Windows install commands" hidden>
-            <div class="install-strip">
-              <code data-install-cmd>irm https://recallmemory.dev/install.ps1 | iex</code>
-              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-                </svg>
-                <span>Copy</span>
-              </button>
-            </div>
-            <div class="install-strip">
-              <code data-install-cmd>npm i -g @edihasaj/recall</code>
-              <button type="button" aria-label="Copy install command" title="Copy install command" data-copy>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                  <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
-                </svg>
-                <span>Copy</span>
-              </button>
-            </div>
-          </div>
-
-          <p class="requirements">
-            macOS 15+ menu bar app, Linux CLI, or Windows system-tray companion. Requires Node.js 22+. Free and open source.
+          <p class="trust-line">
+            <span>Open source</span>
+            <span>Local-first</span>
+            <span>Cloud is optional</span>
           </p>
+
         </div>
 
-        <div class="hero-visual" data-reveal="3" aria-label="Recall context injection preview">
-          <div class="product-window">
-            <div class="window-top">
+        <div class="hero-visual" data-reveal="3" aria-label="One memory shared across coding agents">
+          <div class="memory-scene">
+            <div class="memory-scene-head">
+              <span class="recall-mark"><img src="./icon.png" alt="" width="30" height="30" /> Recall</span>
+              <span class="memory-status"><i></i> Memory ready</span>
+            </div>
+
+            <article class="memory-note">
+              <p class="memory-note-label">You taught Recall</p>
+              <blockquote>“Always use <strong>uv</strong> for Python projects and add a regression test for every bug fix.”</blockquote>
+              <div class="memory-meta">
+                <span>Trusted rule</span>
+                <span>Works across projects</span>
+              </div>
+            </article>
+
+            <div class="memory-route" aria-hidden="true">
               <span></span><span></span><span></span>
-              <strong>claude-code · session start</strong>
             </div>
-            <div class="hook-trace">
-              <span class="hook-dot"></span>
-              <small>SessionStart hook fired · 14ms · injected into agent context</small>
+
+            <div class="agent-handoff">
+              <p>Already there when you switch agents</p>
+              <div class="agent-list">
+                <div class="agent-pill"><b>C</b><span><strong>Claude</strong><small>Remembered</small></span></div>
+                <div class="agent-pill"><b>O</b><span><strong>Codex</strong><small>Remembered</small></span></div>
+                <div class="agent-pill"><b>↗</b><span><strong>Cursor</strong><small>Remembered</small></span></div>
+              </div>
             </div>
-            <pre class="injection"><code><span class="lead">Recall (northwind/storefront):</span>
 
-## Rules
-- prices are integers in minor units — never store a float for money
-- never hardcode a tax rate; read it from `config/tax.ts`
-- <span class="tag">[global]</span> add a regression test with every bug fix
-- always use pnpm here — never npm or yarn
-
-## Commands
-- test: pnpm test --filter storefront
-- gate: pnpm lint &amp;&amp; pnpm typecheck &amp;&amp; pnpm test
-
-## Gotchas
-- `CartSummary` re-renders on every keystroke — memoise first
-- checkout state lives in zustand, not React context</code></pre>
-            <div class="agent-action">
-              <small>Claude</small>
-              <p>
-                Fixed the rounding bug in <code>pricing.ts</code> — kept the total in minor units,
-                pulled the rate from <code>config/tax.ts</code>, memoised <code>CartSummary</code>,
-                and added a regression test. Gate is green; ready to push when you say.
-              </p>
-            </div>
+            <p class="memory-foot"><strong>Starts on your machine.</strong> Turn on encrypted cloud sync only when you want memory everywhere.</p>
           </div>
         </div>
       </section>
 
-      <section class="proof" aria-label="Product highlights">
+      <section class="proof" id="why" aria-label="Why Recall">
         <div class="proof-item" data-reveal="4">
           <strong>01</strong>
-          <h2>Not a transcript archive.</h2>
-          <p>Repeated corrections become short, durable repo rules — not a pile of chat logs to search.</p>
+          <h2>Teach it once.</h2>
+          <p>Correct an agent once. Recall turns the lesson into a clean rule for the next session.</p>
         </div>
         <div class="proof-item" data-reveal="5">
           <strong>02</strong>
-          <h2>Quality before injection.</h2>
-          <p>Scoring, dedupe, and rejection gates keep noisy or one-off memories out of the prompt.</p>
+          <h2>Keep control.</h2>
+          <p>See what was learned, where it came from, and remove anything you do not want remembered.</p>
         </div>
         <div class="proof-item" data-reveal="6">
           <strong>03</strong>
-          <h2>Wired into your agent.</h2>
-          <p>MCP server, lifecycle hooks, daemon, and CLI — for Claude Code, Codex, GitHub Copilot, opencode, Cursor, and Windsurf.</p>
+          <h2>Carry it everywhere.</h2>
+          <p>Use the same trusted memory with Claude, Codex, Cursor, Copilot, and more.</p>
         </div>
       </section>
 
@@ -205,56 +131,54 @@
         <div class="section-label" data-reveal="7">How it works</div>
         <div class="flow-grid">
           <article data-reveal="8">
-            <span>Scan</span>
-            <h3>Bootstrap local facts</h3>
-            <p>Recall reads repo docs, config, scripts, and history so cold-start context is useful immediately.</p>
+            <span>Meet</span>
+            <h3>Learn your projects</h3>
+            <p>Recall reads the docs and conventions already in your repo, so a new agent is not starting cold.</p>
           </article>
           <article data-reveal="9">
-            <span>Learn</span>
-            <h3>Capture corrections</h3>
-            <p>Report corrections, review feedback, and session outcomes through CLI, MCP, daemon endpoints, or hooks.</p>
+            <span>Notice</span>
+            <h3>Remember corrections</h3>
+            <p>When you repeat a preference or fix an agent mistake, Recall keeps the useful lesson.</p>
           </article>
           <article data-reveal="10">
-            <span>Score</span>
-            <h3>Keep memory clean</h3>
-            <p>Quality profiles decide when memories graduate, merge, get demoted, or stay out of the prompt.</p>
+            <span>Refine</span>
+            <h3>Keep only what matters</h3>
+            <p>Repeated, useful guidance stays. Noise, duplicates, and one-off details stay out.</p>
           </article>
           <article data-reveal="11">
-            <span>Inject</span>
-            <h3>Send only what matters</h3>
-            <p>Agents receive concise, relevant instructions through lifecycle hooks and MCP without manual lookup.</p>
+            <span>Return</span>
+            <h3>Bring it back on time</h3>
+            <p>Each agent gets the right memory automatically, right when the next session begins.</p>
           </article>
         </div>
       </section>
 
       <section class="app-shot" aria-label="The status app">
         <div data-reveal="11">
-          <p class="eyebrow">What gets installed</p>
-          <h2>One status surface for local and cloud memory.</h2>
+          <p class="eyebrow">Your memory, at a glance</p>
+          <h2>Know what Recall remembers.</h2>
           <p>
-            Recall.app keeps daemon, dashboard, and optional cloud-sync health in one quiet
-            window. Connect Recall Cloud from the sidebar when you want the same memory on every
-            Mac and hosted agent; local MCP and lifecycle hooks keep doing the real work.
+            Recall.app keeps everything calm and visible in one place. Check that memory is ready,
+            open your dashboard, or connect Recall Cloud when you want to use it on more devices.
           </p>
         </div>
         <figure data-reveal="11">
           <img src="./app-status.png" alt="Recall.app Overview showing healthy daemon status, connected cloud sync, dashboard readiness, and quick controls." loading="lazy" width="920" height="652" />
-          <figcaption>Recall.app — local health, cloud sync, and dashboard controls.</figcaption>
+          <figcaption>Recall.app, with local health, cloud sync, and dashboard controls.</figcaption>
         </figure>
       </section>
 
       <section class="dashboard-showcase" aria-label="Web dashboard">
         <div class="dashboard-intro" data-reveal="11">
-          <h2>See everything your agents have learned.</h2>
+          <h2>Nothing remembered behind your back.</h2>
           <p>
-            Open <strong>Dashboard in Browser</strong> from the menu bar, or run
-            <code>recall webui start</code>. Knowledge graph, timeline, sessions, and
-            contradictions — served locally on <code>localhost:7891</code>. No cloud, no account.
+            Browse every memory, see where it came from, and fix or remove it whenever you like.
+            The dashboard runs on your machine. No cloud and no account required.
           </p>
         </div>
         <figure class="dashboard-demo" data-reveal="11">
           <img src="./dashboard.png" alt="Recall dashboard Memories view listing captured rules, gotchas, and decisions with type, repo, confidence, and source for each." loading="lazy" width="1680" height="1050" />
-          <figcaption>Every rule, gotcha, and decision Recall has captured — with the evidence behind it.</figcaption>
+          <figcaption>Every rule, gotcha, and decision Recall has captured, with the evidence behind it.</figcaption>
         </figure>
         <div class="dashboard-tiles">
           <figure data-reveal="11">
@@ -263,11 +187,11 @@
           </figure>
           <figure data-reveal="11">
             <img src="./timeline.png" alt="Timeline of agent activity: tool calls, prompts, and captured corrections, filterable by repo, source, and type." loading="lazy" />
-            <figcaption><strong>Timeline.</strong> Every event your agents generate, filterable by repo, source, and type — expand any row for the raw request and result.</figcaption>
+            <figcaption><strong>Timeline.</strong> Every event your agents generate, filterable by repo, source, and type. Expand any row for the raw request and result.</figcaption>
           </figure>
           <figure data-reveal="11">
             <img src="./sessions.png" alt="Sessions list showing per-session duration, event count, and event-type chips across coding-agent runs." loading="lazy" />
-            <figcaption><strong>Sessions.</strong> Each agent run across MCP, hooks, and CLI — duration, event mix, and a click-through to the full trace.</figcaption>
+            <figcaption><strong>Sessions.</strong> Each agent run across MCP, hooks, and CLI, with duration, event mix, and a click-through to the full trace.</figcaption>
           </figure>
         </div>
       </section>
@@ -275,24 +199,24 @@
       <section class="cloud" id="cloud" aria-label="Recall Cloud plans" data-reveal="11">
         <div class="cloud-head">
           <p class="eyebrow">Recall Cloud</p>
-          <h2>Open source and local-first, forever. Add the cloud when you're ready.</h2>
+          <h2>Your memory follows you.</h2>
           <p class="cloud-lede">
-            The CLI stays free and runs entirely on your machine. Recall Cloud is an opt-in,
-            encrypted layer for cross-device sync, hosted MCP for web &amp; remote agents, and
-            shared team memory — your local-only sources never leave the machine.
+            Recall stays free, open source, and useful on your machine. Turn on encrypted cloud
+            sync when you want the same trusted memory on every device, remote agent, or teammate.
+            Nothing leaves your machine until you choose.
           </p>
         </div>
         <div class="cloud-grid">
           <article class="tier">
             <h3>Personal</h3>
             <p class="tier-price">Free<span> · local CLI</span></p>
-            <p class="tier-sub">Everything the open-source CLI does, on your machine.</p>
+            <p class="tier-sub">Private memory for all your local coding agents.</p>
             <ul class="tier-list">
-              <li>Local memory compiler &amp; MCP</li>
-              <li>All agents, fully offline</li>
+              <li>Works with all supported agents</li>
+              <li>Runs fully offline</li>
               <li>No account required</li>
             </ul>
-            <p class="tier-upsell">Want cloud sync &amp; hosted MCP? <strong>Pro — $9/mo.</strong></p>
+            <p class="tier-upsell">Want memory on every device? <strong>Pro is $9/mo.</strong></p>
             <a class="button secondary" href="https://app.recallmemory.dev/register">Start free</a>
           </article>
 
@@ -300,12 +224,12 @@
             <span class="tier-flag">Most popular</span>
             <h3>Team</h3>
             <p class="tier-price">$19<span> / user / mo</span></p>
-            <p class="tier-sub">Shared, encrypted memory for the whole team.</p>
+            <p class="tier-sub">One shared memory for the way your team builds.</p>
             <ul class="tier-list">
-              <li>Shared sources &amp; team memory</li>
-              <li>Roles, invites &amp; per-source controls</li>
-              <li>Hosted MCP for web &amp; CI agents</li>
-              <li>Audit log &amp; tombstones</li>
+              <li>Shared sources and team memory</li>
+              <li>Roles, invites, and access controls</li>
+              <li>Works with web, remote, and CI agents</li>
+              <li>Complete change history</li>
             </ul>
             <a class="button primary" href="https://app.recallmemory.dev/register">Start a team</a>
           </article>
@@ -313,47 +237,47 @@
           <article class="tier">
             <h3>Enterprise</h3>
             <p class="tier-price">Custom</p>
-            <p class="tier-sub">For orgs with compliance &amp; scale requirements.</p>
+            <p class="tier-sub">More control for larger organizations.</p>
             <ul class="tier-list">
-              <li>SSO (SAML / OIDC) &amp; SCIM</li>
-              <li>Audit export &amp; tamper-evidence</li>
-              <li>Data residency &amp; IP allowlisting</li>
-              <li>Self-host option &amp; SLA</li>
+              <li>SSO and automatic provisioning</li>
+              <li>Audit export and tamper evidence</li>
+              <li>Data residency and network controls</li>
+              <li>Self-hosting option and SLA</li>
             </ul>
             <a class="button secondary" href="mailto:edi.hasaj@applifyer.com?subject=Recall%20Cloud%20Enterprise">Contact us</a>
           </article>
         </div>
       </section>
 
-      <section class="install-panel" aria-label="Install and developer setup">
+      <section class="install-panel" id="install" aria-label="Install and developer setup">
         <div data-reveal="12">
           <p class="eyebrow">Install</p>
           <h2>Install. Open. That's it.</h2>
           <p>
-            One command on any platform — Homebrew on macOS, <code>curl | bash</code> on Linux,
+            One command on any platform. Use Homebrew on macOS, <code>curl | bash</code> on Linux,
             one PowerShell line on Windows. Each installer auto-detects your coding agents and
             wires up MCP and lifecycle hooks for you.
           </p>
           <p>
             From the next session on, Recall injects the right rules automatically. The CLI is
-            there when you want to inspect or override — you don't need it for the common path.
+            there when you want to inspect or override. You don't need it for the common path.
           </p>
         </div>
         <div class="command-stack" data-reveal="13">
-          <pre data-os="macos"><code># macOS — install &amp; done
+          <pre data-os="macos"><code># macOS: install &amp; done
 brew install --cask edihasaj/tap/recall
 # open Recall.app → Install + Start → magic</code></pre>
-          <pre data-os="linux"><code># Linux — one-liner installer
+          <pre data-os="linux"><code># Linux: one-line installer
 curl -fsSL https://recallmemory.dev/install.sh | bash
 # or do it by hand:
 #   npm i -g @edihasaj/recall && recall setup --yes
 #   recall daemon install   # systemd --user service</code></pre>
-          <pre data-os="windows"><code># Windows — PowerShell installer
+          <pre data-os="windows"><code># Windows: PowerShell installer
 irm https://recallmemory.dev/install.ps1 | iex
 # or do it by hand:
 #   npm i -g @edihasaj/recall &amp;&amp; recall setup --yes
 # tray icon appears; right-click → Open Dashboard</code></pre>
-          <pre data-os="all"><code># contributors only — build from source
+          <pre data-os="all"><code># contributors only: build from source
 git clone https://github.com/edihasaj/recall.git
 cd recall
 npm ci
@@ -390,45 +314,5 @@ npm test</code></pre>
       <a href="https://github.com/edihasaj/recall/blob/main/LICENSE">MIT License</a>
     </footer>
 
-    <script>
-      // Copy buttons inside install-strip — read sibling [data-install-cmd] or the explicit selector.
-      document.querySelectorAll("[data-copy]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const selector = btn.dataset.copy;
-          const target = selector
-            ? document.querySelector(selector)
-            : btn.closest(".install-strip")?.querySelector("[data-install-cmd]");
-          if (!target) return;
-          await navigator.clipboard.writeText(target.textContent.trim());
-          btn.classList.add("copied");
-          const label = btn.querySelector("span");
-          if (label) label.textContent = "Copied";
-          window.setTimeout(() => {
-            btn.classList.remove("copied");
-            if (label) label.textContent = "Copy";
-          }, 1400);
-        });
-      });
-
-      // OS tabs in the hero
-      const osTabs = document.querySelectorAll(".os-tab[data-os]");
-      osTabs.forEach((tab) => {
-        tab.addEventListener("click", () => {
-          const os = tab.dataset.os;
-          osTabs.forEach((t) => {
-            const active = t === tab;
-            t.classList.toggle("is-active", active);
-            t.setAttribute("aria-selected", active ? "true" : "false");
-          });
-          document.querySelectorAll("[id^='install-']").forEach((panel) => {
-            panel.hidden = panel.id !== `install-${os}`;
-          });
-          document.querySelectorAll(".command-stack [data-os]").forEach((block) => {
-            const target = block.dataset.os;
-            block.hidden = target !== "all" && target !== os;
-          });
-        });
-      });
-    </script>
   </body>
 </html>
