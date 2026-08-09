@@ -15,7 +15,9 @@ final class DaemonController: ObservableObject {
     let logDir = NSHomeDirectory() + "/.recall/logs"
 
     private let label = "com.recall.daemon"
+    private let daemonPort = 7890
     private var refreshTask: Task<Void, Never>?
+    private var recoveryTask: Task<Void, Error>?
     private var didAutoRestartForVersion = false
 
     var summary: String {
@@ -24,12 +26,14 @@ final class DaemonController: ObservableObject {
 
     func start() {
         refresh()
-        if !healthOK && launchdState != "Not loaded" {
-            startDaemon()
-        } else if !healthOK {
-            setupStatus = "Install required"
-        } else {
-            restartIfBundleNewerThanRunning()
+        Task {
+            do {
+                try await ensureRunning()
+                restartIfBundleNewerThanRunning()
+            } catch {
+                setupRunning = false
+                lastError = error.localizedDescription
+            }
         }
         refreshTask?.cancel()
         refreshTask = Task {
@@ -91,6 +95,75 @@ final class DaemonController: ObservableObject {
         runRecallInBackground(status: "Restarting daemon", "daemon", "restart")
     }
 
+    /// Makes the bundled daemon available before a feature such as WebUI uses
+    /// it. A plist can exist while launchd has no loaded job, which previously
+    /// left dashboard clicks pointing at an offline localhost port.
+    func ensureRunning() async throws {
+        if await Self.isHealthy(port: daemonPort) {
+            refresh()
+            return
+        }
+
+        if let recoveryTask {
+            try await recoveryTask.value
+            refresh()
+            return
+        }
+
+        let task = Task { try await recoverDaemon() }
+        recoveryTask = task
+        do {
+            try await task.value
+            recoveryTask = nil
+            refresh()
+        } catch {
+            recoveryTask = nil
+            setupRunning = false
+            throw error
+        }
+    }
+
+    private func recoverDaemon() async throws {
+        if await Self.isHealthy(port: daemonPort) { return }
+
+        setupRunning = true
+        lastError = nil
+
+        let plistPath = NSHomeDirectory() + "/Library/LaunchAgents/\(label).plist"
+        let command: [String]
+        if FileManager.default.fileExists(atPath: plistPath) {
+            setupStatus = "Starting daemon"
+            command = ["daemon", "start"]
+        } else {
+            setupStatus = "Installing daemon"
+            command = [
+                "daemon", "install",
+                "--node-path", runtimeNodePath,
+                "--daemon-script", runtimeDaemonPath
+            ]
+        }
+
+        let nodePath = runtimeNodePath
+        let cliPath = runtimeCliPath
+        _ = try await Task.detached(priority: .userInitiated) {
+            try Self.runShell(nodePath, [cliPath] + command)
+        }.value
+
+        // launchd can throttle a recently stopped KeepAlive job for about ten
+        // seconds. Allow enough time for that delay plus daemon cold startup.
+        for _ in 0..<120 {
+            if await Self.isHealthy(port: daemonPort) {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+
+        setupRunning = false
+        throw NSError(domain: "RecallApp", code: 3, userInfo: [
+            NSLocalizedDescriptionKey: "Daemon did not become healthy after starting"
+        ])
+    }
+
     /// After a bundle update (e.g. `brew upgrade`) the launchd daemon keeps
     /// running the previously-installed code — it stays healthy, so nothing
     /// bounces it and the UI reports the old version. When the running daemon's
@@ -116,6 +189,20 @@ final class DaemonController: ObservableObject {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let value = object[key] as? String else { return nil }
         return value
+    }
+
+    private nonisolated static func isHealthy(port: Int) async -> Bool {
+        guard let url = URL(string: "http://localhost:\(port)/health") else { return false }
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 1
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else { return false }
+            return String(decoding: data, as: UTF8.self).contains("\"status\":\"ok\"")
+        } catch {
+            return false
+        }
     }
 
     func openDataDir() {

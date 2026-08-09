@@ -12,7 +12,12 @@ final class WebUIController: ObservableObject {
     @Published var clientCount: Int = 0
 
     private let daemonPort: Int = 7890
+    private let daemon: DaemonController
     private var pollTask: Task<Void, Never>?
+
+    init(daemon: DaemonController) {
+        self.daemon = daemon
+    }
 
     func start() {
         refresh()
@@ -28,6 +33,7 @@ final class WebUIController: ObservableObject {
     func openDashboard() {
         Task { [daemonPort] in
             do {
+                try await daemon.ensureRunning()
                 // open=false: the daemon used to launch the browser too, which
                 // produced a second tab on top of the NSWorkspace.open below.
                 // Single source of truth → the app opens it.

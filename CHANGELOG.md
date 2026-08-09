@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.9 - 2026-08-09
+
+### Fixed
+
+- **Dashboard clicks recover an offline daemon.** Recall.app now reloads an
+  installed but unloaded launchd service, or installs its bundled daemon when
+  the service is missing, waits for health, and only then starts the WebUI and
+  opens the browser.
+
 ## 0.9.8 - 2026-07-28
 
 ### Added

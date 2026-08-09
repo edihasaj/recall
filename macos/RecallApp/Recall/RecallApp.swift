@@ -148,9 +148,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Owned, not weak: SwiftUI scenes are lazy under LSUIElement, so AppDelegate
     // is the only place these can live from launch onward. The menu reads from
     // them immediately; the dashboard views observe them when (or if) shown.
-    let controller = DaemonController()
+    let controller: DaemonController
     let preferences = AppPreferences()
-    let webui = WebUIController()
+    let webui: WebUIController
+
+    override init() {
+        let controller = DaemonController()
+        self.controller = controller
+        self.webui = WebUIController(daemon: controller)
+        super.init()
+    }
 
     private var launchdStatusItem: NSMenuItem?
     private var healthStatusItem: NSMenuItem?
