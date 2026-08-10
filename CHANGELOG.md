@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.12 - 2026-08-10
+
+### Fixed
+
+- **Homebrew accepts the CLI artifact stanza.** The cask now uses Homebrew's
+  supported `target:` option, restoring cask upgrades and the `recall` symlink.
+
 ## 0.9.11 - 2026-08-10
 
 ### Fixed
