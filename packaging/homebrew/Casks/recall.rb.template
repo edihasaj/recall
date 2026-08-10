@@ -11,7 +11,7 @@ cask "recall" do
 
   app "Recall.app"
   binary "#{appdir}/Recall.app/Contents/Resources/Runtime/bin/recall",
-         target_name: "recall"
+         target: "recall"
 
   postflight do
     # The bundle is ad-hoc signed (no Developer ID), so Gatekeeper would

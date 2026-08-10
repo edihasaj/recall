@@ -22,6 +22,8 @@ describe("Homebrew cask renderer", () => {
     expect(output).toContain("github.com/example/recall/releases/download/v#{version}");
     expect(output).toContain('homepage "https://example.test/recall"');
     expect(output).toContain('binary "#{appdir}/Recall.app/Contents/Resources/Runtime/bin/recall"');
+    expect(output).toContain('target: "recall"');
+    expect(output).not.toContain("target_name:");
     expect(output).not.toContain("REPLACE_WITH_RELEASE_SHA256");
   });
 });
