@@ -1,6 +1,6 @@
 {
   "name": "@edihasaj/recall",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
   "homepage": "https://recallmemory.dev/",
@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.1.0",
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@sentry/node": "^10.65.0",
     "@universalmemoryprotocol/core": "^0.1.0",
     "better-sqlite3": "^11.8.1",
@@ -61,15 +61,16 @@
     "zod": "^3.24.4"
   },
   "overrides": {
-    "@hono/node-server": "2.0.11",
+    "@hono/node-server": "2.1.0",
     "@protobufjs/utf8": "1.1.2",
     "adm-zip": "0.6.0",
     "body-parser": "2.3.0",
     "esbuild": "0.28.1",
-    "fast-uri": "3.1.4",
-    "hono": "4.12.31",
-    "ip-address": "10.2.0",
-    "postcss": "8.5.22",
+    "fast-uri": "3.1.5",
+    "hono": "4.13.1",
+    "ip-address": "10.5.0",
+    "nanoid": "3.3.17",
+    "postcss": "8.5.26",
     "protobufjs": "7.6.5",
     "qs": "6.15.3",
     "sharp": "0.35.3",

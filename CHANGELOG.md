@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.10 - 2026-08-10
+
+### Fixed
+
+- **Attachment-heavy prompts retrieve rules from the user's intent.** Prompt-time
+  injection now scores the short leading request instead of letting an appended
+  PR body, issue description, or transcript dilute the embedding. A regression
+  test covers the original long PR-review prompt shape through the Codex hook.
+- **Recall.app exposes its bundled CLI.** The app's Install + Start action links
+  `~/.local/bin/recall`, and the Homebrew cask installs the same launcher. Both
+  paths always use Recall's bundled Node 22 runtime.
+- **Patched URL and IP parsing dependencies.** Updated the MCP transport stack
+  and transitive safety pins to versions that address the current production
+  dependency advisories.
+
 ## 0.9.9 - 2026-08-09
 
 ### Fixed
