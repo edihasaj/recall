@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0 - 2026-08-11
+
+### Fixed
+
+- **Artifact-heavy review requests retrieve the right memories.** Short PR and
+  Jira requests, plus requests followed by recognizable attached metadata, now
+  discard URLs and artifact IDs before retrieval while keeping the user's core
+  intent.
+- **Lowercase task-like identifiers stay searchable.** Only uppercase Jira-style
+  keys trigger artifact normalization, preventing ordinary lowercase IDs from
+  losing meaningful query text.
+
 ## 0.9.12 - 2026-08-10
 
 ### Fixed
