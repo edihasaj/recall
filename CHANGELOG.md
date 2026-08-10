@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.11 - 2026-08-10
+
+### Fixed
+
+- **Homebrew installs the bundled `recall` command.** Release cask generation
+  now renders the canonical template instead of a duplicated definition that
+  omitted the CLI artifact. A regression test verifies the published cask's
+  binary stanza.
+
 ## 0.9.10 - 2026-08-10
 
 ### Fixed
