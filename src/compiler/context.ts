@@ -104,7 +104,7 @@ export function normalizeQueryForRetrieval(text: string): string {
     }
   }
   // Short requests can contain the same artifact identifiers without a body.
-  if (/https?:\/\/\S+|\b[A-Z][A-Z0-9]+-\d+\b/i.test(out)) {
+  if (/https?:\/\/\S+/i.test(out) || /\b[A-Z][A-Z0-9]+-\d+\b/.test(out)) {
     out = extractLeadingIntent(out);
   }
   // Compact runs of whitespace and trim. Bound length so a 100k-token paste
