@@ -29,6 +29,8 @@ const QUERY_TEXT_MATCH_FLOOR = 0.45;
 const HISTORY_VECTOR_RELEVANCE_FLOOR = 0.7;
 const HISTORY_LEXICAL_RELEVANCE_FLOOR = 0.01;
 const CONFIDENCE_EPSILON = 1e-9;
+const MAX_RETRIEVAL_QUERY_LENGTH = 1200;
+const MAX_LEADING_INTENT_LENGTH = 400;
 
 /**
  * Strip harness boilerplate from a hook-supplied prompt before we hand it
@@ -39,7 +41,13 @@ const CONFIDENCE_EPSILON = 1e-9;
  */
 export function normalizeQueryForRetrieval(text: string): string {
   if (!text) return "";
-  let out = text;
+  let out = text.replace(/\r\n?/g, "\n");
+  // Some harnesses wrap the actual user request in a larger generated prompt.
+  // Prefer that explicit payload before applying the long-prompt heuristic.
+  const wrappedUserPrompt = out.match(
+    /<user-prompt\b[^>]*>\s*([\s\S]*?)\s*<\/user-prompt>/i,
+  )?.[1];
+  if (wrappedUserPrompt?.trim()) out = wrappedUserPrompt;
   // Drop self-closed and paired XML-ish tags the agent harnesses emit:
   // task-notification, system-reminder, command-name, command-args,
   // local-command-stdout, user-prompt-submit-hook, etc.
@@ -47,10 +55,27 @@ export function normalizeQueryForRetrieval(text: string): string {
   // Strip [Image: ...] markers and explicit "Tool loaded.", "Tool result:" wrappers.
   out = out.replace(/\[Image:[^\]]*\]/gi, " ");
   out = out.replace(/\bTool (?:loaded|result|use|call)\b[:.]?/gi, " ");
+  out = out.trim();
+  // Attachment-heavy prompts usually lead with the user's request, then append
+  // a PR body, issue description, transcript, or other large payload. Searching
+  // the combined blob dilutes the intent embedding. Keep the short leading line
+  // when it is available, while retaining the old bounded behavior for long
+  // single-line prompts.
+  if (out.length > MAX_RETRIEVAL_QUERY_LENGTH) {
+    const leadingLine = out
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean);
+    if (leadingLine && leadingLine.length <= MAX_LEADING_INTENT_LENGTH) {
+      out = leadingLine;
+    }
+  }
   // Compact runs of whitespace and trim. Bound length so a 100k-token paste
   // doesn't tank embedding latency.
   out = out.replace(/\s+/g, " ").trim();
-  if (out.length > 1200) out = out.slice(0, 1200);
+  if (out.length > MAX_RETRIEVAL_QUERY_LENGTH) {
+    out = out.slice(0, MAX_RETRIEVAL_QUERY_LENGTH);
+  }
   return out;
 }
 

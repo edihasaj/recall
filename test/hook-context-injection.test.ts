@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,6 +10,8 @@ import {
   handleSessionStartHook,
 } from "../src/cli/hook.js";
 import { createHistorySnippet } from "../src/history/snippets.js";
+import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
+import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
 let dbCounter = 0;
 function freshDb() {
@@ -24,7 +26,11 @@ beforeEach(() => {
   delete process.env.RECALL_HOOK_INJECT_STYLE;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await flushEmbeddingJobs();
+  vi.restoreAllMocks();
+  delete process.env.RECALL_EMBEDDING_DIMS;
+  delete process.env.RECALL_EMBEDDING_VERSION;
   closeDb();
 });
 
@@ -56,6 +62,49 @@ describe("hook context injection", () => {
     );
 
     expect(result.injection).toBeUndefined();
+  });
+
+  it("retrieves review rules from intent before a long attached PR body", async () => {
+    const db = freshDb();
+    delete process.env.RECALL_EMBEDDINGS_DISABLED;
+    process.env.RECALL_EMBEDDING_DIMS = "3";
+    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
+    installMockEmbeddingProvider((text) => (
+      text.length <= 200 ? [1, 0, 0] : [0, 0, 1]
+    ));
+
+    createMemory(db, {
+      type: "rule",
+      text: "Never mention internal verification infrastructure in a Dayshape PR review.",
+      scope: "repo",
+      repo: "dayshape/dayshape",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    await flushEmbeddingJobs();
+
+    const prompt = [
+      "let's do a review of DEVO-29447 https://github.com/dayshape/dayshape/pull/7001",
+      "",
+      "## Pull request description",
+      "This change updates filtered schedule availability and the reporting pipeline.",
+      ...Array.from(
+        { length: 40 },
+        (_, index) => `Implementation detail ${index}: adjusted query joins, fixtures, and generated snapshots.`,
+      ),
+    ].join("\n");
+
+    const result = await handlePromptHook(
+      {
+        session_id: "sess-long-pr-review",
+        repo: "dayshape/dayshape",
+        text: prompt,
+        agent: "codex",
+      },
+      { db },
+    );
+
+    expect(result.injection?.text).toContain("Never mention internal verification infrastructure");
   });
 
   it("handlePromptHook respects RECALL_HOOK_INJECT_PROMPT=false opt-out", async () => {

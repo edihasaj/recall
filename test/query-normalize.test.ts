@@ -36,6 +36,20 @@ describe("normalizeQueryForRetrieval", () => {
     expect(out.length).toBeLessThanOrEqual(1200);
   });
 
+  it("keeps the leading request line instead of an attached PR body", () => {
+    const request = "let's do a review of DEVO-29447 https://github.com/dayshape/dayshape/pull/7001";
+    const input = [
+      request,
+      "",
+      "## Pull request description",
+      ...Array.from({ length: 40 }, (_, index) => (
+        `Implementation detail ${index}: adjusted query joins, fixtures, and generated snapshots.`
+      )),
+    ].join("\n");
+
+    expect(normalizeQueryForRetrieval(input)).toBe(request);
+  });
+
   it("returns empty string for empty/whitespace input", () => {
     expect(normalizeQueryForRetrieval("")).toBe("");
     expect(normalizeQueryForRetrieval("   \n\t   ")).toBe("");
