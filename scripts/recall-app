@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+launcher=$0
+while [ -L "$launcher" ]; do
+  link=$(readlink "$launcher")
+  case "$link" in
+    /*) launcher=$link ;;
+    *) launcher=$(dirname "$launcher")/$link ;;
+  esac
+done
+
+runtime_dir=$(CDPATH= cd -- "$(dirname -- "$launcher")/.." && pwd)
+exec "$runtime_dir/bin/node" "$runtime_dir/dist/cli.js" "$@"

@@ -74,6 +74,13 @@ final class DaemonController: ObservableObject {
     }
 
     func installAndStart() {
+        do {
+            try installCliLauncher()
+        } catch {
+            setupRunning = false
+            lastError = error.localizedDescription
+            return
+        }
         runRecallCommandsInBackground(
             status: "Installing daemon and agent integrations",
             [
@@ -81,6 +88,28 @@ final class DaemonController: ObservableObject {
                 ["setup", "--app-path", Bundle.main.bundlePath, "--yes"]
             ]
         )
+    }
+
+    private func installCliLauncher() throws {
+        let manager = FileManager.default
+        let binDir = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".local/bin", isDirectory: true)
+        let launcher = binDir.appendingPathComponent("recall")
+        let bundledLauncher = URL(fileURLWithPath: runtimeRoot)
+            .appendingPathComponent("bin/recall").path
+
+        try manager.createDirectory(at: binDir, withIntermediateDirectories: true)
+        if let existingTarget = try? manager.destinationOfSymbolicLink(atPath: launcher.path) {
+            if existingTarget == bundledLauncher { return }
+            if existingTarget.contains("/Recall.app/Contents/Resources/Runtime/bin/recall") {
+                try manager.removeItem(at: launcher)
+            } else {
+                return
+            }
+        } else if manager.fileExists(atPath: launcher.path) {
+            return
+        }
+        try manager.createSymbolicLink(atPath: launcher.path, withDestinationPath: bundledLauncher)
     }
 
     func startDaemon() {

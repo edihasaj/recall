@@ -97,9 +97,13 @@ Installs the `@edihasaj/recall` CLI via npm, downloads the system-tray companion
 Download `Recall.app.zip` from [the latest release](https://github.com/edihasaj/recall/releases/latest), unzip it, move `Recall.app` into `/Applications`, then run setup:
 
 ```bash
+open /Applications/Recall.app             # click Install + Start once
 recall setup --yes
 recall doctor
 ```
+
+Install + Start exposes the bundled Node 22 CLI at `~/.local/bin/recall`. The
+Homebrew cask links the same bundled launcher automatically.
 
 ### Source
 
@@ -146,7 +150,7 @@ recall setup --scope project --yes       # add project-scoped hooks to the curre
 recall setup --uninstall-hooks --yes     # remove Recall-managed hooks
 ```
 
-By default the hooks inject repo memory once at `SessionStart` (minimal format) and stay silent on every subsequent `UserPromptSubmit`. To re-enable per-prompt injection or wire provider credentials so the daemon can run memory maintenance on a schedule, see [docs/configuration.md](docs/configuration.md).
+By default the hooks inject a compact repo memory pack at `SessionStart` and relevance-scored matches on each `UserPromptSubmit`. To opt out of prompt-time injection or wire provider credentials so the daemon can run memory maintenance on a schedule, see [docs/configuration.md](docs/configuration.md).
 
 Supported runtimes, and how deep the integration goes:
 
