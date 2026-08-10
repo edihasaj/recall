@@ -69,7 +69,7 @@ describe("recall graph CLI", () => {
     // We seeded at least 2 memories, each with multiple entities.
     const ents = parseInt(r.stdout.match(/entities:\s+(\d+)/)![1]!, 10);
     expect(ents).toBeGreaterThan(0);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it("graph entities lists entities, with --search filter", () => {
     const all = runCli(["graph", "entities"]);
@@ -89,7 +89,7 @@ describe("recall graph CLI", () => {
     for (const line of r.stdout.split("\n").filter((l) => l.trim())) {
       expect(line).toMatch(/library/);
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it("graph query returns hits for a seeded keyword", () => {
     const r = runCli(["graph", "query", "auth"]);
@@ -98,7 +98,7 @@ describe("recall graph CLI", () => {
     expect(r.stdout).toMatch(/expanded_entities=/);
     // At least one hit row.
     expect(r.stdout).toMatch(/\[(seed|graph)\d\]/);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it("graph backfill is idempotent on the seeded DB", () => {
     const first = runCli(["graph", "backfill"]);

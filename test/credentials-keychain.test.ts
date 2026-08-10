@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // We import lazily after mutating the environment so the module picks up changes.
 async function loadModule() {
@@ -7,6 +7,15 @@ async function loadModule() {
 }
 
 const saved = { ...process.env };
+
+beforeEach(() => {
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.AZURE_OPENAI_ENDPOINT;
+  delete process.env.AZURE_OPENAI_DEPLOYMENT;
+  delete process.env.AZURE_OPENAI_API_VERSION;
+  delete process.env.AZURE_OPENAI_API_KEY;
+});
 
 afterEach(() => {
   for (const key of Object.keys(process.env)) {

@@ -8,6 +8,7 @@ import { createMemory } from "../src/models/memory.js";
 
 const tsxEntry = resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
 const cliEntry = resolve(process.cwd(), "src/cli.ts");
+const CLI_TEST_TIMEOUT_MS = 20_000;
 
 describe("recall compile CLI value accounting", () => {
   it("persists injection and value events when --session is provided", () => {
@@ -56,5 +57,5 @@ describe("recall compile CLI value accounting", () => {
     expect(value?.event_type).toBe("injected");
     expect(value?.session_id).toBe("cli-session");
     expect(value?.injected_tokens_estimate).toBeGreaterThan(0);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 });

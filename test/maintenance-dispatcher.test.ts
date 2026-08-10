@@ -18,6 +18,10 @@ function freshDb() {
 beforeEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.AZURE_OPENAI_ENDPOINT;
+  delete process.env.AZURE_OPENAI_DEPLOYMENT;
+  delete process.env.AZURE_OPENAI_API_VERSION;
+  delete process.env.AZURE_OPENAI_API_KEY;
   process.env.PATH = "/nonexistent";
 });
 
