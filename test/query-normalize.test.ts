@@ -36,7 +36,7 @@ describe("normalizeQueryForRetrieval", () => {
     expect(out.length).toBeLessThanOrEqual(1200);
   });
 
-  it("keeps the leading request line instead of an attached PR body", () => {
+  it("extracts intent from the leading request instead of an attached PR body", () => {
     const request = "let's do a review of DEVO-29447 https://github.com/dayshape/dayshape/pull/7001";
     const input = [
       request,
@@ -47,7 +47,7 @@ describe("normalizeQueryForRetrieval", () => {
       )),
     ].join("\n");
 
-    expect(normalizeQueryForRetrieval(input)).toBe(request);
+    expect(normalizeQueryForRetrieval(input)).toBe("review");
   });
 
   it("returns empty string for empty/whitespace input", () => {

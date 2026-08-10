@@ -31,6 +31,24 @@ const HISTORY_LEXICAL_RELEVANCE_FLOOR = 0.01;
 const CONFIDENCE_EPSILON = 1e-9;
 const MAX_RETRIEVAL_QUERY_LENGTH = 1200;
 const MAX_LEADING_INTENT_LENGTH = 400;
+const LEADING_INTENT_STOP_WORDS = new Set([
+  "a", "an", "can", "could", "do", "for", "here", "in", "let", "lets",
+  "let's", "me", "need", "now", "of", "on", "please", "that", "the",
+  "these", "this", "those", "to", "us", "want", "we", "with", "would",
+  "you",
+]);
+
+function extractLeadingIntent(line: string): string {
+  const withoutReferences = line
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\b[A-Z][A-Z0-9]+-\d+\b/g, " ");
+  const tokens = withoutReferences.match(/[A-Za-z0-9][A-Za-z0-9'_-]*/g) ?? [];
+  const focused = tokens.filter((token) => (
+    !LEADING_INTENT_STOP_WORDS.has(token.toLowerCase()) &&
+    !/^\d+$/.test(token)
+  ));
+  return focused.join(" ").trim() || withoutReferences.trim() || line.trim();
+}
 
 /**
  * Strip harness boilerplate from a hook-supplied prompt before we hand it
@@ -59,15 +77,16 @@ export function normalizeQueryForRetrieval(text: string): string {
   // Attachment-heavy prompts usually lead with the user's request, then append
   // a PR body, issue description, transcript, or other large payload. Searching
   // the combined blob dilutes the intent embedding. Keep the short leading line
-  // when it is available, while retaining the old bounded behavior for long
-  // single-line prompts.
+  // when it is available and remove conversational filler plus issue/URL
+  // references that make FTS's AND query impossible to satisfy. Retain the old
+  // bounded behavior for long single-line prompts.
   if (out.length > MAX_RETRIEVAL_QUERY_LENGTH) {
     const leadingLine = out
       .split("\n")
       .map((line) => line.trim())
       .find(Boolean);
     if (leadingLine && leadingLine.length <= MAX_LEADING_INTENT_LENGTH) {
-      out = leadingLine;
+      out = extractLeadingIntent(leadingLine);
     }
   }
   // Compact runs of whitespace and trim. Bound length so a 100k-token paste

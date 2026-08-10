@@ -11,7 +11,6 @@ import {
 } from "../src/cli/hook.js";
 import { createHistorySnippet } from "../src/history/snippets.js";
 import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
-import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
 let dbCounter = 0;
 function freshDb() {
@@ -66,12 +65,6 @@ describe("hook context injection", () => {
 
   it("retrieves review rules from intent before a long attached PR body", async () => {
     const db = freshDb();
-    delete process.env.RECALL_EMBEDDINGS_DISABLED;
-    process.env.RECALL_EMBEDDING_DIMS = "3";
-    process.env.RECALL_EMBEDDING_VERSION = "test-v1";
-    installMockEmbeddingProvider((text) => (
-      text.length <= 200 ? [1, 0, 0] : [0, 0, 1]
-    ));
 
     createMemory(db, {
       type: "rule",
@@ -81,7 +74,14 @@ describe("hook context injection", () => {
       source: "user_correction",
       confidence: 0.9,
     });
-    await flushEmbeddingJobs();
+    createMemory(db, {
+      type: "review_pattern",
+      text: "During a PR review, verify the change against the linked ticket acceptance criteria.",
+      scope: "repo",
+      repo: "dayshape/dayshape",
+      source: "user_correction",
+      confidence: 0.9,
+    });
 
     const prompt = [
       "let's do a review of DEVO-29447 https://github.com/dayshape/dayshape/pull/7001",
@@ -105,6 +105,7 @@ describe("hook context injection", () => {
     );
 
     expect(result.injection?.text).toContain("Never mention internal verification infrastructure");
+    expect(result.injection?.text).toContain("verify the change against the linked ticket");
   });
 
   it("handlePromptHook respects RECALL_HOOK_INJECT_PROMPT=false opt-out", async () => {
