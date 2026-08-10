@@ -74,13 +74,27 @@ export function normalizeQueryForRetrieval(text: string): string {
   out = out.replace(/\[Image:[^\]]*\]/gi, " ");
   out = out.replace(/\bTool (?:loaded|result|use|call)\b[:.]?/gi, " ");
   out = out.trim();
+  const paragraphs = out.split(/\r?\n\s*\r?\n/).map((part) => part.trim()).filter(Boolean);
+  const hasRecognizableAttachment = (
+    paragraphs.length > 1 &&
+    paragraphs[0].length <= 500 &&
+    /^(?:GitHub\s+(?:PR|Pull Request|Issue)\s+#|Jira\s+(?:Ticket|Issue)|#{1,6}\s|<details\b)/i.test(paragraphs[1])
+  );
+
+  // Codex can append a full PR or issue description after the user's short
+  // request. Keep only the useful intent for retrieval. The attachment remains
+  // available to the agent.
+  if (hasRecognizableAttachment) {
+    out = extractLeadingIntent(paragraphs[0]);
+  }
+
   // Attachment-heavy prompts usually lead with the user's request, then append
   // a PR body, issue description, transcript, or other large payload. Searching
   // the combined blob dilutes the intent embedding. Keep the short leading line
   // when it is available and remove conversational filler plus issue/URL
   // references that make FTS's AND query impossible to satisfy. Retain the old
   // bounded behavior for long single-line prompts.
-  if (out.length > MAX_RETRIEVAL_QUERY_LENGTH) {
+  if (!hasRecognizableAttachment && out.length > MAX_RETRIEVAL_QUERY_LENGTH) {
     const leadingLine = out
       .split("\n")
       .map((line) => line.trim())
@@ -88,6 +102,10 @@ export function normalizeQueryForRetrieval(text: string): string {
     if (leadingLine && leadingLine.length <= MAX_LEADING_INTENT_LENGTH) {
       out = extractLeadingIntent(leadingLine);
     }
+  }
+  // Short requests can contain the same artifact identifiers without a body.
+  if (/https?:\/\/\S+|\b[A-Z][A-Z0-9]+-\d+\b/i.test(out)) {
+    out = extractLeadingIntent(out);
   }
   // Compact runs of whitespace and trim. Bound length so a 100k-token paste
   // doesn't tank embedding latency.

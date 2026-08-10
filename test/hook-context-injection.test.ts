@@ -147,6 +147,37 @@ describe("hook context injection", () => {
     expect(result.injection).toBeUndefined();
   });
 
+  it("injects a review rule for a short request followed by attached PR metadata", async () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "Always validate review fixes with relevant unit tests and affected evals",
+      scope: "repo",
+      repo: "dayshape/dayshape",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+
+    const result = await handlePromptHook(
+      {
+        session_id: "sess-pr-review",
+        repo: "dayshape/dayshape",
+        text: `let's do a review of DEVO-29447 https://github.com/dayshape/dayshape/pull/7001
+
+GitHub PR #7001: DEVO-29447: changes to materialization and added tests
+Base: beta-develop
+
+## What's Changed?
+
+${"Economic materialization details. ".repeat(100)}`,
+        agent: "codex",
+      },
+      { db },
+    );
+
+    expect(result.injection?.text).toContain("Always validate review fixes");
+  });
+
   it("handleSessionStartHook still returns injection for repo with memories", async () => {
     const db = freshDb();
     createMemory(db, {

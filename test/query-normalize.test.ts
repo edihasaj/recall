@@ -60,6 +60,27 @@ describe("normalizeQueryForRetrieval", () => {
     expect(normalizeQueryForRetrieval(clean)).toBe(clean);
   });
 
+  it("keeps the leading request and drops attached GitHub PR metadata", () => {
+    const input = `let's do a review of DEVO-29447 https://github.com/dayshape/dayshape/pull/7001
+
+GitHub PR #7001: DEVO-29447: changes to materialization and added tests
+https://github.com/dayshape/dayshape/pull/7001
+Base: beta-develop
+Head: DEVO-29447-economic-columns
+
+## What's Changed?
+
+${"Economic materialization details. ".repeat(100)}`;
+
+    expect(normalizeQueryForRetrieval(input)).toBe("review");
+  });
+
+  it("removes artifact identifiers from a short conversational request", () => {
+    const input = "please review DEVO-29447 https://github.com/dayshape/dayshape/pull/7001";
+
+    expect(normalizeQueryForRetrieval(input)).toBe("review");
+  });
+
   it("strips command-name and local-command-stdout wrappers", () => {
     const input = "<command-name>/goal</command-name><command-args>fix the bug</command-args><local-command-stdout>Goal set: …</local-command-stdout>actual ask";
     const out = normalizeQueryForRetrieval(input);
