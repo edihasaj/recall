@@ -10,7 +10,7 @@ import { syncMemoryFtsIndex } from "../src/vector/sqlite-fts.js";
 
 const tsxEntry = resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
 const cliEntry = resolve(process.cwd(), "src/cli.ts");
-const CLI_TEST_TIMEOUT_MS = 20_000;
+const CLI_TEST_TIMEOUT_MS = 40_000;
 
 let dataDir = "";
 

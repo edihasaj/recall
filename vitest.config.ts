@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Avoid overloading SQLite and child-process integration tests on large
+    // developer machines. CI runners already stay below this ceiling.
+    maxWorkers: 4,
     // Pin the regex capture path on by default in tests. The LLM-primary path
     // is opt-in via dedicated tests that mock the LLM (or via an env override)
     // — production behavior auto-detects credentials, but tests run on machines
