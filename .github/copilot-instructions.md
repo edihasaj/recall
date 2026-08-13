@@ -1,4 +1,4 @@
-<!-- recall:managed:memory:begin v1 -->
+<!-- recall:managed:github-copilot-memory:begin v1 -->
 ## Recall (managed by `recall setup` — do not edit by hand)
 
 Recall is the single source of truth for durable memory across agents and sessions. It is wired into GitHub Copilot through the `recall` MCP server.
@@ -9,4 +9,4 @@ Recall is the single source of truth for durable memory across agents and sessio
 - Do not keep a second memory store (scratch note files, tool-native memory) — it drifts from Recall.
 
 Reinstall: `recall setup`. Remove: `recall setup --uninstall-hooks`.
-<!-- recall:managed:memory:end -->
+<!-- recall:managed:github-copilot-memory:end -->

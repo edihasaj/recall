@@ -3,7 +3,7 @@ description: Route durable memory through the Recall MCP server
 alwaysApply: true
 ---
 
-<!-- recall:managed:memory:begin v1 -->
+<!-- recall:managed:cursor-memory:begin v1 -->
 ## Recall (managed by `recall setup` — do not edit by hand)
 
 Recall is the single source of truth for durable memory across agents and sessions. It is wired into Cursor through the `recall` MCP server.
@@ -14,4 +14,4 @@ Recall is the single source of truth for durable memory across agents and sessio
 - Do not keep a second memory store (scratch note files, tool-native memory) — it drifts from Recall.
 
 Reinstall: `recall setup`. Remove: `recall setup --uninstall-hooks`.
-<!-- recall:managed:memory:end -->
+<!-- recall:managed:cursor-memory:end -->
