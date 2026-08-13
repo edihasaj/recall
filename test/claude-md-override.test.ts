@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -37,6 +37,19 @@ describe("installClaudeCodeMemoryOverride", () => {
     expect(content).toContain("# My existing CLAUDE.md");
     expect(content).toContain("Some user notes here.");
     expect(content).toContain("recall:managed:memory:begin");
+  });
+
+  it.runIf(process.platform !== "win32")("preserves a CLAUDE.md symlink", () => {
+    const target = freshTarget();
+    const shared = join(mkdtempSync(join(tmpdir(), "recall-claude-shared-")), "AGENTS.md");
+    writeFileSync(shared, "# Shared agent rules\n");
+    symlinkSync(shared, target);
+
+    const result = installClaudeCodeMemoryOverride({ configPath: target });
+
+    expect(result.config_path).toBe(target);
+    expect(lstatSync(target).isSymbolicLink()).toBe(true);
+    expect(readFileSync(shared, "utf-8")).toContain("Recall is the single source of truth");
   });
 
   it("is idempotent — second install returns changed=false", () => {
@@ -100,6 +113,20 @@ describe("uninstallClaudeCodeMemoryOverride", () => {
     const result = uninstallClaudeCodeMemoryOverride({ configPath: target });
     expect(result.changed).toBe(false);
     expect(existsSync(target)).toBe(false);
+  });
+
+  it.runIf(process.platform !== "win32")("removes the block through a CLAUDE.md symlink without replacing it", () => {
+    const target = freshTarget();
+    const shared = join(mkdtempSync(join(tmpdir(), "recall-claude-shared-")), "AGENTS.md");
+    writeFileSync(shared, "# Shared agent rules\n");
+    symlinkSync(shared, target);
+    installClaudeCodeMemoryOverride({ configPath: target });
+
+    uninstallClaudeCodeMemoryOverride({ configPath: target });
+
+    expect(lstatSync(target).isSymbolicLink()).toBe(true);
+    expect(readFileSync(shared, "utf-8")).toContain("# Shared agent rules");
+    expect(readFileSync(shared, "utf-8")).not.toContain("recall:managed:memory");
   });
 });
 

@@ -90,6 +90,9 @@ Claude Code's harness ships a built-in "auto memory" feature that writes user-re
 
 `recall setup` writes a fenced block into `~/.claude/CLAUDE.md` that overrides the harness instruction, telling Claude Code to route all memorize/forget intents back through Recall (the hook handles capture; explicit `mcp__recall__capture_correction` / `mcp__recall__reject` / `mcp__recall__confirm` for forced operations). The block is delimited by `<!-- recall:managed:memory:begin vN -->` / `<!-- recall:managed:memory:end -->` (older installs used `recall:managed:claude-md:*`, migrated automatically) so subsequent `recall setup` / `recall doctor --fix` runs update just that section, leaving the rest of the user's CLAUDE.md untouched.
 
+If `~/.claude/CLAUDE.md` is a symlink to shared instructions, Recall updates
+the resolved file and preserves the link.
+
 `recall doctor` reports the block status as `claude.md:ok` / `STALE` / `MISSING` / `ABSENT_NO_FILE`. `recall doctor --fix` installs or repairs.
 
 Opt out:

@@ -1,7 +1,7 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
@@ -59,11 +59,14 @@ describe("session lifecycle", () => {
     const artifact = readFileSync(join(repoRoot, ".recall", "context.md"), "utf-8");
     expect(artifact).toContain("# Recall Context");
     expect(artifact).toContain("edihasaj/session-start");
-    const excludePath = execFileSync(
+    const excludePathRaw = execFileSync(
       "git",
       ["-C", repoRoot, "rev-parse", "--git-path", "info/exclude"],
       { encoding: "utf-8", stdio: "pipe" },
     ).trim();
+    const excludePath = isAbsolute(excludePathRaw)
+      ? excludePathRaw
+      : resolve(repoRoot, excludePathRaw);
     expect(readFileSync(excludePath, "utf-8")).toContain(".recall/");
 
     recordSessionLifecycleEvent(db, {

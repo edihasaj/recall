@@ -16,6 +16,8 @@ export type { RulesStatus } from "./types.js";
 export interface ManagedRulesBlock {
   /** Marker name — rendered as `recall:managed:<name>`. */
   name: string;
+  /** Previous marker names migrated only when their block body matches this agent. */
+  legacyNames?: readonly string[];
   /** Bumped whenever `body` changes so stale blocks are detected and replaced. */
   version: number;
   /** Markdown body placed between the markers. */
@@ -43,8 +45,12 @@ function anyBeginMarkerRe(block: ManagedRulesBlock): RegExp {
 }
 
 function blockRe(block: ManagedRulesBlock): RegExp {
+  return blockReForName(block.name);
+}
+
+function blockReForName(name: string): RegExp {
   return new RegExp(
-    `<!--\\s*recall:managed:${escapeRegExp(block.name)}:begin(?:\\s+v\\d+)?\\s*-->[\\s\\S]*?<!--\\s*recall:managed:${escapeRegExp(block.name)}:end\\s*-->\\n?`,
+    `<!--\\s*recall:managed:${escapeRegExp(name)}:begin(?:\\s+v\\d+)?\\s*-->[\\s\\S]*?<!--\\s*recall:managed:${escapeRegExp(name)}:end\\s*-->\\n?`,
     "g",
   );
 }
@@ -94,7 +100,9 @@ export function uninstallManagedRules(
   }
 
   const existing = readFileSync(targetPath, "utf-8");
-  if (!anyBeginMarkerRe(block).test(existing)) {
+  const hasCurrent = anyBeginMarkerRe(block).test(existing);
+  const hasLegacy = findLegacyBlock(existing, block) !== null;
+  if (!hasCurrent && !hasLegacy) {
     return {
       ok: true,
       changed: false,
@@ -105,7 +113,8 @@ export function uninstallManagedRules(
 
   // A file Recall created and still owns can go away entirely; a shared file
   // only loses our block.
-  const stripped = existing.replace(blockRe(block), "").replace(/\n{3,}/g, "\n\n");
+  const stripped = removeLegacyBlocks(existing.replace(blockRe(block), ""), block)
+    .replace(/\n{3,}/g, "\n\n");
   if (block.ownsFile && stripped.trim() === (block.preamble ?? "").trim()) {
     rmSync(targetPath, { force: true });
     return { ok: true, changed: true, config_path: targetPath, message: `Removed ${targetPath}` };
@@ -129,6 +138,9 @@ export function checkManagedRules(
   }
   const content = readFileSync(targetPath, "utf-8");
   if (!anyBeginMarkerRe(block).test(content)) {
+    if (findLegacyBlock(content, block)) {
+      return { status: "stale", config_path: targetPath };
+    }
     return { status: "missing", config_path: targetPath };
   }
   return {
@@ -147,9 +159,30 @@ function mergeIntoExisting(
   if (anyBeginMarkerRe(block).test(existing)) {
     return existing.replace(blockRe(block), desired);
   }
+  const legacy = findLegacyBlock(existing, block);
+  if (legacy) return existing.replace(legacy, desired);
   if (existing.length === 0) return desired;
   const separator = existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
   return `${existing}${separator}${desired}`;
+}
+
+function findLegacyBlock(existing: string, block: ManagedRulesBlock): string | null {
+  for (const name of block.legacyNames ?? []) {
+    for (const match of existing.matchAll(blockReForName(name))) {
+      if (match[0].includes(block.body)) return match[0];
+    }
+  }
+  return null;
+}
+
+function removeLegacyBlocks(existing: string, block: ManagedRulesBlock): string {
+  let next = existing;
+  let match = findLegacyBlock(next, block);
+  while (match) {
+    next = next.replace(match, "");
+    match = findLegacyBlock(next, block);
+  }
+  return next;
 }
 
 function ensureTrailingNewline(content: string): string {

@@ -82,7 +82,7 @@ describe("recall setup wiring for hookless agents", () => {
       expect(cursorRules).toContain("capture_correction");
       expect(
         readFileSync(join(home, ".codeium", "windsurf", "memories", "global_rules.md"), "utf-8"),
-      ).toContain("recall:managed:memory:begin");
+      ).toContain("recall:managed:windsurf-memory:begin");
     });
   });
 

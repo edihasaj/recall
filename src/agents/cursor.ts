@@ -47,7 +47,8 @@ export const cursorAdapter = createHooklessAdapter({
   }),
   rulesPath: (options) => cursorRulesPath(options),
   rulesBlock: {
-    name: "memory",
+    name: "cursor-memory",
+    legacyNames: ["memory"],
     version: 1,
     body: buildRecallRulesBody(LABEL),
     ownsFile: true,

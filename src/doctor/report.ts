@@ -318,7 +318,8 @@ function inspectHooklessInstall(agent: AgentName, home: string): AgentDoctorEntr
 
 function inspectClaudeCodeInstall(home: string): AgentDoctorEntry {
   const configPath = join(home, ".claude", "settings.json");
-  const detected = existsSync(configPath) || hasCommand("claude");
+  const userConfigPath = join(home, ".claude.json");
+  const detected = existsSync(configPath) || existsSync(userConfigPath) || hasCommand("claude");
   const notes: string[] = [];
 
   let mcp = false;
@@ -335,7 +336,6 @@ function inspectClaudeCodeInstall(home: string): AgentDoctorEntry {
           isHookGroupManagedBy(group, "recall:managed:claude-code"),
         ),
       );
-      if (!mcp) notes.push("MCP server 'recall' not registered in mcpServers");
       if (!hooks) notes.push("No Recall-managed hooks found in settings.json");
     } catch (err) {
       notes.push(`Could not parse ${configPath}: ${(err as Error).message}`);
@@ -343,6 +343,18 @@ function inspectClaudeCodeInstall(home: string): AgentDoctorEntry {
   } else if (detected) {
     notes.push("Claude CLI detected but settings.json missing");
   }
+
+  // User-scoped MCP registrations live in ~/.claude.json. Older Claude Code
+  // versions also accepted mcpServers in settings.json, so inspect both.
+  if (!mcp && existsSync(userConfigPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(userConfigPath, "utf-8"));
+      mcp = Boolean(parsed?.mcpServers?.recall);
+    } catch (err) {
+      notes.push(`Could not parse ${userConfigPath}: ${(err as Error).message}`);
+    }
+  }
+  if (!mcp) notes.push("MCP server 'recall' not registered in user configuration");
 
   // CLAUDE.md memory-override block. Status mirrors the install: current =
   // installed and matches shipped content, stale = older block present (needs

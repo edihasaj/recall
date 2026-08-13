@@ -32,7 +32,8 @@ export const windsurfAdapter = createHooklessAdapter({
   }),
   rulesPath: (options) => windsurfGlobalRulesPath(options),
   rulesBlock: {
-    name: "memory",
+    name: "windsurf-memory",
+    legacyNames: ["memory"],
     version: 1,
     body: buildRecallRulesBody(LABEL),
   },
