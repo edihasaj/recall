@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2 - 2026-08-14
+
+### Fixed
+
+- **Maintenance can prune referenced memories.** Rejected and transient memory
+  retention now removes dependent feedback, approval, contradiction, signal,
+  and entity rows before deleting the parent, then clears retrieval indexes.
+  Existing databases no longer fail every maintenance cycle with a foreign-key
+  error when old memories have feedback history.
+
 ## 1.0.1 - 2026-08-14
 
 ### Fixed

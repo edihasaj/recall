@@ -18,7 +18,7 @@ import { pruneMemories, formatPruneReport } from "../src/pruning/pruner.js";
 import { recordAudit, getAuditTrail, getRecentAudit, formatAuditTrail, diffSnapshots, rollbackMemory, recordAuditWithSnapshot } from "../src/audit/trail.js";
 import { recordSignal } from "../src/feedback/implicit.js";
 import { eq } from "drizzle-orm";
-import { contradictions, memories } from "../src/db/schema.js";
+import { contradictions, feedbackEvents, memories } from "../src/db/schema.js";
 
 let dbCounter = 0;
 
@@ -395,6 +395,21 @@ describe("pruning", () => {
 
     // Memory should be deleted
     expect(getMemory(db, memId)).toBeUndefined();
+  });
+
+  it("prunes rejected memories that still have feedback history", () => {
+    const db = freshDb();
+    const memId = makeMemory(db, { confidence: 0.7 });
+    recordFeedback(db, memId, "session-with-feedback", true, "followed");
+    rejectMemory(db, memId);
+    db.update(memories)
+      .set({ updated_at: new Date(Date.now() - 40 * 86_400_000).toISOString() })
+      .where(eq(memories.id, memId))
+      .run();
+
+    expect(() => pruneMemories(db, { rejected_retention_days: 30 })).not.toThrow();
+    expect(getMemory(db, memId)).toBeUndefined();
+    expect(db.select().from(feedbackEvents).where(eq(feedbackEvents.memory_id, memId)).all()).toHaveLength(0);
   });
 
   it("can prune one repo without touching another", () => {

@@ -7,9 +7,16 @@
  * - Configurable retention policies
  */
 
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { memories } from "../db/schema.js";
+import {
+  approvalRequests,
+  contradictions,
+  feedbackEvents,
+  implicitSignals,
+  memories,
+  memoryEntities,
+} from "../db/schema.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { queryMemories } from "../models/memory.js";
 import { computeHealthScore } from "../health/scoring.js";
@@ -90,8 +97,8 @@ export function pruneMemories(
   for (const mem of rejectedMemories) {
     if (mem.updated_at < rejectedCutoff) {
       if (!cfg.dry_run) {
-        // Soft delete — keep audit trail but remove from memories
-        db.delete(memories).where(eq(memories.id, mem.id)).run();
+        deleteMemoryAndDependents(db, mem.id);
+        queueMemoryEmbeddingSync(db, mem.id);
         recordAudit(db, mem.id, "pruned", "auto-pruner", `Rejected memory past ${cfg.rejected_retention_days}d retention`);
       }
       result.rejected_pruned.push(mem.id);
@@ -110,7 +117,8 @@ export function pruneMemories(
   for (const mem of transientMemories) {
     if (mem.updated_at < transientCutoff) {
       if (!cfg.dry_run) {
-        db.delete(memories).where(eq(memories.id, mem.id)).run();
+        deleteMemoryAndDependents(db, mem.id);
+        queueMemoryEmbeddingSync(db, mem.id);
         recordAudit(db, mem.id, "pruned", "auto-pruner", `Transient memory past ${cfg.transient_retention_days}d retention`);
       }
       result.transient_pruned.push(mem.id);
@@ -150,6 +158,23 @@ export function pruneMemories(
     result.unhealthy_demoted.length;
 
   return result;
+}
+
+/** Remove rows whose historical schemas lack ON DELETE actions before the parent. */
+function deleteMemoryAndDependents(db: RecallDb, memoryId: string): void {
+  db.transaction((tx) => {
+    tx.delete(feedbackEvents).where(eq(feedbackEvents.memory_id, memoryId)).run();
+    tx.delete(approvalRequests).where(eq(approvalRequests.memory_id, memoryId)).run();
+    tx.delete(contradictions)
+      .where(or(
+        eq(contradictions.memory_a_id, memoryId),
+        eq(contradictions.memory_b_id, memoryId),
+      ))
+      .run();
+    tx.delete(implicitSignals).where(eq(implicitSignals.memory_id, memoryId)).run();
+    tx.delete(memoryEntities).where(eq(memoryEntities.memory_id, memoryId)).run();
+    tx.delete(memories).where(eq(memories.id, memoryId)).run();
+  });
 }
 
 // --- Format prune report ---
