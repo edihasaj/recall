@@ -37,7 +37,8 @@ export const opencodeAdapter = createHooklessAdapter({
   }),
   rulesPath: (options) => opencodeAgentsPath(options),
   rulesBlock: {
-    name: "memory",
+    name: "opencode-memory",
+    legacyNames: ["memory"],
     version: 1,
     body: buildRecallRulesBody(LABEL),
   },

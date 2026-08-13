@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.1 - 2026-08-14
+
+### Fixed
+
+- **Setup preserves shared Claude instructions.** `recall setup` now updates a
+  symlinked `~/.claude/CLAUDE.md` through its resolved file instead of failing
+  with `ELOOP` or replacing the link.
+- **Doctor recognizes Claude's user-scoped MCP configuration.** Registrations
+  written by `claude mcp add --scope user` in `~/.claude.json` now report as
+  healthy instead of remaining falsely `MISSING`.
+- **Shared agent rules no longer overwrite Claude memory guidance.** OpenCode,
+  Cursor, Copilot, and Windsurf now use agent-specific managed markers and
+  safely migrate their legacy blocks.
+
 ## 1.0.0 - 2026-08-11
 
 ### Fixed

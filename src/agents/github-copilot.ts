@@ -38,7 +38,8 @@ export const githubCopilotAdapter = createHooklessAdapter({
   }),
   rulesPath: (options) => copilotInstructionsPath(options),
   rulesBlock: {
-    name: "memory",
+    name: "github-copilot-memory",
+    legacyNames: ["memory"],
     version: 1,
     body: buildRecallRulesBody(LABEL),
   },

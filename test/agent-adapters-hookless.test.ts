@@ -6,6 +6,7 @@ import { cursorAdapter, cursorGlobalMcpPath, cursorProjectMcpPath, cursorRulesPa
 import { githubCopilotAdapter, copilotInstructionsPath, copilotMcpConfigPath } from "../src/agents/github-copilot.js";
 import { opencodeAdapter } from "../src/agents/opencode.js";
 import { windsurfAdapter } from "../src/agents/windsurf.js";
+import { installClaudeCodeMemoryOverride } from "../src/agents/claude-code.js";
 import type { AgentAdapter } from "../src/agents/types.js";
 
 const NODE_PATH = "/opt/recall/bin/node";
@@ -172,6 +173,34 @@ describe("MCP JSON registration dialects", () => {
 });
 
 describe("managed rules blocks", () => {
+  it("keeps Claude and OpenCode blocks separate in a shared instructions file", () => {
+    const target = join(workdir("shared-rules"), "AGENTS.md");
+    installClaudeCodeMemoryOverride({ configPath: target });
+
+    opencodeAdapter.installRules!({ configPath: target });
+
+    const content = readFileSync(target, "utf-8");
+    expect(content).toContain("recall:managed:memory:begin v3");
+    expect(content).toContain("recall:managed:opencode-memory:begin v1");
+    expect(content).toContain("Recall is the single source of truth for memory");
+    expect(content).toContain("wired into opencode");
+  });
+
+  it("migrates an OpenCode legacy memory marker without duplication", () => {
+    const target = join(workdir("opencode-legacy-rules"), "AGENTS.md");
+    opencodeAdapter.installRules!({ configPath: target });
+    const legacy = readFileSync(target, "utf-8")
+      .replaceAll("recall:managed:opencode-memory", "recall:managed:memory");
+    writeFileSync(target, legacy);
+
+    expect(opencodeAdapter.checkRules!({ configPath: target }).status).toBe("stale");
+    opencodeAdapter.installRules!({ configPath: target });
+
+    const content = readFileSync(target, "utf-8");
+    expect(content).not.toContain("recall:managed:memory");
+    expect(content.match(/recall:managed:opencode-memory:begin/g)).toHaveLength(1);
+  });
+
   it("appends to an existing instructions file without clobbering it", () => {
     const cwd = workdir("copilot-rules");
     const target = copilotInstructionsPath({ cwd });
@@ -185,7 +214,7 @@ describe("managed rules blocks", () => {
     const content = readFileSync(target, "utf-8");
     expect(content).toContain("# House rules");
     expect(content).toContain("Use tabs.");
-    expect(content).toContain("recall:managed:memory:begin v1");
+    expect(content).toContain("recall:managed:github-copilot-memory:begin v1");
     expect(content).toContain("capture_correction");
   });
 
@@ -204,7 +233,7 @@ describe("managed rules blocks", () => {
     mkdirSync(join(cwd, ".github"), { recursive: true });
     writeFileSync(
       target,
-      "Keep me.\n\n<!-- recall:managed:memory:begin v0 -->\nold body\n<!-- recall:managed:memory:end -->\n",
+      "Keep me.\n\n<!-- recall:managed:github-copilot-memory:begin v0 -->\nold body\n<!-- recall:managed:github-copilot-memory:end -->\n",
     );
 
     expect(githubCopilotAdapter.checkRules!({ cwd }).status).toBe("stale");
@@ -213,7 +242,7 @@ describe("managed rules blocks", () => {
     const content = readFileSync(target, "utf-8");
     expect(content).toContain("Keep me.");
     expect(content).not.toContain("old body");
-    expect(content.match(/recall:managed:memory:begin/g)).toHaveLength(1);
+    expect(content.match(/recall:managed:github-copilot-memory:begin/g)).toHaveLength(1);
   });
 
   it("strips the block on uninstall but leaves user content", () => {
@@ -228,7 +257,7 @@ describe("managed rules blocks", () => {
     expect(removed.changed).toBe(true);
     const content = readFileSync(target, "utf-8");
     expect(content).toContain("# House rules");
-    expect(content).not.toContain("recall:managed:memory");
+    expect(content).not.toContain("recall:managed:github-copilot-memory");
   });
 
   it("writes Cursor rules as an owned .mdc with frontmatter and deletes it on uninstall", () => {
@@ -240,7 +269,7 @@ describe("managed rules blocks", () => {
     const content = readFileSync(target, "utf-8");
     expect(content.startsWith("---\n")).toBe(true);
     expect(content).toContain("alwaysApply: true");
-    expect(content).toContain("recall:managed:memory:begin v1");
+    expect(content).toContain("recall:managed:cursor-memory:begin v1");
 
     cursorAdapter.uninstallRules!({ cwd });
     expect(existsSync(target)).toBe(false);

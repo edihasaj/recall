@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
@@ -412,7 +413,8 @@ export function installClaudeCodeMemoryOverride(
   }
 
   const desired = buildClaudeMdBlock();
-  const existingContent = readUtf8FileIfExists(targetPath) ?? "";
+  const filePath = resolveClaudeMdFilePath(targetPath);
+  const existingContent = readUtf8FileIfExists(filePath) ?? "";
 
   // Already present and up-to-date — no write.
   if (existingContent.includes(CLAUDE_MD_BEGIN) && existingContent.includes(desired.trim())) {
@@ -439,7 +441,7 @@ export function installClaudeCodeMemoryOverride(
     nextContent = `${existingContent}${separator}${desired}`;
   }
 
-  atomicWriteUtf8File(targetPath, nextContent);
+  atomicWriteUtf8File(filePath, nextContent);
   return {
     ok: true,
     changed: true,
@@ -454,7 +456,8 @@ export function uninstallClaudeCodeMemoryOverride(
   options: ClaudeMdInstallOptions = {},
 ): InstallResult {
   const targetPath = options.configPath ?? claudeMdPath();
-  const existingContent = readUtf8FileIfExists(targetPath);
+  const filePath = resolveClaudeMdFilePath(targetPath);
+  const existingContent = readUtf8FileIfExists(filePath);
   if (existingContent === null) {
     return {
       ok: true,
@@ -478,10 +481,10 @@ export function uninstallClaudeCodeMemoryOverride(
     // File was nothing but our block — leave the file in place but empty
     // to avoid surprising the user, who can delete it themselves if they
     // want.
-    atomicWriteUtf8File(targetPath, "");
+    atomicWriteUtf8File(filePath, "");
   } else {
     atomicWriteUtf8File(
-      targetPath,
+      filePath,
       stripped.endsWith("\n") ? stripped : `${stripped}\n`,
     );
   }
@@ -491,6 +494,18 @@ export function uninstallClaudeCodeMemoryOverride(
     config_path: targetPath,
     message: "Removed Recall-managed block from CLAUDE.md",
   };
+}
+
+/** Preserve intentional CLAUDE.md symlinks while retaining O_NOFOLLOW on the resolved file. */
+function resolveClaudeMdFilePath(targetPath: string): string {
+  try {
+    return realpathSync(targetPath);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return targetPath;
+    }
+    throw error;
+  }
 }
 
 export type ClaudeMdStatus = "missing" | "current" | "stale" | "absent_no_file";

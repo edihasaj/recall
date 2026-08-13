@@ -55,6 +55,26 @@ describe("doctor detects agent install state", () => {
     expect(claude.notes).toHaveLength(0);
   });
 
+  it("recognizes a user-scoped Claude MCP registration in ~/.claude.json", () => {
+    const home = freshHome();
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ mcpServers: { recall: { command: "node" } } }, null, 2),
+    );
+    installClaudeCodeHooks({
+      configPath: join(home, ".claude", "settings.json"),
+      nodePath: "/opt/recall/node",
+      cliPath: "/opt/recall/dist/cli.js",
+    });
+    installClaudeCodeMemoryOverride({
+      configPath: join(home, ".claude", "CLAUDE.md"),
+    });
+
+    const claude = inspectAgentInstalls(home).find((e) => e.agent === "claude-code")!;
+    expect(claude.mcp).toBe(true);
+    expect(claude.notes).toHaveLength(0);
+  });
+
   it("flags Claude Code as hooks-missing when only MCP is configured", () => {
     const home = freshHome();
     writeFileSync(
