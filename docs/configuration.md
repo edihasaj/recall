@@ -57,7 +57,14 @@ When a user prompt arrives on `UserPromptSubmit`, Recall has to decide whether a
 
 The hook does **not** try to extract rules with regex. Instead:
 
-1. A cheap **multi-language pre-screen** asks "is this prompt worth showing to the LLM at all?" It looks for imperative/save-intent markers in en/es/fr/de/it/pt/ru/zh/ja/sq/tr (e.g. `always`/`never`/`remember`, `siempre`, `toujours`, `immer`, `всегда`, `总是`, `常に`, `gjithmonë`). Pure code-request prompts with no rule signal are skipped — no LLM call, no cost.
+1. Recall first quarantines known non-user hook traffic, including system and
+   compaction scaffolding plus Codex task-title, ambient-suggestion, and
+   ambient-safety judge prompts. A cheap **multi-language pre-screen** then asks
+   "is this prompt worth showing to the LLM at all?" It looks for
+   imperative/save-intent markers in en/es/fr/de/it/pt/ru/zh/ja/sq/tr (e.g.
+   `always`/`never`/`remember`, `siempre`, `toujours`, `immer`, `всегда`, `总是`,
+   `常に`, `gjithmonë`). Pure code-request prompts with no rule signal are
+   skipped — no LLM call, no cost.
 2. Prompts that pass the screen enqueue an `extract_rules_from_prompt` task (priority 14, top of queue).
 3. The hook calls `POST /dispatch/wake` on the local daemon (debounced 3 s) so the dispatcher fires within seconds instead of waiting for its scheduled tick.
 4. The LLM extracts zero or more durable rules from the prompt, in any language, and returns one canonical English sentence per rule with confidence and scope. Empty list is a valid answer ("nothing worth saving here").

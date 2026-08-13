@@ -117,6 +117,21 @@ describe("isNonUserCaptureContext — adversarial / system-context guard", () =>
     )).toBe(true);
   });
 
+  it("rejects Codex internal title and ambient-suggestion prompts", () => {
+    expect(isNonUserCaptureContext(
+      "Generate a title and a git branch name for a coding agent from the user prompt and attachments.\nReturn JSON only.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this Projectless task.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "# Overview\nGenerate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project: /Users/edi/Projects/recall.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "You are an expert at upholding safety and compliance standards for Codex ambient suggestions.\nI will present two categories.",
+    )).toBe(true);
+  });
+
   it("does NOT reject legitimate durable rules", () => {
     expect(isNonUserCaptureContext("always use pnpm not npm")).toBe(false);
     expect(isNonUserCaptureContext("never commit secrets to the repo")).toBe(false);

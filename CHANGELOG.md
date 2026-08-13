@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3 - 2026-08-14
+
+### Fixed
+
+- **Codex internal prompts no longer become user memories.** Recall now
+  quarantines Codex task-title generation, ambient-suggestion generation, and
+  ambient-safety judge prompts before capture. Deterministic cleanup also
+  rejects existing candidates from those prompt families and abandons their
+  queued extraction jobs.
+
 ## 1.0.2 - 2026-08-14
 
 ### Fixed

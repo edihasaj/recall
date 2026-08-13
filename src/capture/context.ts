@@ -24,6 +24,14 @@ const INJECTION_ARTIFACT_RE = new RegExp(
 const EPHEMERAL_TASK_CONTEXT_RE =
   /(?:^\s*\/goal\b|pause for (?:the )?user\b|this is task def(?:inition)?:|key details\s+description\s+(?:goal|background)\b|link to jira ticket|what(?:'|’)s changed\?|this article lists the tools we use for development|required software on node)/i;
 
+// Codex emits additional internal prompts through the same hook surface as
+// genuine user turns. They are task-title, ambient-suggestion, and safety
+// judge instructions owned by the harness, not durable preferences typed by
+// the user. Exact family anchors keep the quarantine narrow while covering
+// prompt revisions that retain the stable opening contract.
+const CODEX_INTERNAL_PROMPT_RE =
+  /(?:^\s*generate a title and a git branch name for a coding agent\b|^\s*#\s*overview\s+generate\s+0\s+to\s+3\s+hyperpersonalized suggestions for what this user can do with codex\b|^\s*you are an expert at upholding safety and compliance standards for codex ambient suggestions\b)/i;
+
 function looksLikeQuestionContext(text: string): boolean {
   if (/\b(?:always|never|remember|memorize|save this|from now on|by default|make it a rule)\b/i.test(text)) {
     return false;
@@ -47,6 +55,7 @@ export function isNonUserCaptureContext(text: string): boolean {
     NON_USER_CONTEXT_RE.test(text) ||
     INJECTION_ARTIFACT_RE.test(text) ||
     EPHEMERAL_TASK_CONTEXT_RE.test(text) ||
+    CODEX_INTERNAL_PROMPT_RE.test(text) ||
     looksLikeQuestionContext(text)
   );
 }
