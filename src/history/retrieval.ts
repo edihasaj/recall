@@ -5,6 +5,7 @@ import { historySnippetEmbeddings, historySnippets } from "../db/schema.js";
 import type { EmbeddingConfig, HistorySnippet } from "../types.js";
 import { generateEmbedding, generateEmbeddings, loadEmbeddingConfigFromEnv, projectEmbeddingToIndex } from "../embeddings/embeddings.js";
 import { resolveProvider } from "../embeddings/providers/index.js";
+import { processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 import {
   rebuildHistoryVecIndex,
   removeHistoryVecRow,
@@ -182,16 +183,14 @@ export async function bootstrapHistoryEmbeddings(
     syncHistoryFtsIndex(db, row.id);
   }
 
-  const BATCH_SIZE = 100;
   let total = 0;
-  for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-    const batch = pending.slice(i, i + BATCH_SIZE);
+  await processInResponsiveBatches(pending, async (batch) => {
     const embeddings = await generateEmbeddings(batch.map((row) => row.text), config, "document");
     for (let j = 0; j < batch.length; j++) {
       storeHistoryEmbedding(db, batch[j].id, batch[j].text, embeddings[j], config);
       total++;
     }
-  }
+  });
 
   rebuildHistoryFtsIndex(db, options);
   rebuildHistoryVecIndex(db, config, options);

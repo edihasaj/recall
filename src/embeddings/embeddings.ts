@@ -26,11 +26,11 @@ import {
 } from "../vector/sqlite-fts.js";
 import { generateHydeText } from "./hyde.js";
 import { isRerankerEnabled, rerankerTopK, rerankPairs } from "./reranker.js";
+import { processInResponsiveBatches } from "./responsive-batches.js";
 
 type MemoryRow = typeof memories.$inferSelect;
 type MemoryEmbeddingRow = typeof memoryEmbeddings.$inferSelect;
 
-const EMBEDDING_BATCH_SIZE = 100;
 // Lower-bound for accepting a vector match into the hybrid result. Tuned for
 // short coding-rule corpora at 0.7 (rules look very similar embedded so the
 // floor keeps off-topic matches out). For retrieval evals over conversational
@@ -417,8 +417,7 @@ export async function bootstrapEmbeddings(
   }
 
   let total = 0;
-  for (let i = 0; i < pending.length; i += EMBEDDING_BATCH_SIZE) {
-    const batch = pending.slice(i, i + EMBEDDING_BATCH_SIZE);
+  await processInResponsiveBatches(pending, async (batch) => {
     const embeddings = await generateEmbeddings(
       batch.map((row) => row.text),
       config,
@@ -429,7 +428,7 @@ export async function bootstrapEmbeddings(
       storeEmbedding(db, batch[j].id, batch[j].text, embeddings[j], config);
       total++;
     }
-  }
+  });
 
   rebuildMemoryFtsIndex(db, options);
   rebuildMemoryVecIndex(db, config, options);

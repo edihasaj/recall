@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.7 - 2026-08-14
+
+### Fixed
+
+- **Embedding catch-up no longer starves daemon health and hook requests.**
+  Memory and history backfills now use bounded native-inference batches and
+  yield to the event loop between batches, keeping HTTP responsive while large
+  embedding backlogs drain.
+
 ## 1.0.6 - 2026-08-14
 
 ### Fixed
