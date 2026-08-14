@@ -130,6 +130,18 @@ describe("isNonUserCaptureContext — adversarial / system-context guard", () =>
     expect(isNonUserCaptureContext(
       "You are an expert at upholding safety and compliance standards for Codex ambient suggestions.\nI will present two categories.",
     )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "You are the implementation worker for one isolated Git worktree. Inspect files before changing them.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "You are reviewing GitHub pull request dayshape/dayshape#7042 on behalf of the maintainer. Title: Fix dimensions.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "# GitHub Issue Workorder: WCAG AA contrast failures\n- Project: oktapod",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "Continue the previous coding task using user-provided context only. Latest meaningful user ask: fix the build.",
+    )).toBe(true);
   });
 
   it("does NOT reject legitimate durable rules", () => {

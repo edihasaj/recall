@@ -58,8 +58,9 @@ When a user prompt arrives on `UserPromptSubmit`, Recall has to decide whether a
 The hook does **not** try to extract rules with regex. Instead:
 
 1. Recall first quarantines known non-user hook traffic, including system and
-   compaction scaffolding plus Codex task-title, ambient-suggestion, and
-   ambient-safety judge prompts. A cheap **multi-language pre-screen** then asks
+   compaction scaffolding plus Codex task-title, ambient-suggestion,
+   ambient-safety judge, implementation-worker, and generated GitHub workorder
+   prompts. A cheap **multi-language pre-screen** then asks
    "is this prompt worth showing to the LLM at all?" It looks for
    imperative/save-intent markers in en/es/fr/de/it/pt/ru/zh/ja/sq/tr (e.g.
    `always`/`never`/`remember`, `siempre`, `toujours`, `immer`, `всегда`, `总是`,

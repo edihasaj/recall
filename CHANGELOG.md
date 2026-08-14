@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4 - 2026-08-14
+
+### Fixed
+
+- **Orchestration workorders no longer become user memories.** Recall now
+  quarantines Mission Runtime implementation-worker prompts, automated GitHub
+  review and issue workorders, and continuation scaffolding before capture;
+  cleanup removes existing candidates from those prompt families.
+
 ## 1.0.3 - 2026-08-14
 
 ### Fixed

@@ -30,7 +30,7 @@ const EPHEMERAL_TASK_CONTEXT_RE =
 // the user. Exact family anchors keep the quarantine narrow while covering
 // prompt revisions that retain the stable opening contract.
 const CODEX_INTERNAL_PROMPT_RE =
-  /(?:^\s*generate a title and a git branch name for a coding agent\b|^\s*#\s*overview\s+generate\s+0\s+to\s+3\s+hyperpersonalized suggestions for what this user can do with codex\b|^\s*you are an expert at upholding safety and compliance standards for codex ambient suggestions\b)/i;
+  /(?:^\s*generate a title and a git branch name for a coding agent\b|^\s*#\s*overview\s+generate\s+0\s+to\s+3\s+hyperpersonalized suggestions for what this user can do with codex\b|^\s*you are an expert at upholding safety and compliance standards for codex ambient suggestions\b|^\s*you are the implementation worker for one isolated git worktree\b|^\s*you are reviewing github pull request\b[^\n]*\bon behalf of the maintainer\b|^\s*#\s*github issue workorder\s*:|^\s*continue the previous coding task using user-provided context only\b)/i;
 
 function looksLikeQuestionContext(text: string): boolean {
   if (/\b(?:always|never|remember|memorize|save this|from now on|by default|make it a rule)\b/i.test(text)) {
