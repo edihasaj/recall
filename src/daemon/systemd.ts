@@ -43,10 +43,20 @@ export function installSystemdUnit(opts: SystemdOptions = {}): SystemdStatus {
   writeFileSync(cfg.unitPath, renderUnit(cfg), { mode: 0o600 });
   chmodSync(cfg.unitPath, 0o600);
 
-  systemctl(["--user", "daemon-reload"]);
-  systemctl(["--user", "enable", "--now", `${cfg.label}.service`]);
+  for (const args of systemdInstallCommands(cfg.label)) systemctl(args);
 
   return getSystemdStatus(cfg.label);
+}
+
+export function systemdInstallCommands(label = DEFAULT_LABEL): string[][] {
+  const service = `${label}.service`;
+  return [
+    ["--user", "daemon-reload"],
+    ["--user", "enable", service],
+    // `enable --now` leaves an already-active process untouched. Restart so a
+    // package upgrade actually runs the newly installed daemon code.
+    ["--user", "restart", service],
+  ];
 }
 
 export function uninstallSystemdUnit(label = DEFAULT_LABEL): SystemdStatus {

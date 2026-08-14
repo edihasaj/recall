@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.10 - 2026-08-14
+
+### Fixed
+
+- **Linux daemon installs activate upgraded code.** Systemd installation now
+  enables and restarts the user service after daemon reload; upgrading a
+  globally installed package can no longer leave the old daemon process
+  serving an earlier version.
+
 ## 1.0.9 - 2026-08-14
 
 ### Fixed
