@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8 - 2026-08-14
+
+### Fixed
+
+- **Background embedding yields after every row.** Real-daemon load testing
+  showed eight-row ONNX batches could still block health requests for more
+  than three seconds; catch-up now gives HTTP and hooks an event-loop turn
+  after each embedding.
+
 ## 1.0.7 - 2026-08-14
 
 ### Fixed
