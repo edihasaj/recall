@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.6 - 2026-08-14
+
+### Fixed
+
+- **Local macOS builds always package the Node 22 native ABI.** The app staging
+  step now rebuilds `better-sqlite3` with the embedded runtime and smoke-tests
+  the binding before Xcode packaging, even when the developer shell uses a
+  newer Node version.
+
 ## 1.0.5 - 2026-08-14
 
 ### Fixed

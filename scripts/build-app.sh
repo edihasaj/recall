@@ -38,6 +38,18 @@ rsync -a "$root_dir/dist/" "$runtime_dir/dist/"
 rsync -a "$root_dir/drizzle/" "$runtime_dir/drizzle/"
 rsync -a "$root_dir/node_modules/" "$runtime_dir/node_modules/"
 cp "$root_dir/package.json" "$runtime_dir/package.json"
+cp "$root_dir/package-lock.json" "$runtime_dir/package-lock.json"
+
+# The developer shell may run a newer Node than the embedded Node 22. Always
+# rebuild ABI-bound modules inside the staged runtime with the binary that will
+# load them; never trust the workspace binding copied above.
+env PATH="$(dirname "$node_bin"):$PATH" \
+  "$node_bin" "$(command -v npm)" rebuild better-sqlite3 \
+  --prefix "$runtime_dir" \
+  --no-audit \
+  --no-fund
+"$runtime_dir/bin/node" -e \
+  "const Database = require('$runtime_dir/node_modules/better-sqlite3'); const db = new Database(':memory:'); db.close();"
 
 xcodegen generate --spec "$app_dir/project.yml"
 
