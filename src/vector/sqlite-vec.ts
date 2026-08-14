@@ -3,6 +3,7 @@ import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import type { EmbeddingConfig } from "../types.js";
+import { BACKGROUND_INDEX_BATCH_SIZE, processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 
 const VEC_MEMORY_INDEX = "vec_memory_index";
 const loadedClients = new WeakSet<object>();
@@ -174,6 +175,57 @@ export function rebuildMemoryVecIndex(
   });
 
   insertMany(rows);
+  return rows.length;
+}
+
+export async function rebuildMemoryVecIndexResponsive(
+  db: RecallDb,
+  config: EmbeddingConfig,
+  options: { repo?: string } = {},
+): Promise<number> {
+  const rows = db.select({
+    id: memories.id,
+    repo: memories.repo,
+    status: memories.status,
+    type: memories.type,
+    scope: memories.scope,
+    index_dimensions: memoryEmbeddings.index_dimensions,
+    embedding: memoryEmbeddings.embedding,
+  })
+    .from(memories)
+    .innerJoin(memoryEmbeddings, eq(memoryEmbeddings.memory_id, memories.id))
+    .all()
+    .filter((row) => !options.repo || row.repo === options.repo);
+  const targetDimension = getMemoryVecDimension(rows) ?? config.dimensions;
+  if (options.repo) {
+    if (rows.length > 0) ensureMemoryVecIndex(db, targetDimension);
+    if (!hasMemoryVecIndex(db)) return 0;
+    getSqlite(db).prepare(`delete from ${VEC_MEMORY_INDEX} where repo = ?`).run(options.repo);
+    if (rows.length === 0) return 0;
+  } else {
+    dropMemoryVecIndex(db);
+    ensureMemoryVecIndex(db, targetDimension);
+  }
+  const sqlite = getSqlite(db);
+  const stmt = sqlite.prepare(`
+    insert into ${VEC_MEMORY_INDEX} (embedding, memory_id, repo, status, type, scope)
+    values (?, ?, ?, ?, ?, ?)
+  `);
+  const insertMany = sqlite.transaction((batch: typeof rows) => {
+    for (const row of batch) {
+      stmt.run(
+        projectIndexBuffer(row.embedding, row.index_dimensions),
+        row.id,
+        row.repo ?? "",
+        row.status,
+        row.type,
+        row.scope,
+      );
+    }
+  });
+  await processInResponsiveBatches(rows, async (batch) => { insertMany(batch); }, {
+    batchSize: BACKGROUND_INDEX_BATCH_SIZE,
+  });
   return rows.length;
 }
 

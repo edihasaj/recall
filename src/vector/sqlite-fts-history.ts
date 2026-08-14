@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets } from "../db/schema.js";
 import { getSynonyms } from "./synonyms.js";
+import { BACKGROUND_INDEX_BATCH_SIZE, processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 
 const FTS_HISTORY_INDEX = "fts_history_index";
 const FTS_TOKENIZER = `porter unicode61 remove_diacritics 2`;
@@ -104,6 +105,34 @@ export function rebuildHistoryFtsIndex(
     }
   });
   insertMany(rows);
+  return rows.length;
+}
+
+export async function rebuildHistoryFtsIndexResponsive(
+  db: RecallDb,
+  options: { repo?: string } = {},
+): Promise<number> {
+  const sqlite = getSqlite(db);
+  if (options.repo) {
+    ensureHistoryFtsIndex(db);
+    sqlite.prepare(`delete from ${FTS_HISTORY_INDEX} where repo = ?`).run(options.repo);
+  } else {
+    sqlite.exec(`drop table if exists ${FTS_HISTORY_INDEX};`);
+    ensureHistoryFtsIndex(db);
+  }
+
+  const rows = db.select().from(historySnippets).all()
+    .filter((row) => !options.repo || row.repo === options.repo);
+  const stmt = sqlite.prepare(`
+    insert into ${FTS_HISTORY_INDEX} (snippet_id, text, repo, kind)
+    values (?, ?, ?, ?)
+  `);
+  const insertMany = sqlite.transaction((batch: typeof rows) => {
+    for (const row of batch) stmt.run(row.id, row.text, row.repo ?? "", row.kind);
+  });
+  await processInResponsiveBatches(rows, async (batch) => { insertMany(batch); }, {
+    batchSize: BACKGROUND_INDEX_BATCH_SIZE,
+  });
   return rows.length;
 }
 

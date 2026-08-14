@@ -1,4 +1,5 @@
 export const BACKGROUND_EMBEDDING_BATCH_SIZE = 1;
+export const BACKGROUND_INDEX_BATCH_SIZE = 32;
 
 export interface ResponsiveBatchOptions {
   batchSize?: number;

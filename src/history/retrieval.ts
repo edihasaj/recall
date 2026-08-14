@@ -7,14 +7,14 @@ import { generateEmbedding, generateEmbeddings, loadEmbeddingConfigFromEnv, proj
 import { resolveProvider } from "../embeddings/providers/index.js";
 import { processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 import {
-  rebuildHistoryVecIndex,
+  rebuildHistoryVecIndexResponsive,
   removeHistoryVecRow,
   searchHistoryVecIndex,
   upsertHistoryVecRow,
   verifyHistoryVecIndex,
 } from "../vector/sqlite-vec-history.js";
 import {
-  rebuildHistoryFtsIndex,
+  rebuildHistoryFtsIndexResponsive,
   searchHistoryFtsIndex,
   syncHistoryFtsIndex,
   verifyHistoryFtsIndex,
@@ -192,8 +192,8 @@ export async function bootstrapHistoryEmbeddings(
     }
   });
 
-  rebuildHistoryFtsIndex(db, options);
-  rebuildHistoryVecIndex(db, config, options);
+  await rebuildHistoryFtsIndexResponsive(db, options);
+  await rebuildHistoryVecIndexResponsive(db, config, options);
   return total;
 }
 

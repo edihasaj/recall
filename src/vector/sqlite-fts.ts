@@ -2,6 +2,7 @@ import type { RecallDb } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { memories } from "../db/schema.js";
 import { getSynonyms } from "./synonyms.js";
+import { BACKGROUND_INDEX_BATCH_SIZE, processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 
 const FTS_MEMORY_INDEX = "fts_memory_index";
 
@@ -217,6 +218,36 @@ export function rebuildMemoryFtsIndex(
   });
 
   insertMany(rows);
+  return rows.length;
+}
+
+export async function rebuildMemoryFtsIndexResponsive(
+  db: RecallDb,
+  options: { repo?: string } = {},
+): Promise<number> {
+  if (options.repo) {
+    ensureMemoryFtsIndex(db);
+    getSqlite(db).prepare(`delete from ${FTS_MEMORY_INDEX} where repo = ?`).run(options.repo);
+  } else {
+    dropMemoryFtsIndex(db);
+    ensureMemoryFtsIndex(db);
+  }
+  const rows = db.select().from(memories).all()
+    .filter((row) => !options.repo || row.repo === options.repo)
+    .filter((row) => shouldIndexLexically(row));
+  const sqlite = getSqlite(db);
+  const stmt = sqlite.prepare(`
+    insert into ${FTS_MEMORY_INDEX} (memory_id, text, repo, status, type, scope, path_scope)
+    values (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertMany = sqlite.transaction((batch: typeof rows) => {
+    for (const row of batch) {
+      stmt.run(row.id, row.text, row.repo ?? "", row.status, row.type, row.scope, row.path_scope ?? "");
+    }
+  });
+  await processInResponsiveBatches(rows, async (batch) => { insertMany(batch); }, {
+    batchSize: BACKGROUND_INDEX_BATCH_SIZE,
+  });
   return rows.length;
 }
 

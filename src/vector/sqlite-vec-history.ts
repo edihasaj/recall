@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { historySnippetEmbeddings, historySnippets } from "../db/schema.js";
 import type { EmbeddingConfig } from "../types.js";
+import { BACKGROUND_INDEX_BATCH_SIZE, processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 
 const VEC_HISTORY_INDEX = "vec_history_index";
 const loadedClients = new WeakSet<object>();
@@ -141,6 +142,48 @@ export function rebuildHistoryVecIndex(
   });
 
   insertMany(rows);
+  return rows.length;
+}
+
+export async function rebuildHistoryVecIndexResponsive(
+  db: RecallDb,
+  config: EmbeddingConfig,
+  options: { repo?: string } = {},
+): Promise<number> {
+  const rows = db.select({
+    id: historySnippets.id,
+    repo: historySnippets.repo,
+    kind: historySnippets.kind,
+    index_dimensions: historySnippetEmbeddings.index_dimensions,
+    embedding: historySnippetEmbeddings.embedding,
+  })
+    .from(historySnippets)
+    .innerJoin(historySnippetEmbeddings, eq(historySnippetEmbeddings.snippet_id, historySnippets.id))
+    .all()
+    .filter((row) => !options.repo || row.repo === options.repo);
+  const targetDimension = getHistoryVecDimension(rows) ?? config.dimensions;
+  const sqlite = getSqlite(db);
+  if (options.repo) {
+    if (rows.length > 0) ensureHistoryVecIndex(db, targetDimension);
+    if (!hasHistoryVecIndex(db)) return 0;
+    sqlite.prepare(`delete from ${VEC_HISTORY_INDEX} where repo = ?`).run(options.repo);
+    if (rows.length === 0) return 0;
+  } else {
+    sqlite.exec(`drop table if exists ${VEC_HISTORY_INDEX};`);
+    ensureHistoryVecIndex(db, targetDimension);
+  }
+  const stmt = sqlite.prepare(`
+    insert into ${VEC_HISTORY_INDEX} (embedding, snippet_id, repo, kind)
+    values (?, ?, ?, ?)
+  `);
+  const insertMany = sqlite.transaction((batch: typeof rows) => {
+    for (const row of batch) {
+      stmt.run(projectIndexBuffer(row.embedding, row.index_dimensions), row.id, row.repo ?? "", row.kind);
+    }
+  });
+  await processInResponsiveBatches(rows, async (batch) => { insertMany(batch); }, {
+    batchSize: BACKGROUND_INDEX_BATCH_SIZE,
+  });
   return rows.length;
 }
 

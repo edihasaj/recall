@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.9 - 2026-08-14
+
+### Fixed
+
+- **Derived-index rebuilds stay responsive too.** Maintenance now rebuilds
+  memory/history vector and lexical indexes in bounded transactions with
+  event-loop yields, preventing multi-second health stalls after embedding
+  catch-up completes.
+
 ## 1.0.8 - 2026-08-14
 
 ### Fixed

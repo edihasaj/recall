@@ -5,7 +5,7 @@ import { activityEvents, feedbackEvents, historySnippets, implicitSignals, memor
 import {
   bootstrapEmbeddings,
   loadEmbeddingConfigFromEnv,
-  rebuildEmbeddingIndex,
+  rebuildEmbeddingIndexResponsive,
   verifyEmbeddings,
 } from "../embeddings/embeddings.js";
 import {
@@ -173,7 +173,7 @@ export async function runMaintenanceCycle(
     }
 
     if (vector_drift !== 0 || lexical_drift !== 0) {
-      const rebuilt = rebuildEmbeddingIndex(db, embeddingConfig);
+      const rebuilt = await rebuildEmbeddingIndexResponsive(db, embeddingConfig);
       vector_rows_rebuilt = rebuilt.vector_rows;
       lexical_rows_rebuilt = rebuilt.lexical_rows;
     }

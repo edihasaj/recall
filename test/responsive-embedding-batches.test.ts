@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BACKGROUND_EMBEDDING_BATCH_SIZE,
+  BACKGROUND_INDEX_BATCH_SIZE,
   processInResponsiveBatches,
 } from "../src/embeddings/responsive-batches.js";
 
 describe("responsive embedding batches", () => {
   it("limits default native inference to one row per event-loop turn", () => {
     expect(BACKGROUND_EMBEDDING_BATCH_SIZE).toBe(1);
+    expect(BACKGROUND_INDEX_BATCH_SIZE).toBe(32);
   });
 
   it("bounds native inference work and yields between batches", async () => {

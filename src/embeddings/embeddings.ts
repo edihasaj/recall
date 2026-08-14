@@ -13,6 +13,7 @@ import { resolveProvider } from "./providers/index.js";
 import type { EmbeddingPurpose } from "./providers/types.js";
 import {
   rebuildMemoryVecIndex,
+  rebuildMemoryVecIndexResponsive,
   removeMemoryVecRow,
   searchMemoryVecIndex,
   upsertMemoryVecRow,
@@ -20,6 +21,7 @@ import {
 } from "../vector/sqlite-vec.js";
 import {
   rebuildMemoryFtsIndex,
+  rebuildMemoryFtsIndexResponsive,
   searchMemoryFtsIndex,
   syncMemoryFtsIndex,
   verifyMemoryFtsIndex,
@@ -430,8 +432,8 @@ export async function bootstrapEmbeddings(
     }
   });
 
-  rebuildMemoryFtsIndex(db, options);
-  rebuildMemoryVecIndex(db, config, options);
+  await rebuildMemoryFtsIndexResponsive(db, options);
+  await rebuildMemoryVecIndexResponsive(db, config, options);
   return total;
 }
 
@@ -486,6 +488,18 @@ export function rebuildEmbeddingIndex(
     vector_rows: vectorRows,
     lexical_rows: lexicalRows,
   };
+}
+
+export async function rebuildEmbeddingIndexResponsive(
+  db: RecallDb,
+  config: EmbeddingConfig | null,
+  options: { repo?: string } = {},
+) {
+  const lexicalRows = await rebuildMemoryFtsIndexResponsive(db, options);
+  const vectorRows = config
+    ? await rebuildMemoryVecIndexResponsive(db, config, options)
+    : 0;
+  return { vector_rows: vectorRows, lexical_rows: lexicalRows };
 }
 
 function lexicalRankToScore(rank: number, position: number): number {
