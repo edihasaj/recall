@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.5 - 2026-08-14
+
+### Fixed
+
+- **Pending maintenance resumes immediately after daemon restart.** Recall now
+  wakes the LLM dispatcher shortly after startup, so tasks carried across a
+  restart no longer wait for the 24-hour fallback tick or an unrelated new
+  capture.
+
 ## 1.0.4 - 2026-08-14
 
 ### Fixed

@@ -66,6 +66,7 @@ import { dispatchPendingTasks } from "./maintenance/dispatcher.js";
 import {
   dispatchBatchNeedsContinuation,
   maintenanceCreatedDispatchableTasks,
+  scheduleDispatcherStartupWake,
 } from "./maintenance/dispatch-scheduling.js";
 import { runDeterministicCleanup } from "./maintenance/cleanup.js";
 import { computeQualityReport, listQualitySnapshots, recordQualitySnapshot } from "./maintenance/quality.js";
@@ -210,6 +211,7 @@ function wakeDispatcherDebounced(): void {
 
 function scheduleDispatcherLoop() {
   if (!dispatcherConfig.enabled) return;
+  scheduleDispatcherStartupWake(() => void runDispatcherOnce());
   const timer = setInterval(() => {
     void runDispatcherOnce();
   }, Math.max(60, dispatcherConfig.intervalSeconds) * 1000);

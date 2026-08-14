@@ -9,6 +9,18 @@ interface DispatchBatch {
   released: number;
 }
 
+export const DISPATCHER_STARTUP_DELAY_MS = 3_000;
+
+/** Drain work left pending across daemon restarts without waiting for the daily fallback tick. */
+export function scheduleDispatcherStartupWake(
+  dispatch: () => void,
+  delayMs = DISPATCHER_STARTUP_DELAY_MS,
+): NodeJS.Timeout {
+  const timer = setTimeout(dispatch, delayMs);
+  timer.unref?.();
+  return timer;
+}
+
 export function maintenanceCreatedDispatchableTasks(
   result: MaintenanceQueueDelta,
 ): boolean {
