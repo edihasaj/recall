@@ -694,7 +694,7 @@ function isTempPath(path: string | null): boolean {
   return path.startsWith("/tmp/") || path.startsWith("/private/tmp/") || path.includes("/tmp/");
 }
 
-function isWorkspaceRootAlias(repo: string | null): boolean {
+export function isWorkspaceRootAlias(repo: string | null): boolean {
   return repo === "Projects";
 }
 

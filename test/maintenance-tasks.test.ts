@@ -157,6 +157,24 @@ describe("tier-2 maintenance tasks — phase 1", () => {
     expect(tasks.map((t) => (t.payload as any).snippet_id).sort()).toEqual([s1, s2].sort());
   });
 
+  it("produceSummarizeHistoryTasks never enqueues invalid-scope snippets", () => {
+    const db = freshDb();
+    // The workspace-root alias fed an enqueue → invalid_task abandon →
+    // re-enqueue loop (19k abandoned tasks in one month). Producers must
+    // skip what the janitor would abandon.
+    insertSnippet(db, "Projects");
+    insertSnippet(db, "/tmp/some-checkout");
+    const valid = insertSnippet(db, "test/repo");
+
+    const enqueued = produceSummarizeHistoryTasks(db, {
+      summary_max_age_days: DEFAULT_ENQUEUE_CONFIG.summary_max_age_days,
+    });
+    expect(enqueued).toBe(1);
+
+    const tasks = listTasks(db, { kinds: ["summarize_history"] });
+    expect(tasks.map((t) => (t.payload as any).snippet_id)).toEqual([valid]);
+  });
+
   it("sweepExpiredLeases returns leased tasks to pending and bumps attempts", () => {
     const db = freshDb();
     const id = insertTaskIdempotent(db, {

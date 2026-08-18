@@ -327,6 +327,14 @@ function invalidTaskScopeReasons(repo: string | null): string[] {
   return reasons;
 }
 
+// Producers must not enqueue work the janitor will immediately abandon.
+// Idempotency only spans OPEN tasks, so an invalid-scope source used to loop
+// forever: enqueue → invalid_task abandon → re-enqueue next cycle. One month
+// of that produced 19k abandoned summarize tasks from ~100 bad snippets.
+export function isInvalidTaskRepo(repo: string | null): boolean {
+  return invalidTaskScopeReasons(repo).length > 0;
+}
+
 function payloadString(payload: Record<string, unknown>, key: string): string | null {
   const value = payload[key];
   return typeof value === "string" && value.trim() ? value : null;
@@ -578,6 +586,7 @@ export function produceSummarizeHistoryTasks(
   let enqueued = 0;
   for (const snippet of snippets) {
     if (!snippetHasMeaningfulContent(snippet.text)) continue;
+    if (isInvalidTaskRepo(snippet.repo ?? null)) continue;
     const id = insertTaskIdempotent(db, {
       kind: "summarize_history",
       target: snippet.id,
@@ -722,6 +731,7 @@ export function produceSummarizeSessionTasks(
     if (existing) continue;
 
     const repo = end.repo ?? events.find((e) => e.repo)?.repo ?? null;
+    if (isInvalidTaskRepo(repo)) continue;
     const eventTypes = [...new Set(events.map((e) => e.event_type))];
 
     const id = insertTaskIdempotent(db, {

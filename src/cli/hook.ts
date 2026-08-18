@@ -22,6 +22,7 @@ import {
   startSessionLifecycle,
 } from "../session/lifecycle.js";
 import { peekTasks } from "../maintenance/tasks.js";
+import { isWorkspaceRootAlias } from "../maintenance/cleanup.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { hookCallDedupeKey } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
@@ -1287,7 +1288,12 @@ function extractClaudeToolPath(toolInput?: Record<string, unknown>): string | un
 }
 
 function resolveRepo(repo?: string, repoPath?: string): string | null {
-  return repo?.trim() || inferRepoSlugFromPath(repoPath) || null;
+  const resolved = repo?.trim() || inferRepoSlugFromPath(repoPath) || null;
+  // "Projects" is the workspace root, not a repo: adapters send the cwd
+  // basename when a session runs above any git checkout. Recording it as a
+  // repo fed an enqueue → invalid_task abandon → re-enqueue churn loop
+  // (19k abandoned tasks in one month). Treat it as repo-less instead.
+  return isWorkspaceRootAlias(resolved) ? null : resolved;
 }
 
 function requireNonEmpty(value: string, field: string): string {
