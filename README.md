@@ -157,13 +157,27 @@ Supported runtimes, and how deep the integration goes:
 | Runtime | Integration | Capture |
 | --- | --- | --- |
 | Claude Code | MCP + lifecycle hooks + managed `~/.claude/CLAUDE.md` block | automatic |
-| Codex | MCP + `hooks.json` (legacy `notify` bridge below 0.115.0) | automatic |
+| Codex | MCP + `hooks.json` (legacy `notify` bridge below 0.115.0), wired into every `CODEX_HOME` profile | automatic |
 | GitHub Copilot | MCP (`~/.copilot/mcp-config.json`) + `.github/copilot-instructions.md` | model-driven |
 | opencode | MCP (`~/.config/opencode/opencode.json`) + `~/.config/opencode/AGENTS.md` | model-driven |
 | Cursor | MCP (`~/.cursor/mcp.json`) + `.cursor/rules/recall.mdc` | model-driven |
 | Windsurf | MCP (`~/.codeium/windsurf/mcp_config.json`) + global rules | model-driven |
 
 Runtimes without a lifecycle-hook API can't be called on prompt/tool/session events, so Recall installs a managed rules block instructing the agent to call `capture_correction` and `query` itself. Capture there depends on the model following it — the hook-based runtimes do not.
+
+#### Codex profiles (multiple `CODEX_HOME`s)
+
+Codex supports multiple homes, and tools that drive it (Paseo, per-account
+setups) commonly point providers at `~/.codex-primary`, `~/.codex-secondary`,
+and so on. `recall setup` wires **every** profile it finds, not just `~/.codex`:
+
+- The default home (`CODEX_HOME` if set, else `~/.codex`), plus any `~/.codex-*`
+  sibling that looks like a real Codex home (`config.toml`, `auth.json`, or
+  `sessions/`). Backup-suffixed directories are skipped.
+- Set `RECALL_CODEX_HOMES` to a `:`/`,` separated list to override discovery.
+- Profiles that share a symlinked `config.toml` are written once, and the
+  symlink is followed rather than replaced — so a shared-config layout stays
+  shared instead of forking into diverging copies.
 
 Install + setup behavior:
 

@@ -1,8 +1,11 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -56,6 +59,131 @@ export interface CodexHookInstallOptions {
 
 const configPath = () => join(resolveUserHomeDir(), ...CODEX_CONFIG_RELATIVE_PATH);
 const hooksJsonPath = () => join(resolveUserHomeDir(), ...CODEX_HOOKS_RELATIVE_PATH);
+
+/** Directory names under $HOME that are never treated as Codex homes. */
+const CODEX_HOME_IGNORED_SUFFIXES = [".bak", ".backup", ".old", ".orig", ".tmp"];
+
+function expandHomePath(raw: string, home: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed === "~") return home;
+  if (trimmed.startsWith("~/")) return join(home, trimmed.slice(2));
+  return resolve(trimmed);
+}
+
+function looksLikeCodexHome(dir: string): boolean {
+  return (
+    existsSync(join(dir, "config.toml")) ||
+    existsSync(join(dir, "auth.json")) ||
+    existsSync(join(dir, "sessions"))
+  );
+}
+
+/**
+ * Every Codex home that should receive Recall wiring.
+ *
+ * Codex supports multiple profiles via CODEX_HOME, and tools that drive it
+ * (Paseo, per-account setups) routinely point providers at `~/.codex-primary`,
+ * `~/.codex-secondary`, etc. Installing only into `~/.codex` silently leaves
+ * those profiles without Recall, so we discover the siblings too.
+ *
+ * Resolution order:
+ *  1. `RECALL_CODEX_HOMES` — explicit `:`/`,` separated override, used verbatim.
+ *  2. `CODEX_HOME` if set, else `~/.codex`, plus auto-discovered `~/.codex-*`
+ *     siblings that look like real Codex homes.
+ *
+ * Results are deduped by realpath so profiles that symlink `config.toml` back
+ * to a shared home are only written once.
+ */
+export function resolveCodexHomes(options: { home?: string; env?: NodeJS.ProcessEnv } = {}): string[] {
+  const env = options.env ?? process.env;
+  const home = options.home ?? resolveUserHomeDir();
+
+  const explicit = env.RECALL_CODEX_HOMES?.trim();
+  if (explicit) {
+    return dedupeByRealPath(
+      explicit
+        .split(/[:,]/)
+        .map((entry) => expandHomePath(entry, home))
+        .filter(Boolean),
+    );
+  }
+
+  const primary = env.CODEX_HOME?.trim()
+    ? expandHomePath(env.CODEX_HOME, home)
+    : join(home, ".codex");
+
+  const discovered: string[] = [];
+  try {
+    for (const entry of readdirSync(home, { withFileTypes: true })) {
+      if (!entry.name.startsWith(".codex-")) continue;
+      if (CODEX_HOME_IGNORED_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) continue;
+      const candidate = join(home, entry.name);
+      // Follow symlinked homes; statSync resolves them, isDirectory() on the
+      // Dirent would not.
+      if (!statSync(candidate, { throwIfNoEntry: false })?.isDirectory()) continue;
+      if (!looksLikeCodexHome(candidate)) continue;
+      discovered.push(candidate);
+    }
+  } catch {
+    // Unreadable home directory: fall back to the primary home only.
+  }
+
+  discovered.sort();
+  return dedupeByRealPath([primary, ...discovered]);
+}
+
+export interface CodexHookTarget {
+  home: string;
+  configPath: string;
+  hooksPath: string;
+}
+
+/**
+ * The set of Codex config files that should receive hook wiring, one per home,
+ * deduped by realpath so profiles that share a symlinked `config.toml` are
+ * written once instead of fighting over the same file.
+ */
+export function resolveCodexHookTargets(
+  options: { home?: string; env?: NodeJS.ProcessEnv } = {},
+): CodexHookTarget[] {
+  const seen = new Set<string>();
+  const targets: CodexHookTarget[] = [];
+  for (const home of resolveCodexHomes(options)) {
+    const configPathValue = join(home, "config.toml");
+    let key = configPathValue;
+    try {
+      key = realpathSync(configPathValue);
+    } catch {
+      // Not created yet: dedupe on the literal path.
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push({
+      home,
+      configPath: configPathValue,
+      hooksPath: join(home, "hooks.json"),
+    });
+  }
+  return targets;
+}
+
+function dedupeByRealPath(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const path of paths) {
+    let key = path;
+    try {
+      key = realpathSync(path);
+    } catch {
+      // Missing path: dedupe on the literal path instead.
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(path);
+  }
+  return out;
+}
 
 export const codexAdapter: AgentAdapter = {
   name: "codex",
@@ -465,7 +593,26 @@ function readCodexHooksJson(targetPath: string): { raw: string | null; parsed: C
   return { raw, parsed: parsed as CodexHooksFile };
 }
 
-function writeJsonFile(targetPath: string, previousRaw: string | null, value: unknown) {
+/**
+ * Resolve a config path to the file the write should actually land on.
+ *
+ * Multi-profile Codex setups routinely symlink `config.toml` / `hooks.json`
+ * from `~/.codex-primary` back to a shared `~/.codex`. Our writes are atomic
+ * (`writeFileSync` to a temp path + `renameSync`), and `renameSync` replaces a
+ * symlink with a real file — which would silently fork every profile onto its
+ * own diverging copy. Following the link first keeps the shared file shared.
+ */
+function resolveWriteTarget(targetPath: string): string {
+  try {
+    return realpathSync(targetPath);
+  } catch {
+    // Path does not exist yet: write it where it was asked for.
+    return targetPath;
+  }
+}
+
+function writeJsonFile(rawTargetPath: string, previousRaw: string | null, value: unknown) {
+  const targetPath = resolveWriteTarget(rawTargetPath);
   const parentDir = dirname(targetPath);
   mkdirSync(parentDir, { recursive: true });
   if (previousRaw != null) {
@@ -606,10 +753,11 @@ function renderTomlStringArray(values: readonly string[]): string {
 }
 
 function writeConfigFile(
-  configPathValue: string,
+  rawConfigPath: string,
   previousRaw: string | null,
   nextRaw: string,
 ) {
+  const configPathValue = resolveWriteTarget(rawConfigPath);
   const parentDir = dirname(configPathValue);
   mkdirSync(parentDir, { recursive: true });
 

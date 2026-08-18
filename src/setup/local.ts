@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   installClaudeCodeHooks,
@@ -8,7 +8,7 @@ import {
   uninstallClaudeCodeHooks,
   uninstallClaudeCodeMemoryOverride,
 } from "../agents/claude-code.js";
-import { installCodexHooks, uninstallCodexHooks } from "../agents/codex.js";
+import { installCodexHooks, resolveCodexHookTargets, uninstallCodexHooks } from "../agents/codex.js";
 import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index.js";
 import type { AgentName } from "../agents/types.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
@@ -84,7 +84,11 @@ export interface RecallSetupResult {
   agents: AgentSetupResult[];
 }
 
-type CommandRunner = (command: string, args: string[]) => void;
+type CommandRunner = (
+  command: string,
+  args: string[],
+  options?: { env?: NodeJS.ProcessEnv },
+) => void;
 
 export function resolveRuntimePaths(appPath?: string) {
   // macOS bundled-app layout: /Applications/Recall.app/Contents/Resources/Runtime
@@ -224,6 +228,7 @@ function setupAgent(
           configPath: hookConfigPath!,
           dryRun: options.dryRun,
           paths: options.paths,
+          scope: options.scope,
           uninstallHooks: options.uninstallHooks,
           promptInjection: options.promptInjection,
         });
@@ -323,12 +328,22 @@ function configureMcp(
     if (options.scope === "project") {
       return skipped("project-scoped Codex MCP not supported by Codex CLI");
     }
+    const targets = resolveCodexHookTargets();
     if (options.dryRun) {
-      return ok("would configure global Codex MCP server");
+      return ok(describeCodexTargets("would configure global Codex MCP server", targets));
     }
-    tryRun(options.runner, "codex", ["mcp", "remove", "recall"]);
-    options.runner("codex", ["mcp", "add", "recall", "--", options.paths.runtimeNodePath, options.paths.runtimeMcpPath]);
-    return ok("configured global Codex MCP server");
+    for (const target of targets) {
+      // `codex mcp add` writes to $CODEX_HOME/config.toml, so each profile needs
+      // its own invocation — the CLI has no multi-home mode.
+      const env = { ...process.env, CODEX_HOME: target.home };
+      tryRun(options.runner, "codex", ["mcp", "remove", "recall"], { env });
+      options.runner(
+        "codex",
+        ["mcp", "add", "recall", "--", options.paths.runtimeNodePath, options.paths.runtimeMcpPath],
+        { env },
+      );
+    }
+    return ok(describeCodexTargets("configured global Codex MCP server", targets));
   }
 
   if (!hasCommand("claude")) return skipped("claude not found on PATH");
@@ -347,46 +362,75 @@ function configureHooks(
     configPath: string;
     dryRun: boolean;
     paths: ReturnType<typeof resolveRuntimePaths>;
+    scope: SetupScope;
     uninstallHooks: boolean;
     promptInjection?: boolean;
   },
 ): SetupStepResult {
+  // Project scope pins hooks to the repo's own .codex/.claude directory, so the
+  // multi-home sweep below only applies to global installs.
+  const codexTargets = agent === "codex"
+    ? (options.scope === "project"
+        ? [{
+            home: dirname(options.configPath),
+            configPath: options.configPath,
+            hooksPath: join(dirname(options.configPath), "hooks.json"),
+          }]
+        : resolveCodexHookTargets())
+    : [];
+
   if (options.dryRun) {
-    return ok(
-      options.uninstallHooks
-        ? `would remove hooks from ${options.configPath}`
-        : `would install hooks into ${options.configPath}${options.promptInjection === false ? " (prompt injection opt-out)" : ""}`,
-    );
+    const base = options.uninstallHooks
+      ? `would remove hooks from ${options.configPath}`
+      : `would install hooks into ${options.configPath}${options.promptInjection === false ? " (prompt injection opt-out)" : ""}`;
+    return ok(agent === "codex" ? describeCodexTargets(base, codexTargets) : base);
   }
 
-  const codexHooksPath = agent === "codex"
-    ? join(dirname(options.configPath), "hooks.json")
-    : undefined;
-
-  const result = agent === "claude-code"
-    ? (options.uninstallHooks
-        ? uninstallClaudeCodeHooks({ configPath: options.configPath })
-        : installClaudeCodeHooks({
-            configPath: options.configPath,
-            cliPath: options.paths.runtimeCliPath,
-            nodePath: options.paths.runtimeNodePath,
-            promptInjection: options.promptInjection,
-          }))
-    : (options.uninstallHooks
-        ? uninstallCodexHooks({ configPath: options.configPath, hooksPath: codexHooksPath })
+  if (agent === "codex") {
+    // One write per distinct config file: every CODEX_HOME profile needs its own
+    // hooks.json, and profiles sharing a symlinked config are already deduped.
+    const results = codexTargets.map((target) =>
+      options.uninstallHooks
+        ? uninstallCodexHooks({ configPath: target.configPath, hooksPath: target.hooksPath })
         : installCodexHooks({
-            configPath: options.configPath,
-            hooksPath: codexHooksPath,
+            configPath: target.configPath,
+            hooksPath: target.hooksPath,
             cliPath: options.paths.runtimeCliPath,
             nodePath: options.paths.runtimeNodePath,
             promptInjection: options.promptInjection,
-          }));
+          }),
+    );
+    const failed = results.filter((entry) => !entry.ok);
+    const headline = failed.length > 0
+      ? failed[0]!.message
+      : results[0]?.message ?? "no Codex home found";
+    return {
+      enabled: true,
+      ok: failed.length === 0 && results.length > 0,
+      message: describeCodexTargets(headline, codexTargets),
+    };
+  }
+
+  const result = options.uninstallHooks
+    ? uninstallClaudeCodeHooks({ configPath: options.configPath })
+    : installClaudeCodeHooks({
+        configPath: options.configPath,
+        cliPath: options.paths.runtimeCliPath,
+        nodePath: options.paths.runtimeNodePath,
+        promptInjection: options.promptInjection,
+      });
 
   return {
     enabled: true,
     ok: result.ok,
     message: result.message,
   };
+}
+
+function describeCodexTargets(message: string, targets: { home: string }[]): string {
+  if (targets.length <= 1) return message;
+  const names = targets.map((target) => basename(target.home)).join(", ");
+  return `${message} across ${targets.length} Codex homes (${names})`;
 }
 
 function resolveTargetAgents(target?: AgentName[]): AgentName[] {
@@ -419,13 +463,18 @@ function resolveHookConfigPath(agent: AgentName, scope: SetupScope, cwd: string)
     : join(resolveUserHomeDir(), ".claude", "settings.json");
 }
 
-function defaultRunner(command: string, args: string[]) {
-  execFileSync(command, args, stdioOpts());
+function defaultRunner(command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) {
+  execFileSync(command, args, { ...stdioOpts(), ...(options?.env ? { env: options.env } : {}) });
 }
 
-function tryRun(runner: CommandRunner, command: string, args: string[]) {
+function tryRun(
+  runner: CommandRunner,
+  command: string,
+  args: string[],
+  options?: { env?: NodeJS.ProcessEnv },
+) {
   try {
-    runner(command, args);
+    runner(command, args, options);
   } catch {
     return;
   }

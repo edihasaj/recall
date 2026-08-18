@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import Database from "better-sqlite3";
 import { getDbPath, getDbUserVersion, RECALL_DB_USER_VERSION } from "../db/client.js";
 import { getEmbeddingModelInfo } from "../embeddings/embeddings.js";
@@ -7,6 +7,7 @@ import { getLaunchAgentStatus } from "../daemon/launchd.js";
 import { getSystemdStatus } from "../daemon/systemd.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
 import { checkClaudeCodeMemoryOverride } from "../agents/claude-code.js";
+import { resolveCodexHomes } from "../agents/codex.js";
 import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index.js";
 import type { AgentName, RulesStatus } from "../agents/types.js";
 
@@ -385,9 +386,9 @@ function inspectClaudeCodeInstall(home: string): AgentDoctorEntry {
   };
 }
 
-function inspectCodexInstall(home: string): AgentDoctorEntry {
-  const configPath = join(home, ".codex", "config.toml");
-  const hooksPath = join(home, ".codex", "hooks.json");
+function inspectCodexHome(codexHome: string) {
+  const configPath = join(codexHome, "config.toml");
+  const hooksPath = join(codexHome, "hooks.json");
   const detected = existsSync(configPath) || hasCommand("codex");
   const notes: string[] = [];
 
@@ -415,19 +416,38 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
       );
     }
     if (!featureFlagSet) notes.push("hooks = true (or legacy codex_hooks = true) missing from [features]");
-    if (!managedHooksJson) notes.push("No Recall-managed entries in ~/.codex/hooks.json");
+    if (!managedHooksJson) notes.push(`No Recall-managed entries in ${hooksPath}`);
   } else if (detected) {
     notes.push("Codex CLI detected but config.toml missing");
+  }
+
+  return { codexHome, configPath, hooksPath, detected, mcp, hooks, legacy_notify_bridge, notes };
+}
+
+function inspectCodexInstall(home: string): AgentDoctorEntry {
+  const homes = resolveCodexHomes({ home });
+  const entries = homes.map((codexHome) => inspectCodexHome(codexHome));
+  const primary = entries[0]!;
+
+  const detected = entries.some((entry) => entry.detected);
+  const notes: string[] = [...primary.notes];
+
+  // A profile that quietly lost its wiring is the failure this check exists to
+  // catch, so aggregate strictly: healthy means every discovered home is wired.
+  for (const entry of entries.slice(1)) {
+    for (const note of entry.notes) {
+      notes.push(`${basename(entry.codexHome)}: ${note}`);
+    }
   }
 
   return {
     agent: "codex",
     detected,
-    mcp,
-    hooks,
-    legacy_notify_bridge,
-    config_path: configPath,
-    hook_path: hooksPath,
+    mcp: entries.every((entry) => entry.mcp),
+    hooks: entries.every((entry) => entry.hooks),
+    legacy_notify_bridge: entries.some((entry) => entry.legacy_notify_bridge),
+    config_path: primary.configPath,
+    hook_path: primary.hooksPath,
     notes,
   };
 }
