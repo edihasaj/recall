@@ -476,12 +476,15 @@ function existsSimilar(
   repo: string | null,
   rule: ExtractedRule,
 ): boolean {
-  if (!repo) return false;
+  // No-repo (global-scope) rules dedup against the other no-repo memories.
+  // Bailing out here let every paraphrase of a global rule pile up as a new
+  // candidate the user had to reject again.
   const ruleIsHighRisk = rule.is_destructive_risky || isHighRiskRule(rule.text);
   const candidates = queryMemories(db, {
     repo: repo ?? undefined,
     ...(ruleIsHighRisk ? {} : { type: rule.type as MemoryType }),
   })
+    .filter((memory) => (repo ? true : memory.repo == null))
     .filter((memory) => memory.status !== "rejected");
   const normalized = rule.text.toLowerCase().trim();
   return candidates.some((memory) => {

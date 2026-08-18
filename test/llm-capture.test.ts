@@ -144,6 +144,23 @@ describe("isNonUserCaptureContext — adversarial / system-context guard", () =>
     )).toBe(true);
   });
 
+  it("rejects LLM-worker system prompts (the oktapod worker poison set)", () => {
+    // Verbatim opening of the prompt that produced the 0.99-confidence active
+    // memory "Compaction summaries must set schema_version to 'semantic_compaction'".
+    expect(isNonUserCaptureContext(
+      "You are the semantic compaction worker for a personal agent runtime.\nReturn JSON only. No markdown. No prose outside JSON.\nRequired schema_version: semantic_compaction",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "You are the active memory recall worker for a personal agent runtime.\n\nReturn JSON only. No markdown. No prose.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "You are a strict relevance judge for retrieved memories. Score each item.",
+    )).toBe(true);
+    expect(isNonUserCaptureContext(
+      "You are the session summarizer for the pipeline. Return JSON only. No markdown.",
+    )).toBe(true);
+  });
+
   it("does NOT reject legitimate durable rules", () => {
     expect(isNonUserCaptureContext("always use pnpm not npm")).toBe(false);
     expect(isNonUserCaptureContext("never commit secrets to the repo")).toBe(false);
@@ -227,6 +244,23 @@ describe("enqueueExtractRulesFromPrompt", () => {
       session_id: "s1",
     });
     expect(peekTasks(db, { kinds: ["extract_rules_from_prompt"] })).toHaveLength(1);
+  });
+});
+
+describe("processCorrection regex fallback global dedup", () => {
+  it("merges a repeated no-repo rule instead of creating a duplicate", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+    const first = await processCorrection(db, "never use em dashes in replies", {
+      sessionId: "s1",
+    });
+    expect(first.ids).toHaveLength(1);
+
+    const second = await processCorrection(db, "never use em dashes in replies", {
+      sessionId: "s2",
+    });
+    expect(second.ids).toEqual(first.ids);
+    expect(queryMemories(db, {})).toHaveLength(1);
   });
 });
 
@@ -385,6 +419,71 @@ describe("applyExtractRulesFromPrompt", () => {
       ],
     });
     expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(1);
+  });
+
+  it("deduplicates global (no-repo) rules against existing no-repo memories", () => {
+    const db = freshDb();
+    // The em-dash pileup: 29 paraphrases of the same global rule accumulated
+    // because dedup bailed out whenever repo was null.
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: null,
+      path: null,
+      session_id: "s1",
+      raw_prompt: "never use em dashes anywhere",
+    }), {
+      rules: [
+        {
+          text: "Do not use em dashes in generated text",
+          type: "rule",
+          scope: "global",
+          confidence: 0.95,
+        },
+      ],
+    });
+    expect(queryMemories(db, {})).toHaveLength(1);
+
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: null,
+      path: null,
+      session_id: "s2",
+      raw_prompt: "never use em dashes anywhere",
+    }), {
+      rules: [
+        {
+          text: "Do not use em dashes in generated text.",
+          type: "rule",
+          scope: "global",
+          confidence: 0.95,
+        },
+      ],
+    });
+    expect(queryMemories(db, {})).toHaveLength(1);
+  });
+
+  it("does not merge a global rule into a repo-scoped memory", () => {
+    const db = freshDb();
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "always use pnpm in this repo",
+    }), {
+      rules: [
+        { text: "Always use pnpm in this repo", type: "rule", scope: "repo", confidence: 0.95 },
+      ],
+    });
+    // Same text captured with no repo context stays a separate global memory.
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: null,
+      path: null,
+      session_id: "s2",
+      raw_prompt: "always use pnpm everywhere",
+    }), {
+      rules: [
+        { text: "Always use pnpm in this repo", type: "rule", scope: "global", confidence: 0.95 },
+      ],
+    });
+    expect(queryMemories(db, {})).toHaveLength(2);
   });
 
   it("keeps destructive-risky rules as candidate even with high confidence", () => {

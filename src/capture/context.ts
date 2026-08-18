@@ -29,6 +29,17 @@ const EPHEMERAL_TASK_CONTEXT_RE =
 // judge instructions owned by the harness, not durable preferences typed by
 // the user. Exact family anchors keep the quarantine narrow while covering
 // prompt revisions that retain the stable opening contract.
+// LLM-worker system prompts share a stable contract shape regardless of which
+// product owns the worker: a role header ("You are the <role> worker/judge for
+// …") and a machine-output clause ("Return JSON only. No markdown. No prose.").
+// They reach the hook surface whenever another pipeline runs its workers
+// through a hooked CLI session; extracted "rules" from them poisoned the store
+// as 0.99-confidence memories ("Compaction summaries must set schema_version
+// to 'semantic_compaction'"). None of these shapes are durable user
+// preferences, so quarantine the whole family.
+const LLM_WORKER_PROMPT_RE =
+  /(?:^\s*you are (?:the|an?)\s+[^\n]{0,80}?\b(?:worker|judge|extractor|summari[sz]er|compactor|classifier|grader|scorer|labeler)\b|\bfor a personal agent runtime\b|\breturn json only\b[^\n]{0,60}\bno (?:markdown|prose)\b)/i;
+
 const CODEX_INTERNAL_PROMPT_RE =
   /(?:^\s*generate a title and a git branch name for a coding agent\b|^\s*#\s*overview\s+generate\s+0\s+to\s+3\s+hyperpersonalized suggestions for what this user can do with codex\b|^\s*you are an expert at upholding safety and compliance standards for codex ambient suggestions\b|^\s*you are the implementation worker for one isolated git worktree\b|^\s*you are reviewing github pull request\b[^\n]*\bon behalf of the maintainer\b|^\s*#\s*github issue workorder\s*:|^\s*continue the previous coding task using user-provided context only\b)/i;
 
@@ -55,6 +66,7 @@ export function isNonUserCaptureContext(text: string): boolean {
     NON_USER_CONTEXT_RE.test(text) ||
     INJECTION_ARTIFACT_RE.test(text) ||
     EPHEMERAL_TASK_CONTEXT_RE.test(text) ||
+    LLM_WORKER_PROMPT_RE.test(text) ||
     CODEX_INTERNAL_PROMPT_RE.test(text) ||
     looksLikeQuestionContext(text)
   );

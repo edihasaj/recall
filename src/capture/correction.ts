@@ -737,9 +737,11 @@ async function findDuplicateMemory(
   text: string,
   threshold: number,
 ): Promise<MemoryItem | undefined> {
-  if (!repo) return undefined;
-
-  const existing = queryMemories(db, { repo })
+  // No-repo (global-scope) captures dedup against the other no-repo memories.
+  // Bailing out here instead lets every paraphrase of a global rule become a
+  // fresh memory the user has to reject again.
+  const existing = queryMemories(db, repo ? { repo } : {})
+    .filter((m) => (repo ? true : m.repo == null))
     .filter((m) => m.status !== "rejected" && m.type === type);
 
   let best: MemoryItem | undefined;
@@ -758,13 +760,21 @@ async function findDuplicateMemory(
   const config = loadEmbeddingConfigFromEnv();
   if (!config) return undefined;
 
+  // With no repo, the semantic index is unfiltered — post-filter to no-repo
+  // rows so a global candidate never merges into a repo-scoped memory.
   const semantic = await findSemanticDuplicates(
     db,
     text,
     config,
     threshold,
-    { repo, type, limit: 1 },
+    { repo, type, limit: repo ? 1 : 5 },
   );
 
-  return semantic[0] ? getMemory(db, semantic[0].id) : undefined;
+  for (const hit of semantic) {
+    const memory = getMemory(db, hit.id);
+    if (!memory) continue;
+    if (!repo && memory.repo != null) continue;
+    return memory;
+  }
+  return undefined;
 }
