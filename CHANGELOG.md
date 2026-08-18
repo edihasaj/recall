@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.11 - 2026-08-19
 
 ### Fixed
 
@@ -15,7 +15,6 @@
   symlink `config.toml`/`hooks.json` back to a common home were therefore
   forked into independent copies on every setup run. Writes now resolve the
   symlink first, and profiles sharing one config are written once.
-
 - **Global (no-repo) memories deduplicate.** Capture previously skipped
   duplicate detection whenever a rule had no repo, so every paraphrase of a
   global rule ("never use em dashes") became a fresh memory the user had to
