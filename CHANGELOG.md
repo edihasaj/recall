@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Global (no-repo) memories deduplicate.** Capture previously skipped
+  duplicate detection whenever a rule had no repo, so every paraphrase of a
+  global rule ("never use em dashes") became a fresh memory the user had to
+  reject again — 29 copies accumulated in one live store.
+- **LLM-worker system prompts are quarantined.** Prompts shaped like
+  "You are the <role> worker … Return JSON only. No markdown." reached the
+  capture pipeline when other agent pipelines ran their workers through a
+  hooked CLI session, and their instructions were stored as 0.99-confidence
+  active memories. The whole family is now treated as non-user context.
+- **Workspace-root sessions no longer churn the maintenance queue.** The cwd
+  basename "Projects" was recorded as a repo, and every producer cycle
+  re-enqueued tasks the janitor immediately abandoned as invalid — 19k
+  abandoned tasks in one month. The alias is normalized to repo-less at the
+  hook boundary and producers skip invalid-scope sources.
+
 ## 1.0.10 - 2026-08-14
 
 ### Fixed
