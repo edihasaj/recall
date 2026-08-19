@@ -12,6 +12,14 @@
   against 54 active memories. The path now appends evidence, counts distinct
   sessions, and promotes at the repo's repeat threshold, exactly like the
   regex fallback. High-risk rules still require an explicit confirm.
+- **Unused memories are archived, not deleted.** The auto-pruner rejected any
+  memory with no activity for 90 days, so correct durable rules — a security
+  rule for a repo you had not touched that quarter, "never fabricate numbers"
+  — were thrown away for disuse, then deleted 30 days later. Rejected
+  memories also double as "never capture this again" exemplars, so a pruned
+  rule could not be taught again either. Stale memories now stop
+  auto-injecting but stay active and retrievable, and only rejections a human
+  made block re-capture.
 
 ## 1.0.11 - 2026-08-19
 
