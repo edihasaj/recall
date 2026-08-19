@@ -11,7 +11,8 @@ import {
 } from "../src/capture/correction.js";
 import { applyExtractRulesFromPrompt } from "../src/maintenance/appliers.js";
 import { enqueueExtractRulesFromPrompt, peekTasks } from "../src/maintenance/tasks.js";
-import { queryMemories } from "../src/models/memory.js";
+import { queryMemories, rejectMemory } from "../src/models/memory.js";
+import { recordAudit } from "../src/audit/trail.js";
 import type { MaintenanceTask } from "../src/types.js";
 
 let dbCounter = 0;
@@ -654,5 +655,50 @@ describe("applyExtractRulesFromPrompt repetition and promotion", () => {
     expect(memories).toHaveLength(1);
     expect(memories[0]!.repetition_count).toBe(1);
     expect(memories[0]!.status).toBe("active");
+  });
+});
+
+describe("rejected-exemplar blocking respects who rejected the memory", () => {
+  it("does not let a janitor rejection block re-teaching the same rule", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+
+    // The user teaches a rule, then the janitor retires it (staleness /
+    // deterministic cleanup) rather than the user rejecting it.
+    const first = await processCorrection(db, "never commit secrets to the repo", {
+      sessionId: "s1",
+      repo: "test/repo",
+    });
+    const memoryId = first.ids[0]!;
+    rejectMemory(db, memoryId);
+    recordAudit(db, memoryId, "rejected", "auto-pruner", "Stale: no activity since ...");
+
+    // Teaching it again must work. Treating a machine rejection as a "never
+    // capture this" exemplar made the rule permanently unlearnable.
+    const second = await processCorrection(db, "never commit secrets to the repo", {
+      sessionId: "s2",
+      repo: "test/repo",
+    });
+    expect(second.ids).toHaveLength(1);
+    expect(second.ids[0]).not.toBe(memoryId);
+  });
+
+  it("still honours a rejection the user made themselves", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+
+    const first = await processCorrection(db, "always squash merge every branch", {
+      sessionId: "s1",
+      repo: "test/repo",
+    });
+    const memoryId = first.ids[0]!;
+    rejectMemory(db, memoryId);
+    recordAudit(db, memoryId, "rejected", "cli", "user rejected");
+
+    const second = await processCorrection(db, "always squash merge every branch", {
+      sessionId: "s2",
+      repo: "test/repo",
+    });
+    expect(second.ids).toHaveLength(0);
   });
 });

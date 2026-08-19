@@ -370,7 +370,7 @@ describe("pruning", () => {
       .run();
 
     const result = pruneMemories(db, { stale_days: 90, dry_run: true });
-    expect(result.stale_rejected).toContain(memId);
+    expect(result.stale_archived).toContain(memId);
     expect(result.total).toBeGreaterThanOrEqual(1);
 
     // Dry run: status should be unchanged
@@ -434,22 +434,26 @@ describe("pruning", () => {
       stale_days: 90,
     });
 
-    expect(result.stale_rejected).toContain(repoA);
-    expect(result.stale_rejected).not.toContain(repoB);
-    expect(getMemory(db, repoA)?.status).toBe("rejected");
+    expect(result.stale_archived).toContain(repoA);
+    expect(result.stale_archived).not.toContain(repoB);
+    // Staleness archives out of auto-injection; it never rejects. The rule is
+    // still true and still retrievable, it just stops spending context budget.
+    expect(getMemory(db, repoA)?.status).toBe("active");
+    expect(getMemory(db, repoA)?.auto_inject).toBe(false);
     expect(getMemory(db, repoB)?.status).toBe("active");
+    expect(getMemory(db, repoB)?.auto_inject).toBe(true);
   });
 
   it("formats prune report", () => {
     const result = {
-      stale_rejected: ["abc"],
+      stale_archived: ["abc"],
       rejected_pruned: [],
       transient_pruned: [],
       unhealthy_demoted: [],
       total: 1,
     };
     const report = formatPruneReport(result, false);
-    expect(report).toContain("Stale rejected:    1");
+    expect(report).toContain("Stale archived:    1");
   });
 });
 

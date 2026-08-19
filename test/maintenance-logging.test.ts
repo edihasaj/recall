@@ -9,7 +9,7 @@ import {
 function makeResult(overrides: Partial<MaintenanceResult> = {}): MaintenanceResult {
   return {
     prune_total: 0,
-    stale_rejected: 0,
+    stale_archived: 0,
     rejected_pruned: 0,
     transient_pruned: 0,
     unhealthy_demoted: 0,

@@ -1,7 +1,9 @@
 /**
  * Auto-pruning and stale memory handling.
  *
- * - Archive memories not injected/validated in N days
+ * - Archive memories not injected/validated in N days (stop auto-injecting
+ *   them; never reject them — a durable rule does not become false because
+ *   its repo went untouched for a quarter)
  * - Prune rejected memories older than threshold
  * - Compact transient memories
  * - Configurable retention policies
@@ -32,7 +34,8 @@ const DEFAULT_CONFIG: PruneConfig = {
 };
 
 export interface PruneResult {
-  stale_rejected: string[];
+  /** Stale memories archived out of auto-injection (still active + retrievable). */
+  stale_archived: string[];
   rejected_pruned: string[];
   transient_pruned: string[];
   unhealthy_demoted: string[];
@@ -54,14 +57,26 @@ export function pruneMemories(
   const dayMs = 86_400_000;
 
   const result: PruneResult = {
-    stale_rejected: [],
+    stale_archived: [],
     rejected_pruned: [],
     transient_pruned: [],
     unhealthy_demoted: [],
     total: 0,
   };
 
-  // 1. Archive stale active/candidate memories
+  // 1. Archive stale active/candidate memories.
+  //
+  // Staleness means "not used lately", not "wrong". Rejecting on disuse threw
+  // away correct, user-taught rules — a security rule for a repo untouched
+  // for a quarter is exactly the rule you most need when you return to it.
+  // Worse, rejected memories double as "never capture this again" exemplars
+  // (see isSimilarToRejectedFragment), so pruning a good rule also blocked
+  // the user from re-teaching it, and 30-day rejected retention then deleted
+  // it outright.
+  //
+  // Archiving instead clears `auto_inject`: the memory stops consuming
+  // context budget on every prompt but stays active, searchable, and
+  // instantly reusable. Any later injection or validation restores it.
   const staleCutoff = new Date(now - cfg.stale_days * dayMs).toISOString();
   const staleCandidates = queryMemories(db, {
     repo: cfg.repo,
@@ -72,16 +87,21 @@ export function pruneMemories(
     const lastActivity =
       mem.last_validated_at ?? mem.last_injected_at ?? mem.updated_at;
 
-    if (lastActivity < staleCutoff) {
+    if (lastActivity < staleCutoff && mem.auto_inject) {
       if (!cfg.dry_run) {
         db.update(memories)
-          .set({ status: "rejected", dedupe_key: null, updated_at: new Date().toISOString() })
+          .set({ auto_inject: false, updated_at: new Date().toISOString() })
           .where(eq(memories.id, mem.id))
           .run();
-        queueMemoryEmbeddingSync(db, mem.id);
-        recordAudit(db, mem.id, "rejected", "auto-pruner", `Stale: no activity since ${lastActivity}`);
+        recordAudit(
+          db,
+          mem.id,
+          "demoted",
+          "auto-pruner",
+          `Archived from auto-injection: no activity since ${lastActivity}`,
+        );
       }
-      result.stale_rejected.push(mem.id);
+      result.stale_archived.push(mem.id);
     }
   }
 
@@ -152,7 +172,7 @@ export function pruneMemories(
   }
 
   result.total =
-    result.stale_rejected.length +
+    result.stale_archived.length +
     result.rejected_pruned.length +
     result.transient_pruned.length +
     result.unhealthy_demoted.length;
@@ -184,16 +204,16 @@ export function formatPruneReport(result: PruneResult, dryRun: boolean): string 
   const lines = [
     `${prefix}Prune Report`,
     ``,
-    `Stale rejected:    ${result.stale_rejected.length}`,
+    `Stale archived:    ${result.stale_archived.length}`,
     `Rejected pruned:   ${result.rejected_pruned.length}`,
     `Transient pruned:  ${result.transient_pruned.length}`,
     `Unhealthy demoted: ${result.unhealthy_demoted.length}`,
     `Total affected:    ${result.total}`,
   ];
 
-  if (result.stale_rejected.length > 0) {
-    lines.push("", "Stale Rejected:");
-    for (const id of result.stale_rejected.slice(0, 10)) {
+  if (result.stale_archived.length > 0) {
+    lines.push("", "Stale Archived (no longer auto-injected):");
+    for (const id of result.stale_archived.slice(0, 10)) {
       lines.push(`  ${id.slice(0, 8)}`);
     }
   }

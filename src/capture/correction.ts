@@ -1,4 +1,6 @@
+import { and, desc, eq } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
+import { auditTrail } from "../db/schema.js";
 import { findSemanticDuplicates, findSimilarRejectedExemplar, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import {
   appendEvidence,
@@ -696,6 +698,25 @@ function textSimilarity(a: string, b: string): number {
 const REJECTED_EXEMPLAR_THRESHOLD = 0.7;
 const REJECTED_EXEMPLAR_SEMANTIC_THRESHOLD = 0.85;
 
+// Only rejections that carry a human judgement are exemplars. A memory the
+// janitor retired on its own (staleness, retention) says nothing about
+// whether the user wants the rule — treating those as exemplars created a
+// doom loop: a good rule expired, and the user's attempt to teach it again
+// was blocked as "similar to something rejected".
+function isMachineRejection(db: RecallDb, memoryId: string): boolean {
+  const latest = db
+    .select({ actor: auditTrail.actor })
+    .from(auditTrail)
+    .where(and(eq(auditTrail.memory_id, memoryId), eq(auditTrail.action, "rejected")))
+    .orderBy(desc(auditTrail.timestamp))
+    .limit(1)
+    .get();
+  if (!latest) return false;
+  return MACHINE_REJECTION_ACTORS.some((actor) => latest.actor.startsWith(actor));
+}
+
+const MACHINE_REJECTION_ACTORS = ["auto-pruner", "cleanup_script", "maintenance:cleanup"];
+
 export function isSimilarToRejectedFragment(
   db: RecallDb,
   text: string,
@@ -704,7 +725,9 @@ export function isSimilarToRejectedFragment(
   const rejected = queryMemories(db, { status: "rejected" })
     .filter((m) => m.source === "user_correction" || m.source === "user_reported_review");
   for (const exemplar of rejected) {
-    if (textSimilarity(text, exemplar.text) >= threshold) return true;
+    if (textSimilarity(text, exemplar.text) < threshold) continue;
+    if (isMachineRejection(db, exemplar.id)) continue;
+    return true;
   }
   return false;
 }
