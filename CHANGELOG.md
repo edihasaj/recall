@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 - 2026-08-20
+
+### Added
+
+- **Teaching an archived memory again brings it back.** Reinforcing a memory
+  that the stale-archiver retired restores it to automatic injection: if you
+  state the rule again, you have just shown it is relevant again.
+- **Archived memories still answer a direct query.** A memory retired from
+  ambient injection stays eligible when a prompt actually asks about it, so
+  going unused costs a rule its context budget but never its usefulness. It
+  must still clear the same retrieval relevance gate as any other memory.
 
 ### Fixed
 
