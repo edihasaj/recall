@@ -15,6 +15,7 @@ import {
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import type { CaptureContext, EvidenceEntry, MaintenanceTask, MemoryType } from "../types.js";
+import type { RecentToolCall } from "../agents/types.js";
 import { isHighRiskRule } from "../capture/correction.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import type {
@@ -421,6 +422,8 @@ export function applyExtractRulesFromPrompt(
     agent?: string | null;
     session_id?: string;
     raw_prompt?: string;
+    prev_assistant_turn?: string | null;
+    recent_tool_calls?: RecentToolCall[] | null;
   };
   const repo = payload.repo ?? null;
   const profile = getRepoQualityProfile(db, repo ?? undefined);
@@ -429,9 +432,16 @@ export function applyExtractRulesFromPrompt(
     return { audit_entry_id: null, target_id: task.id, changed_fields: [] };
   }
 
+  // enqueueExtractRulesFromPrompt carries the surrounding turn and tool calls;
+  // dropping them here produced an empty stub that downstream verify/refine
+  // prompts then had to judge blind.
   const captureContext: CaptureContext = {
-    prev_assistant_text: undefined,
-    recent_tool_calls: [],
+    prev_assistant_text: payload.prev_assistant_turn ?? undefined,
+    recent_tool_calls: (payload.recent_tool_calls ?? []).slice(-5).map((toolCall) => ({
+      name: toolCall.name,
+      path: toolCall.path,
+      exit_code: toolCall.exit_code,
+    })),
     repo,
     path: payload.path ?? null,
     agent: payload.agent ?? undefined,
@@ -452,7 +462,12 @@ export function applyExtractRulesFromPrompt(
     if (duplicate) {
       const before = getMemory(db, duplicate.id);
       appendEvidence(db, duplicate.id, evidence);
-      updateMemoryCaptureContext(db, duplicate.id, captureContext);
+      // Only replace stored context when this capture actually knows more.
+      // capture_context is a plain overwrite, so a context-poor repeat would
+      // otherwise erase the richer context of the original capture.
+      if (isRicherCaptureContext(captureContext, before?.capture_context ?? null)) {
+        updateMemoryCaptureContext(db, duplicate.id, captureContext);
+      }
       // Only distinct sessions count as repetition: one session restating the
       // same rule five times is one signal, not five.
       const alreadySeenThisSession = before?.evidence.some(
@@ -528,6 +543,23 @@ export function applyExtractRulesFromPrompt(
     target_id: createdIds[0] ?? reinforcedIds[0] ?? task.id,
     changed_fields: changed,
   };
+}
+
+function captureContextDetail(context: CaptureContext | null): number {
+  if (!context) return -1;
+  return (
+    (context.prev_assistant_text ? 1 : 0) +
+    (context.recent_tool_calls?.length ?? 0) +
+    (context.path ? 1 : 0) +
+    (context.agent ? 1 : 0)
+  );
+}
+
+function isRicherCaptureContext(
+  next: CaptureContext,
+  current: CaptureContext | null,
+): boolean {
+  return captureContextDetail(next) >= captureContextDetail(current);
 }
 
 // Returns the existing memory this rule duplicates, so the caller can record
