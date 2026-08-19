@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Repeating yourself promotes a memory again.** When a provider is
+  configured, LLM extraction is the primary capture path, and it dropped
+  duplicate rules with no record of the repeat — no evidence entry, no
+  repetition bump. Repeat-based promotion was therefore unreachable on that
+  path: in one live store 541 of 542 candidates sat at `repetition_count = 0`
+  against 54 active memories. The path now appends evidence, counts distinct
+  sessions, and promotes at the repo's repeat threshold, exactly like the
+  regex fallback. High-risk rules still require an explicit confirm.
+
 ## 1.0.11 - 2026-08-19
 
 ### Fixed
