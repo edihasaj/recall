@@ -550,3 +550,109 @@ describe("applyExtractRulesFromPrompt", () => {
     expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(1);
   });
 });
+
+describe("applyExtractRulesFromPrompt repetition and promotion", () => {
+  function repeatTask(sessionId: string, repo: string | null = "test/repo"): MaintenanceTask {
+    return {
+      id: `task-${sessionId}`,
+      kind: "extract_rules_from_prompt",
+      status: "submitted",
+      priority: 14,
+      repo,
+      target_key: `prompt:${sessionId}`,
+      payload: {
+        repo,
+        path: null,
+        session_id: sessionId,
+        raw_prompt: "always use pnpm in this repo",
+      },
+      result: null,
+      failure_reason: null,
+      claimed_by: "test",
+      claimed_at: new Date().toISOString(),
+      claim_expires_at: null,
+      submitted_at: new Date().toISOString(),
+      completed_at: null,
+      created_at: new Date().toISOString(),
+      attempts: 1,
+      max_attempts: 3,
+    };
+  }
+
+  const pnpmRule = {
+    text: "Always use pnpm in this repo",
+    type: "rule" as const,
+    scope: "repo" as const,
+    path_scope: null,
+    confidence: 0.95,
+  };
+
+  it("records a repeat as evidence and promotes at the repeat threshold", () => {
+    const db = freshDb();
+    applyExtractRulesFromPrompt(db, repeatTask("s1"), { rules: [pnpmRule] });
+    let memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.status).toBe("candidate");
+    expect(memories[0]!.repetition_count).toBe(0);
+
+    // Same rule, a different session: this is the repetition signal that
+    // used to be silently dropped, leaving every candidate stuck at 0.
+    const outcome = applyExtractRulesFromPrompt(db, repeatTask("s2"), { rules: [pnpmRule] });
+    expect(outcome.changed_fields).toContain("reinforced_memories");
+
+    memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.repetition_count).toBe(1);
+    expect(memories[0]!.status).toBe("active");
+    expect(memories[0]!.evidence).toHaveLength(2);
+  });
+
+  it("counts distinct sessions only, not restatements within one session", () => {
+    const db = freshDb();
+    applyExtractRulesFromPrompt(db, repeatTask("s1"), { rules: [pnpmRule] });
+    applyExtractRulesFromPrompt(db, repeatTask("s1"), { rules: [pnpmRule] });
+    applyExtractRulesFromPrompt(db, repeatTask("s1"), { rules: [pnpmRule] });
+
+    const memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.repetition_count).toBe(0);
+    expect(memories[0]!.status).toBe("candidate");
+  });
+
+  it("never repetition-promotes a high-risk rule", () => {
+    const db = freshDb();
+    const destructive = {
+      text: "Delete all settings on startup",
+      type: "rule" as const,
+      scope: "repo" as const,
+      path_scope: null,
+      confidence: 0.99,
+      is_destructive_risky: true,
+    };
+    applyExtractRulesFromPrompt(db, repeatTask("s1"), { rules: [destructive] });
+    applyExtractRulesFromPrompt(db, repeatTask("s2"), { rules: [destructive] });
+    applyExtractRulesFromPrompt(db, repeatTask("s3"), { rules: [destructive] });
+
+    const memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.status).toBe("candidate");
+  });
+
+  it("reinforces global (no-repo) rules across sessions too", () => {
+    const db = freshDb();
+    const globalRule = {
+      text: "Do not use em dashes in generated text",
+      type: "rule" as const,
+      scope: "global" as const,
+      path_scope: null,
+      confidence: 0.95,
+    };
+    applyExtractRulesFromPrompt(db, repeatTask("s1", null), { rules: [globalRule] });
+    applyExtractRulesFromPrompt(db, repeatTask("s2", null), { rules: [globalRule] });
+
+    const memories = queryMemories(db, {});
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.repetition_count).toBe(1);
+    expect(memories[0]!.status).toBe("active");
+  });
+});

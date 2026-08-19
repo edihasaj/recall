@@ -2,10 +2,19 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { historySnippets, memories } from "../db/schema.js";
-import { createMemory, getMemory, queryMemories } from "../models/memory.js";
+import {
+  appendEvidence,
+  countDistinctCorrectionSessions,
+  createMemory,
+  getMemory,
+  incrementMemoryRepetition,
+  promoteMemory,
+  queryMemories,
+  updateMemoryCaptureContext,
+} from "../models/memory.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
-import type { CaptureContext, MaintenanceTask, MemoryType } from "../types.js";
+import type { CaptureContext, EvidenceEntry, MaintenanceTask, MemoryType } from "../types.js";
 import { isHighRiskRule } from "../capture/correction.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import type {
@@ -390,9 +399,17 @@ export function applySynthesizeRepo(
 // LLM-primary capture applier. The LLM extracted zero or more rules from the
 // raw user prompt; for each one we create a candidate memory (subject to
 // dedup against existing same-repo memories). The applier never auto-promotes
-// — promotion still flows through repetition or explicit user confirm, same
-// as the regex path. Destructive-risky rules and trigger-template rules are
-// always created as candidates, never active, regardless of confidence.
+// on first capture — promotion flows through repetition or explicit user
+// confirm, same as the regex path. Destructive-risky rules and
+// trigger-template rules are always created as candidates, never active,
+// regardless of confidence.
+//
+// When a rule duplicates an existing memory we must still record the repeat:
+// this path previously just skipped, which discarded the repetition signal
+// entirely. Since the LLM path is the primary capture path whenever a
+// provider is configured, that left repetition_count at 0 for essentially
+// every candidate and made repeat-based promotion unreachable — the store
+// captured knowledge but never learned from it.
 export function applyExtractRulesFromPrompt(
   db: RecallDb,
   task: MaintenanceTask,
@@ -421,8 +438,53 @@ export function applyExtractRulesFromPrompt(
   };
 
   const createdIds: string[] = [];
+  const reinforcedIds: string[] = [];
+  const sessionId = payload.session_id ?? "unknown";
   for (const rule of result.rules) {
-    if (existsSimilar(db, repo, rule)) continue;
+    const evidence: EvidenceEntry = {
+      type: "session_correction",
+      session: sessionId,
+      timestamp: new Date().toISOString(),
+      context: payload.raw_prompt ?? "",
+    };
+
+    const duplicate = findSimilar(db, repo, rule);
+    if (duplicate) {
+      const before = getMemory(db, duplicate.id);
+      appendEvidence(db, duplicate.id, evidence);
+      updateMemoryCaptureContext(db, duplicate.id, captureContext);
+      // Only distinct sessions count as repetition: one session restating the
+      // same rule five times is one signal, not five.
+      const alreadySeenThisSession = before?.evidence.some(
+        (entry) => entry.type === "session_correction" && entry.session === sessionId,
+      );
+      if (before && !alreadySeenThisSession) {
+        incrementMemoryRepetition(db, duplicate.id);
+      }
+
+      const updated = getMemory(db, duplicate.id);
+      if (
+        updated &&
+        updated.status !== "active" &&
+        !rule.is_destructive_risky &&
+        !isHighRiskRule(updated.text) &&
+        countDistinctCorrectionSessions(updated) >= profile.repeat_sessions_required
+      ) {
+        promoteMemory(db, duplicate.id, "repeat_correction");
+        const after = getMemory(db, duplicate.id);
+        recordAuditWithSnapshot(
+          db,
+          duplicate.id,
+          "promoted",
+          `maintenance:${task.claimed_by ?? "llm"}`,
+          `repetition:${after?.repetition_count ?? updated.repetition_count}`,
+          before ?? null,
+          after ?? null,
+        );
+      }
+      reinforcedIds.push(duplicate.id);
+      continue;
+    }
 
     const memoryType = (rule.type as MemoryType) ?? "rule";
     const id = createMemory(db, {
@@ -433,14 +495,7 @@ export function applyExtractRulesFromPrompt(
       repo,
       source: "user_correction",
       confidence: seedCandidateConfidence(rule.confidence, profile),
-      evidence: [
-        {
-          type: "session_correction",
-          session: payload.session_id ?? "unknown",
-          timestamp: new Date().toISOString(),
-          context: payload.raw_prompt ?? "",
-        },
-      ],
+      evidence: [evidence],
       capture_context: captureContext,
     });
     createdIds.push(id);
@@ -464,18 +519,24 @@ export function applyExtractRulesFromPrompt(
     }
   }
 
+  const changed: string[] = [];
+  if (createdIds.length > 0) changed.push("created_memories");
+  if (reinforcedIds.length > 0) changed.push("reinforced_memories");
+
   return {
     audit_entry_id: null,
-    target_id: createdIds[0] ?? task.id,
-    changed_fields: createdIds.length > 0 ? ["created_memories"] : [],
+    target_id: createdIds[0] ?? reinforcedIds[0] ?? task.id,
+    changed_fields: changed,
   };
 }
 
-function existsSimilar(
+// Returns the existing memory this rule duplicates, so the caller can record
+// the repeat as evidence instead of dropping it.
+function findSimilar(
   db: RecallDb,
   repo: string | null,
   rule: ExtractedRule,
-): boolean {
+): ReturnType<typeof getMemory> | undefined {
   // No-repo (global-scope) rules dedup against the other no-repo memories.
   // Bailing out here let every paraphrase of a global rule pile up as a new
   // candidate the user had to reject again.
@@ -487,7 +548,7 @@ function existsSimilar(
     .filter((memory) => (repo ? true : memory.repo == null))
     .filter((memory) => memory.status !== "rejected");
   const normalized = rule.text.toLowerCase().trim();
-  return candidates.some((memory) => {
+  return candidates.find((memory) => {
     if (memory.text.toLowerCase().trim() === normalized) return true;
     if (ruleIsHighRisk && isHighRiskRule(memory.text)) {
       return containmentOverlap(memory.text, rule.text) >= 0.65;
