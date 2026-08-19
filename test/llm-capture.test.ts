@@ -11,7 +11,8 @@ import {
 } from "../src/capture/correction.js";
 import { applyExtractRulesFromPrompt } from "../src/maintenance/appliers.js";
 import { enqueueExtractRulesFromPrompt, peekTasks } from "../src/maintenance/tasks.js";
-import { queryMemories, rejectMemory } from "../src/models/memory.js";
+import { getMemory, queryMemories, rejectMemory } from "../src/models/memory.js";
+import { pruneMemories } from "../src/pruning/pruner.js";
 import { recordAudit } from "../src/audit/trail.js";
 import type { MaintenanceTask } from "../src/types.js";
 
@@ -700,5 +701,56 @@ describe("rejected-exemplar blocking respects who rejected the memory", () => {
       repo: "test/repo",
     });
     expect(second.ids).toHaveLength(0);
+  });
+});
+
+describe("archived memories return to injection when taught again", () => {
+  it("restores auto_inject on the LLM reinforcement path", () => {
+    const db = freshDb();
+    const rule = {
+      text: "Do not set securityContext.privileged to true",
+      type: "rule" as const,
+      scope: "repo" as const,
+      path_scope: null,
+      confidence: 0.95,
+    };
+    const task = (sessionId: string): MaintenanceTask => ({
+      id: `task-${sessionId}`,
+      kind: "extract_rules_from_prompt",
+      status: "submitted",
+      priority: 14,
+      repo: "test/repo",
+      target_key: `prompt:${sessionId}`,
+      payload: {
+        repo: "test/repo",
+        path: null,
+        session_id: sessionId,
+        raw_prompt: "never set securityContext.privileged to true",
+      },
+      result: null,
+      failure_reason: null,
+      claimed_by: "test",
+      claimed_at: new Date().toISOString(),
+      claim_expires_at: null,
+      submitted_at: new Date().toISOString(),
+      completed_at: null,
+      created_at: new Date().toISOString(),
+      attempts: 1,
+      max_attempts: 3,
+    });
+
+    applyExtractRulesFromPrompt(db, task("s1"), { rules: [rule] });
+    const created = queryMemories(db, { repo: "test/repo" })[0]!;
+
+    // The stale-archiver retires it from auto-injection after 90 idle days.
+    pruneMemories(db, { stale_days: 0 });
+    expect(getMemory(db, created.id)!.auto_inject).toBe(false);
+    expect(getMemory(db, created.id)!.status).not.toBe("rejected");
+
+    // Teaching it again proves it is relevant, so it returns to rotation.
+    applyExtractRulesFromPrompt(db, task("s2"), { rules: [rule] });
+    const revived = getMemory(db, created.id)!;
+    expect(revived.auto_inject).toBe(true);
+    expect(revived.repetition_count).toBe(1);
   });
 });

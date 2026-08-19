@@ -390,6 +390,20 @@ export function appendEvidence(
   return true;
 }
 
+// An archived memory (auto_inject cleared by the stale-archiver) that the user
+// teaches again is, by definition, relevant again. Reinforcement puts it back
+// into automatic injection instead of leaving it retrievable-but-silent.
+export function restoreAutoInject(db: RecallDb, id: string): boolean {
+  const mem = getMemory(db, id);
+  if (!mem || mem.auto_inject) return false;
+
+  db.update(memories)
+    .set({ auto_inject: true, updated_at: new Date().toISOString() })
+    .where(eq(memories.id, id))
+    .run();
+  return true;
+}
+
 export function updateMemoryCaptureContext(
   db: RecallDb,
   id: string,

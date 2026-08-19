@@ -10,6 +10,7 @@ import {
   incrementMemoryRepetition,
   promoteMemory,
   queryMemories,
+  restoreAutoInject,
   updateMemoryCaptureContext,
 } from "../models/memory.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
@@ -462,6 +463,7 @@ export function applyExtractRulesFromPrompt(
     if (duplicate) {
       const before = getMemory(db, duplicate.id);
       appendEvidence(db, duplicate.id, evidence);
+      restoreAutoInject(db, duplicate.id);
       // Only replace stored context when this capture actually knows more.
       // capture_context is a plain overwrite, so a context-poor repeat would
       // otherwise erase the richer context of the original capture.

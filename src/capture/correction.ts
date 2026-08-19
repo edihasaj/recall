@@ -11,6 +11,7 @@ import {
   incrementMemoryRepetition,
   promoteMemory,
   queryMemories,
+  restoreAutoInject,
   updateMemoryCaptureContext,
 } from "../models/memory.js";
 import type { CreateMemoryInput } from "../models/memory.js";
@@ -446,6 +447,7 @@ export async function processCorrection(
     if (duplicate) {
       const before = getMemory(db, duplicate.id);
       appendEvidence(db, duplicate.id, evidence);
+      restoreAutoInject(db, duplicate.id);
       if (captureContext) {
         updateMemoryCaptureContext(db, duplicate.id, captureContext);
       }
