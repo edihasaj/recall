@@ -293,11 +293,19 @@ export async function compileContextHybrid(
 
   const repoMemories = queryMemories(db, { repo: req.repo });
   const globalMemories = queryMemories(db, { scope: "global" });
-  const allMemories = dedupeById([...repoMemories, ...globalMemories]).filter((memory) =>
-    memory.auto_inject &&
-    (memory.status === "active" ||
-      (config.include_candidates && memory.status === "candidate"))
-  );
+  const allMemories = dedupeById([...repoMemories, ...globalMemories]).filter((memory) => {
+    const statusEligible =
+      memory.status === "active" ||
+      (config.include_candidates && memory.status === "candidate");
+    if (!statusEligible) return false;
+    if (memory.auto_inject) return true;
+    // Archived memories (retired from ambient injection by the stale-archiver)
+    // stay eligible for an explicit query: if the user is asking about the very
+    // thing a rule covers, a rule that has simply gone unused is still the
+    // right answer. They must still clear the retrieval relevance gate below,
+    // and they never enter query-less ambient injection.
+    return Boolean(effectiveQuery) && memory.status === "active";
+  });
 
   const scoped = req.path
     ? allMemories.filter((memory) => pathMatches(memory, req.path!))

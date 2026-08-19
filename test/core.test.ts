@@ -20,6 +20,9 @@ import { flushEmbeddingJobs } from "../src/embeddings/embeddings.js";
 import { detectCorrections, processCorrection } from "../src/capture/correction.js";
 import { compileContext, compileContextHybrid } from "../src/compiler/context.js";
 import { createHistorySnippet } from "../src/history/snippets.js";
+import { pruneMemories } from "../src/pruning/pruner.js";
+import { memories } from "../src/db/schema.js";
+import { eq } from "drizzle-orm";
 import { syncHistoryFtsIndex } from "../src/vector/sqlite-fts-history.js";
 import { installMockEmbeddingProvider } from "./helpers/mock-embedding-provider.js";
 
@@ -1070,5 +1073,44 @@ describe("feedback tracking", () => {
     const mem = getMemory(db, memId)!;
     expect(mem.confidence).toBeLessThan(0.7);
     expect(mem.status).toBe("candidate");
+  });
+});
+
+describe("archived memories and explicit queries", () => {
+  it("surfaces an archived rule for a direct query but not for ambient injection", async () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Do not set securityContext.privileged to true",
+      scope: "repo",
+      path_scope: null,
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.9,
+    });
+    confirmMemory(db, id);
+    // Age it past the staleness window: untouched for well over a quarter.
+    const stale = new Date(Date.now() - 200 * 86_400_000).toISOString();
+    db.update(memories)
+      .set({ updated_at: stale, last_validated_at: stale, last_injected_at: null })
+      .where(eq(memories.id, id))
+      .run();
+
+    // The stale-archiver retires it from ambient injection after long disuse.
+    pruneMemories(db, { stale_days: 90 });
+    expect(getMemory(db, id)!.auto_inject).toBe(false);
+
+    // Ambient (query-less) compile leaves it out — that is the whole point of
+    // archiving: it stops spending context budget on every prompt.
+    const ambient = compileContext(db, { repo: "test/repo" });
+    expect(ambient.memories_included).not.toContain(id);
+
+    // Asking directly about the topic still surfaces it. A rule does not stop
+    // being true because it went unused.
+    const queried = await compileContextHybrid(db, {
+      repo: "test/repo",
+      query_text: "securityContext privileged",
+    });
+    expect(queried.memories_included).toContain(id);
   });
 });
