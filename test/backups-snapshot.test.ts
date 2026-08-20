@@ -143,6 +143,24 @@ describe("one-off snapshot retention", () => {
     expect(result.retained).toContain(recent);
   });
 
+  it("catches snapshots whose name carries .db mid-string", () => {
+    const dbPath = freshDbPath();
+    // Verbatim shape from a real install: 366 MB, from May, invisible to a
+    // suffix-only match and therefore immortal.
+    const midString = seedOneOff(dbPath, "recall.db.pre-quality-prune-20260511-100432", 90);
+    const recentMid = seedOneOff(dbPath, "recall.db.pre-upgrade-20260819-090000", 3);
+
+    const result = ensureDailyBackup({ dbPath });
+
+    expect(existsSync(midString)).toBe(false);
+    expect(result.removed).toContain(midString);
+    expect(existsSync(recentMid)).toBe(true);
+
+    // And it is visible in the listing rather than silently consuming disk.
+    seedOneOff(dbPath, "recall.db.pre-other-20260820-000000", 1);
+    expect(listBackups(dbPath).some((b) => b.path.includes("pre-other"))).toBe(true);
+  });
+
   it("never deletes one-off snapshots when the sweep is disabled", () => {
     const dbPath = freshDbPath();
     const ancient = seedOneOff(dbPath, "before-cloud-convergence-20260723-2252.db", 400);

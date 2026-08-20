@@ -28,6 +28,15 @@ export const DEFAULT_ONE_OFF_BACKUP_MAX_AGE_DAYS = 30;
 
 const DAILY_BACKUP_RE = /^recall-(\d{4}-\d{2}-\d{2})\.db$/;
 
+// Snapshots are not consistently named. Alongside `recall-2026-08-20.db` and
+// `before-cloud-convergence-20260723-2252.db`, real installs also carry
+// `recall.db.pre-quality-prune-20260511-100432` — a `.db` in the middle
+// rather than at the end. Matching only a `.db` suffix left those invisible
+// to both the listing and the sweep, so a 366 MB May snapshot would have
+// lived forever. The backups directory is Recall-owned, so treat any name
+// carrying a `.db` segment as a snapshot.
+const BACKUP_FILE_RE = /\.db(\.|$)/;
+
 export interface BackupResult {
   created: string | null;
   retained: string[];
@@ -78,7 +87,7 @@ export function ensureDailyBackup(
   }
 
   const all = readdirSync(dir)
-    .filter((name) => name.endsWith(".db"))
+    .filter((name) => BACKUP_FILE_RE.test(name))
     .filter((name) => isRegularFileWithoutSymlink(join(dir, name)))
     .map((name) => ({ name, path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }));
 
@@ -128,7 +137,7 @@ export function listBackups(dbPath: string = getDbPath()): BackupListing[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .map((name) => {
-      if (!name.endsWith(".db")) return null;
+      if (!BACKUP_FILE_RE.test(name)) return null;
       const path = join(dir, name);
       if (!isRegularFileWithoutSymlink(path)) return null;
       const stat = statSync(path);
