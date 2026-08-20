@@ -81,4 +81,15 @@ app_path="$derived_data/Build/Products/Release/Recall.app"
 rm -rf "$app_path/Contents/Resources/Runtime"
 mkdir -p "$app_path/Contents/Resources/Runtime"
 rsync -a --delete "$runtime_dir/" "$app_path/Contents/Resources/Runtime/"
+
+# Belt and braces with .metadata_never_index above: that marker stops future
+# Spotlight indexing but does not remove an entry LaunchServices already has,
+# and Xcode can register a freshly built bundle without Spotlight's help.
+# Unregister the build product explicitly so only /Applications/Recall.app is
+# ever offered in Spotlight and Open With. Never touches the files.
+lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$lsregister" ]]; then
+  "$lsregister" -u "$app_path" >/dev/null 2>&1 || true
+fi
+
 echo "$app_path"
