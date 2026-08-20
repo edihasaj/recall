@@ -8,7 +8,15 @@ import { createMemory } from "../src/models/memory.js";
 import { createActivityEvent, listActivityEvents } from "../src/models/activity.js";
 import { recordFeedback, getMemoryFeedback } from "../src/models/memory.js";
 import { flushEmbeddingJobs, loadEmbeddingConfigFromEnv, verifyEmbeddings } from "../src/embeddings/embeddings.js";
-import { runMaintenanceCycle, pruneOldActivityEvents, pruneOldFeedbackEvents, runSqliteMaintenance } from "../src/maintenance/lifecycle.js";
+import {
+  runMaintenanceCycle,
+  pruneOldActivityEvents,
+  pruneOldFeedbackEvents,
+  pruneOldHookCalls,
+  loadMaintenanceConfigFromEnv,
+  runSqliteMaintenance,
+} from "../src/maintenance/lifecycle.js";
+import { hookCalls } from "../src/db/schema.js";
 import { activityEvents, feedbackEvents } from "../src/db/schema.js";
 import { removeMemoryFtsRow } from "../src/vector/sqlite-fts.js";
 import { removeMemoryVecRow } from "../src/vector/sqlite-vec.js";
@@ -153,5 +161,57 @@ describe("phase 5 maintenance lifecycle", () => {
     expect(result.vacuum_ran).toBe(true);
     expect(result.page_count).toBeGreaterThan(0);
     expect(result.freelist_count).toBeGreaterThan(0);
+  });
+});
+
+describe("self-maintenance defaults", () => {
+  it("prunes hook_calls past retention", () => {
+    const db = freshDb();
+    const old = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    const recent = new Date().toISOString();
+    for (const [id, when] of [["h-old", old], ["h-recent", recent]] as const) {
+      db.insert(hookCalls).values({
+        id,
+        event: "prompt_submitted",
+        agent: "claude-code",
+        duration_ms: 5,
+        ok: true,
+        created_at: when,
+      }).run();
+    }
+
+    // hook_calls previously had no retention at all and grew without bound.
+    const pruned = pruneOldHookCalls(db, 30);
+    expect(pruned).toBe(1);
+
+    const left = db.select().from(hookCalls).all().map((r) => r.id);
+    expect(left).toEqual(["h-recent"]);
+  });
+
+  it("treats retention of 0 as disabled rather than deleting everything", () => {
+    const db = freshDb();
+    db.insert(hookCalls).values({
+      id: "h-keep",
+      event: "prompt_submitted",
+      agent: "claude-code",
+      duration_ms: 5,
+      ok: true,
+      created_at: new Date(Date.now() - 400 * 86_400_000).toISOString(),
+    }).run();
+
+    expect(pruneOldHookCalls(db, 0)).toBe(0);
+    expect(db.select().from(hookCalls).all()).toHaveLength(1);
+  });
+
+  it("enables vacuum by default so retention actually returns disk", () => {
+    const previous = process.env.RECALL_SQLITE_VACUUM_ENABLED;
+    delete process.env.RECALL_SQLITE_VACUUM_ENABLED;
+    expect(loadMaintenanceConfigFromEnv().sqlite_vacuum_enabled).toBe(true);
+
+    process.env.RECALL_SQLITE_VACUUM_ENABLED = "false";
+    expect(loadMaintenanceConfigFromEnv().sqlite_vacuum_enabled).toBe(false);
+
+    if (previous === undefined) delete process.env.RECALL_SQLITE_VACUUM_ENABLED;
+    else process.env.RECALL_SQLITE_VACUUM_ENABLED = previous;
   });
 });

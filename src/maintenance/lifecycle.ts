@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { eq, lt } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { activityEvents, feedbackEvents, historySnippets, implicitSignals, memories } from "../db/schema.js";
+import { activityEvents, feedbackEvents, historySnippets, hookCalls, implicitSignals, memories } from "../db/schema.js";
 import {
   bootstrapEmbeddings,
   loadEmbeddingConfigFromEnv,
@@ -38,6 +38,7 @@ export interface MaintenanceConfig {
   stale_days: number;
   min_health_score: number;
   activity_retention_days: number;
+  hook_call_retention_days: number;
   feedback_retention_days: number;
   signal_retention_days: number;
   rejected_retention_days: number;
@@ -64,6 +65,7 @@ export interface MaintenanceResult {
   scanned_memories_demoted: number;
   scanned_memories_rejected: number;
   activity_pruned: number;
+  hook_calls_pruned: number;
   feedback_pruned: number;
   signals_pruned: number;
   embeddings_refreshed: number;
@@ -101,6 +103,7 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     stale_days: parseInt(process.env.RECALL_MAINTENANCE_STALE_DAYS ?? "90", 10),
     min_health_score: parseFloat(process.env.RECALL_MAINTENANCE_MIN_HEALTH_SCORE ?? "0.2"),
     activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "90", 10),
+    hook_call_retention_days: parseInt(process.env.RECALL_HOOK_CALL_RETENTION_DAYS ?? "30", 10),
     feedback_retention_days: parseInt(process.env.RECALL_FEEDBACK_RETENTION_DAYS ?? "180", 10),
     signal_retention_days: parseInt(process.env.RECALL_SIGNAL_RETENTION_DAYS ?? "180", 10),
     rejected_retention_days: parseInt(process.env.RECALL_REJECTED_RETENTION_DAYS ?? "90", 10),
@@ -113,7 +116,13 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
       process.env.RECALL_SQLITE_WAL_TRUNCATE_BYTES ?? String(32 * 1024 * 1024),
       10,
     ),
-    sqlite_vacuum_enabled: process.env.RECALL_SQLITE_VACUUM_ENABLED === "true",
+    // Enabled by default: retention sweeps (activity, hook calls, rejected
+    // memories) delete a lot of rows, and without a vacuum those pages are
+    // freed inside the file but never returned to the disk — the database
+    // only ever grows. The thresholds below keep this rare: it runs from the
+    // background maintenance cycle, and only when at least 10% of the file is
+    // actually reclaimable. Set RECALL_SQLITE_VACUUM_ENABLED=false to opt out.
+    sqlite_vacuum_enabled: process.env.RECALL_SQLITE_VACUUM_ENABLED !== "false",
     sqlite_vacuum_min_free_pages: parseInt(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_PAGES ?? "100", 10),
     sqlite_vacuum_min_free_ratio: parseFloat(process.env.RECALL_SQLITE_VACUUM_MIN_FREE_RATIO ?? "0.1"),
     llm_tasks_enabled: process.env.RECALL_MAINTENANCE_LLM_DISABLED !== "true",
@@ -144,6 +153,7 @@ export async function runMaintenanceCycle(
   const candidates_promoted = promoteRepetitionCandidates(db);
 
   const activity_pruned = pruneOldActivityEvents(db, config.activity_retention_days);
+  const hook_calls_pruned = pruneOldHookCalls(db, config.hook_call_retention_days);
   const feedback_pruned = pruneOldFeedbackEvents(db, config.feedback_retention_days);
   const signals_pruned = pruneOldImplicitSignals(db, config.signal_retention_days);
   const sqliteMaintenance = runSqliteMaintenance(db, config);
@@ -212,6 +222,7 @@ export async function runMaintenanceCycle(
     scanned_memories_demoted: scannedMemoryCleanup.demoted,
     scanned_memories_rejected: scannedMemoryCleanup.rejected,
     activity_pruned,
+    hook_calls_pruned,
     feedback_pruned,
     signals_pruned,
     embeddings_refreshed,
@@ -411,6 +422,24 @@ export function pruneOldActivityEvents(
   const cutoff = new Date(Date.now() - (retentionDays * DAY_MS)).toISOString();
   return db.delete(activityEvents)
     .where(lt(activityEvents.created_at, cutoff))
+    .run().changes;
+}
+
+// hook_calls is pure operational telemetry: one row per agent hook
+// invocation. It had no retention at all, so it grew without bound — on one
+// install the table plus its dedupe index reached 664 MB, while the memories
+// the product exists to store took 29 MB. It is diagnostic data with a short
+// useful life, so it gets a tighter default than activity events.
+export function pruneOldHookCalls(
+  db: RecallDb,
+  retentionDays: number,
+): number {
+  // Callers may pass a partial config, so an absent value arrives as NaN.
+  // `NaN <= 0` is false, which would build an Invalid Date cutoff and throw.
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return 0;
+  const cutoff = new Date(Date.now() - (retentionDays * DAY_MS)).toISOString();
+  return db.delete(hookCalls)
+    .where(lt(hookCalls.created_at, cutoff))
     .run().changes;
 }
 

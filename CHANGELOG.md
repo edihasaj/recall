@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- **Hook telemetry no longer grows without bound.** `hook_calls` records one
+  row per agent hook invocation and had no retention at all. On one install
+  the table plus its dedupe index reached 664 MB while the memories the
+  product exists to store took 29 MB; telemetry was 86% of a 2.1 GB database.
+  It now ages out after 30 days (`RECALL_HOOK_CALL_RETENTION_DAYS`).
+- **Deleting data now returns disk.** SQLite frees pages inside the file but
+  never shrinks it, and the vacuum was opt-in, so every retention sweep left
+  the database at its high-water mark. Vacuum is now on by default, still
+  gated to run only from background maintenance and only when at least 10% of
+  the file is reclaimable (`RECALL_SQLITE_VACUUM_ENABLED=false` opts out).
+
 - **Local builds no longer register as a second Recall app.** Xcode writes a
   full `Recall.app` into `build/DerivedData`, which Spotlight indexed and
   LaunchServices registered alongside the real install, so macOS offered the
