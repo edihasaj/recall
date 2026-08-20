@@ -7,6 +7,7 @@ export function maintenanceChangeCount(result: MaintenanceResult): number {
     result.scanned_memories_demoted +
     result.scanned_memories_rejected +
     result.activity_pruned +
+    result.hook_calls_pruned +
     result.feedback_pruned +
     result.signals_pruned +
     result.embeddings_refreshed +
@@ -29,7 +30,8 @@ export function shouldLogMaintenance(result: MaintenanceResult): boolean {
     result.lexical_drift !== 0 ||
     result.embedding_stale > 0 ||
     result.history_vector_drift !== 0 ||
-    result.history_lexical_drift !== 0
+    result.history_lexical_drift !== 0 ||
+    result.sqlite_vacuum_ran
   );
 }
 
@@ -39,6 +41,8 @@ export function formatMaintenanceSummary(result: MaintenanceResult): string {
     `prune=${result.prune_total} ` +
     `scanned(normalized=${result.scanned_memories_normalized},demoted=${result.scanned_memories_demoted},rejected=${result.scanned_memories_rejected}) ` +
     `activity=${result.activity_pruned} ` +
+    `hooks=${result.hook_calls_pruned} ` +
+    `vacuum=${result.sqlite_vacuum_ran ? "yes" : "no"} ` +
     `feedback=${result.feedback_pruned} ` +
     `signals=${result.signals_pruned} ` +
     `refreshed=${result.embeddings_refreshed} ` +

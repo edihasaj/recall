@@ -17,6 +17,7 @@ function makeResult(overrides: Partial<MaintenanceResult> = {}): MaintenanceResu
     scanned_memories_demoted: 0,
     scanned_memories_rejected: 0,
     activity_pruned: 0,
+    hook_calls_pruned: 0,
     feedback_pruned: 0,
     signals_pruned: 0,
     embeddings_refreshed: 0,
@@ -85,5 +86,26 @@ describe("maintenance logging", () => {
     expect(formatMaintenanceSummary(result)).toContain(
       "tasks(enqueued=0,swept=0,dropped=0,expired=0,invalid=0)",
     );
+  });
+});
+
+describe("telemetry reclaim is observable", () => {
+  it("counts hook-call pruning as a real change and reports it", () => {
+    const result = makeResult({ hook_calls_pruned: 301_210 });
+    expect(shouldLogMaintenance(result)).toBe(true);
+    expect(formatMaintenanceSummary(result)).toContain("hooks=301210");
+  });
+
+  it("logs a vacuum even when nothing else changed", () => {
+    // Reclaiming disk is the one action a user would want to see on an
+    // otherwise idle cycle.
+    const result = makeResult({ sqlite_vacuum_ran: true });
+    expect(shouldLogMaintenance(result)).toBe(true);
+    expect(formatMaintenanceSummary(result)).toContain("vacuum=yes");
+  });
+
+  it("stays quiet on a genuinely idle cycle", () => {
+    expect(shouldLogMaintenance(makeResult())).toBe(false);
+    expect(formatMaintenanceSummary(makeResult())).toContain("vacuum=no");
   });
 });
