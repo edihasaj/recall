@@ -17,6 +17,17 @@ import { getDbPath } from "../db/client.js";
 
 export const DEFAULT_BACKUP_RETENTION = 2;
 
+// One-off snapshots (`recall-pre-migration.db`, `before-cloud-convergence.db`,
+// anything a human or script named itself) sit in the same directory but do
+// not match the daily rotation pattern, so retention never saw them and
+// `db backups` never listed them. They accumulated silently — one real install
+// carried 3.8 GB of July snapshots that nothing would ever reclaim. They are
+// deliberate safety nets, so they get a much longer grace period than the
+// dailies rather than immediate rotation.
+export const DEFAULT_ONE_OFF_BACKUP_MAX_AGE_DAYS = 30;
+
+const DAILY_BACKUP_RE = /^recall-(\d{4}-\d{2}-\d{2})\.db$/;
+
 export interface BackupResult {
   created: string | null;
   retained: string[];
@@ -40,11 +51,17 @@ export function ensureDailyBackup(
   options: {
     dbPath?: string;
     retention?: number;
+    /** Days to keep non-daily snapshots. 0 disables the sweep entirely. */
+    one_off_max_age_days?: number;
     now?: Date;
   } = {},
 ): BackupResult {
   const dbPath = options.dbPath ?? getDbPath();
   const retention = Math.max(1, options.retention ?? DEFAULT_BACKUP_RETENTION);
+  const oneOffMaxAgeDays = Math.max(
+    0,
+    options.one_off_max_age_days ?? DEFAULT_ONE_OFF_BACKUP_MAX_AGE_DAYS,
+  );
   const result: BackupResult = { created: null, retained: [], removed: [] };
 
   if (!existsSync(dbPath)) return result;
@@ -60,10 +77,13 @@ export function ensureDailyBackup(
     throw new Error(`Refusing unsafe backup path: ${target}`);
   }
 
-  const entries = readdirSync(dir)
-    .filter((name) => /^recall-\d{4}-\d{2}-\d{2}\.db$/.test(name))
+  const all = readdirSync(dir)
+    .filter((name) => name.endsWith(".db"))
     .filter((name) => isRegularFileWithoutSymlink(join(dir, name)))
-    .map((name) => ({ name, path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }))
+    .map((name) => ({ name, path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }));
+
+  const entries = all
+    .filter((entry) => DAILY_BACKUP_RE.test(entry.name))
     .sort((a, b) => b.mtime - a.mtime);
 
   result.retained = entries.slice(0, retention).map((e) => e.path);
@@ -72,21 +92,55 @@ export function ensureDailyBackup(
     result.removed.push(drop.path);
   }
 
+  // Age-based sweep for one-off snapshots. Never touches the snapshot taken
+  // in this run, and never touches anything when the sweep is disabled.
+  if (oneOffMaxAgeDays > 0) {
+    const cutoff = (options.now?.getTime() ?? Date.now()) - oneOffMaxAgeDays * 86_400_000;
+    for (const entry of all) {
+      if (DAILY_BACKUP_RE.test(entry.name)) continue;
+      if (entry.path === result.created) continue;
+      if (entry.mtime >= cutoff) {
+        result.retained.push(entry.path);
+        continue;
+      }
+      rmSync(entry.path, { force: true });
+      result.removed.push(entry.path);
+    }
+  }
+
   return result;
 }
 
-export function listBackups(dbPath: string = getDbPath()): Array<{ date: string; path: string; size_bytes: number }> {
+export interface BackupListing {
+  /** Rotation date for daily snapshots; the file's mtime date for one-offs. */
+  date: string;
+  path: string;
+  size_bytes: number;
+  /** "daily" rotates on a count; "one_off" ages out. */
+  kind: "daily" | "one_off";
+}
+
+// Lists every snapshot, not just the daily rotation. One-off snapshots were
+// previously omitted, which hid real disk usage: `db backups` reported a
+// couple of gigabytes while the directory held several more.
+export function listBackups(dbPath: string = getDbPath()): BackupListing[] {
   const dir = getBackupsDir(dbPath);
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .map((name) => {
-      const match = name.match(/^recall-(\d{4}-\d{2}-\d{2})\.db$/);
-      if (!match) return null;
+      if (!name.endsWith(".db")) return null;
       const path = join(dir, name);
       if (!isRegularFileWithoutSymlink(path)) return null;
-      return { date: match[1], path, size_bytes: statSync(path).size };
+      const stat = statSync(path);
+      const match = name.match(DAILY_BACKUP_RE);
+      return {
+        date: match ? match[1] : new Date(stat.mtimeMs).toISOString().slice(0, 10),
+        path,
+        size_bytes: stat.size,
+        kind: match ? ("daily" as const) : ("one_off" as const),
+      };
     })
-    .filter((v): v is { date: string; path: string; size_bytes: number } => v !== null)
+    .filter((v): v is BackupListing => v !== null)
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 

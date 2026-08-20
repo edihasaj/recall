@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -108,5 +110,66 @@ describe("daily database snapshot", () => {
 
     expect(() => restoreBackup("2026-04-15", { dbPath })).toThrow(/unsafe backup/);
     expect(readFileSync(dbPath, "utf-8")).toBe("original-db-bytes");
+  });
+});
+
+describe("one-off snapshot retention", () => {
+  function seedOneOff(dbPath: string, name: string, ageDays: number): string {
+    const dir = getBackupsDir(dbPath);
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, name);
+    writeFileSync(path, "one-off-bytes");
+    const when = new Date(Date.now() - ageDays * 86_400_000);
+    utimesSync(path, when, when);
+    return path;
+  }
+
+  it("ages out stale one-off snapshots the daily rotation never saw", () => {
+    const dbPath = freshDbPath();
+    // Real names taken from an install that had accumulated 3.8 GB of these.
+    const stale = seedOneOff(dbPath, "before-cloud-convergence-20260723-2252.db", 60);
+    const alsoStale = seedOneOff(dbPath, "recall-pre-scope-repair-20260725-140657.db", 45);
+    const recent = seedOneOff(dbPath, "recall-pre-upgrade-today.db", 2);
+
+    const result = ensureDailyBackup({ dbPath });
+
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(alsoStale)).toBe(false);
+    expect(result.removed).toContain(stale);
+    expect(result.removed).toContain(alsoStale);
+
+    // A snapshot taken days ago is still inside its grace period.
+    expect(existsSync(recent)).toBe(true);
+    expect(result.retained).toContain(recent);
+  });
+
+  it("never deletes one-off snapshots when the sweep is disabled", () => {
+    const dbPath = freshDbPath();
+    const ancient = seedOneOff(dbPath, "before-cloud-convergence-20260723-2252.db", 400);
+
+    const result = ensureDailyBackup({ dbPath, one_off_max_age_days: 0 });
+
+    expect(existsSync(ancient)).toBe(true);
+    expect(result.removed).not.toContain(ancient);
+  });
+
+  it("keeps the daily rotation independent of one-off snapshots", () => {
+    const dbPath = freshDbPath();
+    seedOneOff(dbPath, "manual-safety-net.db", 1);
+    const created = ensureDailyBackup({ dbPath }).created!;
+
+    // The freshly created daily backup must survive its own run.
+    expect(existsSync(created)).toBe(true);
+    expect(created.endsWith(".db")).toBe(true);
+  });
+
+  it("listBackups reports one-off snapshots so disk usage is visible", () => {
+    const dbPath = freshDbPath();
+    seedOneOff(dbPath, "before-cloud-convergence-20260723-2252.db", 3);
+    ensureDailyBackup({ dbPath });
+
+    const listed = listBackups(dbPath);
+    const kinds = listed.map((b) => b.kind).sort();
+    expect(kinds).toEqual(["daily", "one_off"]);
   });
 });

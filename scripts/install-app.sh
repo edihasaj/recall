@@ -10,6 +10,7 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_path="/Applications/Recall.app"
 staging_path="/Applications/Recall.app.next.$$"
 backup_path="/Applications/Recall.app.old.$$"
+lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 app_path="$("$root_dir/scripts/build-app.sh" | tail -n 1)"
 
@@ -42,7 +43,19 @@ mv "$staging_path" "$target_path"
 # Best-effort GUI relaunch + async cleanup of the old bundle.
 open "$target_path" || true
 if [[ -e "$backup_path" ]]; then
+  # Drop the old bundle from LaunchServices *before* it moves to the Trash.
+  # A trashed .app stays registered until the Trash is emptied, so without
+  # this every upgrade leaves behind another "Recall" in Spotlight and
+  # Open With. Unregistering first keeps exactly one registered Recall.
+  if [[ -x "$lsregister" ]]; then
+    "$lsregister" -u "$backup_path" >/dev/null 2>&1 || true
+  fi
   trash "$backup_path" || rm -rf "$backup_path"
+fi
+
+# Re-assert the installed bundle as the one true registration.
+if [[ -x "$lsregister" ]]; then
+  "$lsregister" -f "$target_path" >/dev/null 2>&1 || true
 fi
 
 echo "Installed $target_path"

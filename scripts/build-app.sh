@@ -23,6 +23,15 @@ if [[ "$node_major" != "22" ]]; then
 fi
 
 cd "$root_dir"
+
+# Xcode writes a full Recall.app into build/DerivedData. Spotlight indexes it,
+# LaunchServices then registers it as a *second* Recall install, and macOS
+# starts offering the repo build in Open With / Spotlight alongside the real
+# one in /Applications. A .metadata_never_index marker excludes the whole
+# build tree from indexing, so local builds stay invisible to LaunchServices.
+mkdir -p "$root_dir/build"
+touch "$root_dir/build/.metadata_never_index"
+
 rm -rf "$root_dir/dist"
 npm run build
 

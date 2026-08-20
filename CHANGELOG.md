@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Local builds no longer register as a second Recall app.** Xcode writes a
+  full `Recall.app` into `build/DerivedData`, which Spotlight indexed and
+  LaunchServices registered alongside the real install, so macOS offered the
+  repo build in Spotlight and Open With. The build tree is now marked
+  `.metadata_never_index`.
+- **Upgrades no longer leave a Recall behind in the Trash.** `install-app.sh`
+  trashed the previous bundle, and a trashed `.app` stays registered until the
+  Trash is emptied, so every upgrade added another "Recall" to Spotlight. The
+  old bundle is now unregistered before it is trashed, and the installed
+  bundle is re-asserted afterwards. One machine had accumulated ten registered
+  Recall bundles this way.
+- **One-off database snapshots are retained and reported.** Backup retention
+  and `recall db backups` both matched only the daily `recall-YYYY-MM-DD.db`
+  pattern, so manually named snapshots were invisible to the CLI and never
+  rotated — one install held 3.8 GB of them from a single month. They are now
+  listed with a total, and age out after 30 days
+  (`one_off_max_age_days: 0` disables the sweep).
+
 ## 1.1.0 - 2026-08-20
 
 ### Added

@@ -216,10 +216,14 @@ dbCmd
       console.log("No backups yet.");
       return;
     }
+    let total = 0;
     for (const b of backups) {
       const mb = (b.size_bytes / 1024 / 1024).toFixed(2);
-      console.log(`${b.date}  ${mb} MB  ${b.path}`);
+      total += b.size_bytes;
+      const tag = b.kind === "one_off" ? " [one-off]" : "";
+      console.log(`${b.date}  ${mb} MB  ${b.path}${tag}`);
     }
+    console.log(`\nTotal: ${(total / 1024 / 1024 / 1024).toFixed(2)} GB across ${backups.length} snapshot(s)`);
   });
 
 dbCmd
