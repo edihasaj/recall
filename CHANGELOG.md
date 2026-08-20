@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- **`recall doctor` reports stray app registrations, and `--fix` clears them.**
+  macOS registers every Recall.app bundle it sees, so local Xcode builds and
+  bundles left in the Trash by an upgrade are offered in Spotlight and Open
+  With alongside the real install; one machine had drifted to 31. The causes
+  are fixed, but a database that already carries strays never healed on its
+  own. Unregistering only edits the LaunchServices database and never touches
+  the files.
+
 ### Fixed
 
 - **Hook telemetry no longer grows without bound.** `hook_calls` records one

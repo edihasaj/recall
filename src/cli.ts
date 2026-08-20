@@ -46,6 +46,7 @@ import { createPolicy, listPolicies, togglePolicy, deletePolicy, evaluatePolicy,
 import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "./health/scoring.js";
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
+import { unregisterStrayApps } from "./doctor/app-registrations.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
@@ -135,9 +136,24 @@ program
           return false;
         })
         .map((a) => a.agent);
-      if (detectedAgents.length === 0) {
+      // Stray LaunchServices registrations: every local build or trashed
+      // bundle macOS still offers as an installed Recall. Unregistering only
+      // edits the LaunchServices database, never the files.
+      const strays = report.app_registrations.stray_paths;
+      if (strays.length > 0) {
+        const cleared = unregisterStrayApps(strays);
+        report.app_registrations.stray_paths = cleared.failed;
+        if (!opts.json) {
+          console.log(`Unregistered ${cleared.unregistered.length} stray Recall.app bundle(s).`);
+          for (const path of cleared.failed) {
+            console.log(`  could not unregister: ${path}`);
+          }
+        }
+      }
+
+      if (detectedAgents.length === 0 && strays.length === 0) {
         if (!opts.json) console.log("Nothing to fix — all detected agents are wired.");
-      } else {
+      } else if (detectedAgents.length > 0) {
         const fixResult = runRecallSetup({
           agent: detectedAgents,
         });

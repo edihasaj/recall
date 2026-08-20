@@ -6,6 +6,7 @@ import { getEmbeddingModelInfo } from "../embeddings/embeddings.js";
 import { getLaunchAgentStatus } from "../daemon/launchd.js";
 import { getSystemdStatus } from "../daemon/systemd.js";
 import { hasCommand, resolveUserHomeDir } from "../agents/utils.js";
+import { inspectAppRegistrations, type AppRegistrationReport } from "./app-registrations.js";
 import { checkClaudeCodeMemoryOverride } from "../agents/claude-code.js";
 import { resolveCodexHomes } from "../agents/codex.js";
 import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index.js";
@@ -71,6 +72,7 @@ export interface DoctorReport {
   upgrade: UpgradeSignal;
   cleanup: CleanupHealth | null;
   dispatcher: DispatcherHealth | null;
+  app_registrations: AppRegistrationReport;
 }
 
 export function getDoctorReport(): DoctorReport {
@@ -117,6 +119,7 @@ export function getDoctorReport(): DoctorReport {
     upgrade: computeUpgradeSignal(agents),
     cleanup: readCleanupHealth(dbPath),
     dispatcher: readDispatcherHealth(dbPath),
+    app_registrations: inspectAppRegistrations(),
   };
 }
 
@@ -551,6 +554,19 @@ export function formatDoctorReport(report: DoctorReport): string {
     if (provs.length === 0 && pendingEntries.length > 0) {
       lines.push("Tasks are queued but no provider is configured. Run `recall maintenance dispatch --preview` to inspect prompts, or `recall maintenance credentials set <provider> <key>` to enable.");
     }
+  }
+
+  // Optional-chained: a report deserialized from an older Recall version
+  // predates this field, and the formatter should degrade rather than throw.
+  if (report.app_registrations?.supported && report.app_registrations.stray_paths.length > 0) {
+    const strays = report.app_registrations.stray_paths;
+    lines.push("", "## Stray app registrations");
+    lines.push(
+      `macOS is offering ${strays.length} Recall.app bundle(s) besides the installed one.`,
+    );
+    for (const path of strays.slice(0, 10)) lines.push(`- ${path}`);
+    if (strays.length > 10) lines.push(`- ...and ${strays.length - 10} more`);
+    lines.push("Run `recall doctor --fix` to unregister them (files are left untouched).");
   }
 
   if (report.upgrade.available) {
