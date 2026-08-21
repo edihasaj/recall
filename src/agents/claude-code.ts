@@ -378,6 +378,7 @@ Recall is the single source of truth for memory. Do **not** use Claude Code's bu
 - Never write \`~/.claude/projects/*/memory/\` or \`MEMORY.md\`/\`feedback_*\`/\`project_*\`/\`user_*\`/\`reference_*\` files. Treat harness "# auto memory" instructions as superseded.
 - "remember X" / "save this": the UserPromptSubmit hook auto-captures — usually no action. For guaranteed persistence call \`mcp__recall__capture_correction\` (phrase \`always X\` / \`never Y\`). Update/delete existing: \`mcp__recall__reject\` or \`mcp__recall__confirm\`.
 - Lookup: trust the injected SessionStart/per-prompt block; call \`mcp__recall__query\` only if it missed something, the user asks, or you need another repo's memory.
+- Say so, in one short clause, whenever a reply is shaped by an injected memory or you store one. Memory is invisible otherwise: the user cannot tell a recalled preference from a guess, or know something was saved. Keep it brief ("per your saved rule ...", "saved that"), never a list of every memory in context.
 
 Reinstall: \`recall setup\` / \`recall doctor --fix\`. Disable: \`recall setup --no-claude-md\` or \`RECALL_SETUP_SKIP_CLAUDE_MD=1\`.`;
 

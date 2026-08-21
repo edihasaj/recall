@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Agents disclose when memory shaped a reply.** Recall injected context and
+  stored corrections silently, so a recalled preference was indistinguishable
+  from a guess and a save left no trace in the conversation. The managed rules
+  block now asks every agent to say so in one short clause when a reply is
+  shaped by an injected memory or when it stores one, without listing
+  everything retrieved.
+
 ## 1.2.0 - 2026-08-21
 
 ### Added
