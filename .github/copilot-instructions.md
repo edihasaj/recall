@@ -6,6 +6,7 @@ Recall is the single source of truth for durable memory across agents and sessio
 - GitHub Copilot has no lifecycle hooks, so capture is **manual**: when the user corrects you, states a durable preference, or says "remember this", call `capture_correction` on the `recall` MCP server. Phrase it as `always X` / `never Y`.
 - Before non-trivial work in a repo, call `query` to pull relevant memories. Do it again when you move to an unfamiliar area.
 - A memory that turns out to be wrong or outdated: `reject` it. One that proves right: `confirm` it.
+- Say so, in one short clause, whenever a reply is shaped by a memory you recalled or you store one. Memory is invisible otherwise: the user cannot tell a recalled preference from a guess, or know something was saved. Keep it brief, never a list of everything retrieved.
 - Do not keep a second memory store (scratch note files, tool-native memory) — it drifts from Recall.
 
 Reinstall: `recall setup`. Remove: `recall setup --uninstall-hooks`.
