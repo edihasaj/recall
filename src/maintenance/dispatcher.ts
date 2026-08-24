@@ -310,6 +310,10 @@ function buildExtractRulesFromPromptPrompt(task: MaintenanceTask): Prompt {
     "  (a) Imperative — telling the agent what to always/never do, or what to prefer.",
     "  (b) Durable — the user expects it to apply across future sessions, not just this one task.",
     "  (c) Specific — concrete enough that an agent can follow it without further clarification.",
+    "Judge durability from MEANING and conversational context in whatever language the user used; never require magic keywords or a special syntax. Habitual behavior, standing preferences, defaults, and repo/team conventions can be durable even without words equivalent to 'always' or 'never'.",
+    "Current-task authorization is NOT durable memory: 'don't commit', 'do not push', 'no commit/push', 'work in the existing worktree', and semantic equivalents in any language normally apply only to the live task. Explicit persistence wording is strong evidence, but not required when the meaning clearly describes an ongoing policy.",
+    "For every returned rule set durability='durable'|'ephemeral'|'ambiguous' and durability_evidence to an exact short quote from USER PROMPT in its original language that supports the judgment. Return only durable rules; the other labels are accepted defensively but will be discarded.",
+    "Do not return scope='session'. Session-only instructions remain in conversation context and must not enter the persistent memory store.",
     "Recognize rules in ANY natural language (English, Spanish, French, German, Italian, Portuguese, Russian, Chinese, Japanese, Albanian, Turkish, Arabic, …). When the source is non-English, return the cleaned rule TEXT in English so memories are searchable across sessions.",
     "REJECT (return empty list):",
     "  • Questions ('should we use X?'), one-off task requests ('please fix this bug now'), narration ('I never use X' as description of past behavior), code paste, error logs, transcripts.",
@@ -336,7 +340,7 @@ function buildExtractRulesFromPromptPrompt(task: MaintenanceTask): Prompt {
     `USER PROMPT:`,
     JSON.stringify(payload.raw_prompt ?? ""),
     "",
-    'Return JSON: {"rules": [{"text": string, "type": "rule"|"decision"|"review_pattern"|"command"|"gotcha", "scope": "session"|"path"|"repo"|"team"|"global", "path_scope": string|null, "confidence": number, "is_destructive_risky": boolean, "rationale": string}], "dropped_reason": string?}',
+    'Return JSON: {"rules": [{"text": string, "type": "rule"|"decision"|"review_pattern"|"command"|"gotcha", "scope": "session"|"path"|"repo"|"team"|"global", "path_scope": string|null, "confidence": number, "durability": "durable"|"ephemeral"|"ambiguous", "durability_evidence": string|null, "is_destructive_risky": boolean, "rationale": string}], "dropped_reason": string?}',
     'When the prompt contains no durable rule, return {"rules": []} with a brief dropped_reason.',
   ].join("\n");
   return { system, user, max_output_tokens: 1600 };

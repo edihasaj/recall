@@ -216,6 +216,9 @@ describe("managed rules blocks", () => {
     expect(content).toContain("Use tabs.");
     expect(content).toContain("recall:managed:github-copilot-memory:begin v1");
     expect(content).toContain("capture_correction");
+    expect(content).toContain("semantic understanding in any language");
+    expect(content).toContain("without special keywords");
+    expect(content).toContain("current task");
   });
 
   it("is idempotent and reports status", () => {

@@ -57,7 +57,7 @@ describe("memory quality phase 4 promotion-on-repetition", () => {
     expect(getMemory(db, memoryId)!.status).toBe("active");
   });
 
-  it("promotes a new candidate when sibling memories in the same group have enough followed outcomes", () => {
+  it("does not promote a new candidate from sibling feedback", () => {
     const db = freshDb();
     const siblingId = createMemory(db, {
       type: "rule",
@@ -78,7 +78,7 @@ describe("memory quality phase 4 promotion-on-repetition", () => {
 
     return candidateResult.then(({ ids }) => {
       const candidate = getMemory(db, ids[0])!;
-      expect(candidate.status).toBe("active");
+      expect(candidate.status).toBe("candidate");
     });
   });
 });

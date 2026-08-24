@@ -64,6 +64,7 @@ export async function captureCorrectionFallback(
     agent: input.agent,
     prev_assistant_turn: input.prev_assistant_turn,
     recent_tool_calls: input.recent_tool_calls,
+    force_semantic_capture: true,
   });
 
   createActivityEvent(db, {

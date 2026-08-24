@@ -24,6 +24,71 @@ const INJECTION_ARTIFACT_RE = new RegExp(
 const EPHEMERAL_TASK_CONTEXT_RE =
   /(?:^\s*\/goal\b|pause for (?:the )?user\b|this is task def(?:inition)?:|key details\s+description\s+(?:goal|background)\b|link to jira ticket|what(?:'|’)s changed\?|this article lists the tools we use for development|required software on node)/i;
 
+// Tool/review reports are often pasted after a short user request. Imperative
+// sentences inside them describe the reporting agent's operating contract;
+// they are not a preference the user is teaching Recall. Require several
+// structural markers so an ordinary multiline user prompt is not quarantined.
+const OPERATIONAL_REPORT_MARKERS: RegExp[] = [
+  /(?:^|\n)\s*(?:✏️|❓|✅|❌)\s*(?:review|test|checkout)\s*:/iu,
+  /\bTouch-map\s*:/i,
+  /\b\d+\/\d+ gates passed\b/i,
+  /\b(?:gates|checkout) skipped\b/i,
+  /\bUsage Error\s*:/i,
+  /\b(?:no provider review|verdict from gates only)\b/i,
+  /\bLocal review only for this repo\b/i,
+];
+
+export function looksLikePastedOperationalReport(text: string): boolean {
+  if (text.length < 500 || !text.includes("\n")) return false;
+  const leadingRequest = text.split(/\r?\n\s*\r?\n/, 1)[0] ?? "";
+  if (DURABLE_INTENT_MARKER_RE.test(leadingRequest)) return false;
+  const markerCount = OPERATIONAL_REPORT_MARKERS.reduce(
+    (count, marker) => count + (marker.test(text) ? 1 : 0),
+    0,
+  );
+  return markerCount >= 2;
+}
+
+const DURABLE_INTENT_MARKER_RE =
+  /\b(?:always|never|from now on|going forward|henceforth|every time|whenever|by default|make (?:this|it) a rule|remember this|save this|for this repo|for this project|repo-wide|project-wide|across (?:all )?(?:repos|projects)|globally|everywhere)\b/i;
+
+const GENERIC_CHANGE_CONTROL_RE = new RegExp(
+  [
+    "(?:do\\s+not|don't|no)\\s+(?:commit|push)(?:\\s*(?:\\/|or|and)\\s*(?:commit|push))?(?:\\s+(?:any\\s+)?(?:changes?|work|anything|repository\\s+changes?|from\\s+this\\s+worktree))?",
+    "without\\s+(?:committing|pushing)(?:\\s+or\\s+(?:committing|pushing))?",
+  ].join("|"),
+  "i",
+);
+
+function changeControlClauses(text: string): string[] {
+  return text
+    .split(/(?:\r?\n|[.!?;])+/)
+    .map((clause) => clause.trim())
+    .filter((clause) => /\b(?:commit|push|committing|pushing)\b/i.test(clause));
+}
+
+/**
+ * Detect one-turn git authorization constraints such as "fix it; don't
+ * commit/push". These instructions remain authoritative in the live prompt,
+ * but are not durable memory unless the user adds an explicit persistence
+ * marker ("never", "from now on", "for this repo", "remember this", …).
+ * This is the conservative fallback for regex capture and legacy LLM results;
+ * a current semantic durability judgment takes precedence.
+ */
+export function isEphemeralTaskConstraint(ruleText: string, rawPrompt: string): boolean {
+  if (!GENERIC_CHANGE_CONTROL_RE.test(ruleText)) return false;
+  // Object-specific safety rules are not generic authorization for the task.
+  // "Do not commit secrets/.env/generated files" can be a durable repo rule.
+  if (/\b(?:secret|credential|token|private key|\.env|config(?:uration)?|generated file|lockfile)s?\b/i.test(ruleText)) {
+    return false;
+  }
+  const sourceClauses = changeControlClauses(rawPrompt);
+  if (sourceClauses.length === 0) return false;
+  const matchingClauses = sourceClauses.filter((clause) => GENERIC_CHANGE_CONTROL_RE.test(clause));
+  if (matchingClauses.length === 0) return false;
+  return matchingClauses.every((clause) => !DURABLE_INTENT_MARKER_RE.test(clause));
+}
+
 // Codex emits additional internal prompts through the same hook surface as
 // genuine user turns. They are task-title, ambient-suggestion, and safety
 // judge instructions owned by the harness, not durable preferences typed by
@@ -66,6 +131,7 @@ export function isNonUserCaptureContext(text: string): boolean {
     NON_USER_CONTEXT_RE.test(text) ||
     INJECTION_ARTIFACT_RE.test(text) ||
     EPHEMERAL_TASK_CONTEXT_RE.test(text) ||
+    looksLikePastedOperationalReport(text) ||
     LLM_WORKER_PROMPT_RE.test(text) ||
     CODEX_INTERNAL_PROMPT_RE.test(text) ||
     looksLikeQuestionContext(text)

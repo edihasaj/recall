@@ -34,7 +34,11 @@ describe("runLocalSetup installs both MCP and hooks globally", () => {
 
     const previousHome = process.env.HOME;
     const previousPath = process.env.PATH;
+    const previousCodexHome = process.env.CODEX_HOME;
+    const previousRecallCodexHomes = process.env.RECALL_CODEX_HOMES;
     process.env.HOME = home;
+    delete process.env.CODEX_HOME;
+    delete process.env.RECALL_CODEX_HOMES;
     // Only a stub `codex` is on PATH so the version probe sees a supported
     // build but real `claude mcp add` / `codex mcp add` still fail cleanly.
     const stubDir = makeCodexStub("0.122.0");
@@ -61,6 +65,10 @@ describe("runLocalSetup installs both MCP and hooks globally", () => {
       process.env.HOME = previousHome;
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;
+      if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previousCodexHome;
+      if (previousRecallCodexHomes === undefined) delete process.env.RECALL_CODEX_HOMES;
+      else process.env.RECALL_CODEX_HOMES = previousRecallCodexHomes;
     }
   });
 });

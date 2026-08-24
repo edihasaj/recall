@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,6 +15,21 @@ function freshHome() {
   mkdirSync(join(home, ".codex"), { recursive: true });
   return home;
 }
+
+const originalCodexHome = process.env.CODEX_HOME;
+const originalRecallCodexHomes = process.env.RECALL_CODEX_HOMES;
+
+beforeEach(() => {
+  delete process.env.CODEX_HOME;
+  delete process.env.RECALL_CODEX_HOMES;
+});
+
+afterEach(() => {
+  if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
+  else process.env.CODEX_HOME = originalCodexHome;
+  if (originalRecallCodexHomes === undefined) delete process.env.RECALL_CODEX_HOMES;
+  else process.env.RECALL_CODEX_HOMES = originalRecallCodexHomes;
+});
 
 describe("doctor detects agent install state", () => {
   it("reports not-detected agents cleanly", () => {

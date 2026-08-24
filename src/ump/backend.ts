@@ -133,6 +133,7 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         repo,
         path,
         agent: "ump",
+        force_semantic_capture: true,
       });
       return { ids: res.ids ?? [] };
     },

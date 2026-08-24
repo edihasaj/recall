@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.0 - 2026-08-25
+
+### Added
+
+- **Agents learn standing preferences semantically in any language.** Managed
+  agent instructions now ask the active model to recognize durable corrections,
+  defaults, and repo/team conventions by meaning rather than magic words. An
+  explicit capture bypasses keyword screening; when an LLM judge is configured,
+  it returns a structured durable/ephemeral/ambiguous decision with evidence in
+  the user's original language. Without a judge, the statement remains a
+  low-confidence candidate until repeated or confirmed.
+
+### Fixed
+
+- **One-task instructions no longer become permanent rules.** Phrases such as
+  "do not commit this time" stay in the live conversation, while standing
+  policies remain learnable. Session-only memories cannot leak into later
+  sessions, and attached operational reports are quarantined before embedded
+  agent instructions can be extracted.
+- **Unrelated positive feedback cannot activate a new memory.** A brand-new
+  candidate now requires its own repeated evidence or explicit confirmation;
+  followed outcomes on sibling rules no longer promote it immediately.
+
 ## 1.3.1 - 2026-08-24
 
 ### Fixed

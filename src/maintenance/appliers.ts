@@ -18,6 +18,7 @@ import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import type { CaptureContext, EvidenceEntry, MaintenanceTask, MemoryType } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { isHighRiskRule } from "../capture/correction.js";
+import { isEphemeralTaskConstraint } from "../capture/context.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import type {
   ExtractedRule,
@@ -452,6 +453,21 @@ export function applyExtractRulesFromPrompt(
   const reinforcedIds: string[] = [];
   const sessionId = payload.session_id ?? "unknown";
   for (const rule of result.rules) {
+    // Session-only instructions already govern the live turn. Trust the LLM's
+    // language-independent durability judgment when present; use the narrow
+    // English heuristic only for legacy responses that predate that field.
+    if (
+      rule.scope === "session" ||
+      rule.durability === "ephemeral" ||
+      rule.durability === "ambiguous" ||
+      (
+        rule.durability !== "durable" &&
+        isEphemeralTaskConstraint(rule.text, payload.raw_prompt ?? "")
+      )
+    ) {
+      continue;
+    }
+
     const evidence: EvidenceEntry = {
       type: "session_correction",
       session: sessionId,
@@ -529,8 +545,8 @@ export function applyExtractRulesFromPrompt(
     );
 
     // High-risk rules never auto-promote, even if LLM gives high confidence.
-    // The existing maybePromoteGroupCandidate path (in correction.ts) skips
-    // them; for parity we just rely on it remaining a candidate here.
+    // All first captures remain candidates; this branch documents the stricter
+    // explicit-confirm requirement for high-risk rules.
     if (rule.is_destructive_risky || isHighRiskRule(rule.text)) {
       // No-op; candidate stays candidate until explicit confirm.
     }

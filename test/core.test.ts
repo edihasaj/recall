@@ -595,6 +595,41 @@ ${"x".repeat(1_300)}
     expect(mem.repo).toBe("test/repo");
   });
 
+  it("does not let sibling feedback activate a brand-new rule", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+    const trusted = createMemory(db, {
+      type: "rule",
+      text: "Always run the focused tests",
+      scope: "repo",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+    });
+    for (const session of ["feedback-1", "feedback-2", "feedback-3"]) {
+      recordFeedback(db, trusted, session, true, "followed");
+    }
+
+    const { ids } = await processCorrection(db, "always use strict mode", {
+      sessionId: "capture-1",
+      repo: "test/repo",
+    });
+
+    expect(ids).toHaveLength(1);
+    expect(getMemory(db, ids[0]!)!.status).toBe("candidate");
+  });
+
+  it("does not persist explicit session-only corrections", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+    const { ids } = await processCorrection(db, "just for now, always skip the linter", {
+      sessionId: "s1",
+      repo: "test/repo",
+    });
+    expect(ids).toEqual([]);
+    expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(0);
+  });
+
   it("promotes on repeated correction", async () => {
     const db = freshDb();
 
@@ -652,6 +687,35 @@ ${"x".repeat(1_300)}
 });
 
 describe("compiler", () => {
+  it("never leaks a session-scoped memory into another session", () => {
+    const db = freshDb();
+    createMemory(db, {
+      type: "rule",
+      text: "Do not commit during this task",
+      scope: "session",
+      repo: "test/repo",
+      source: "user_correction",
+      confidence: 0.8,
+      evidence: [{
+        type: "session_correction",
+        session: "origin-session",
+        timestamp: new Date().toISOString(),
+      }],
+    });
+
+    expect(compileContext(db, {
+      repo: "test/repo",
+      session_id: "origin-session",
+    }).text).toContain("Do not commit during this task");
+    expect(compileContext(db, {
+      repo: "test/repo",
+      session_id: "different-session",
+    }).text).not.toContain("Do not commit during this task");
+    expect(compileContext(db, { repo: "test/repo" }).text).not.toContain(
+      "Do not commit during this task",
+    );
+  });
+
   it("compiles active memories into text", () => {
     const db = freshDb();
     createMemory(db, {

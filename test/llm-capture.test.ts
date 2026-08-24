@@ -10,6 +10,7 @@ import {
   processCorrection,
 } from "../src/capture/correction.js";
 import { applyExtractRulesFromPrompt } from "../src/maintenance/appliers.js";
+import { buildPrompt } from "../src/maintenance/dispatcher.js";
 import { enqueueExtractRulesFromPrompt, peekTasks } from "../src/maintenance/tasks.js";
 import { getMemory, queryMemories, rejectMemory } from "../src/models/memory.js";
 import { pruneMemories } from "../src/pruning/pruner.js";
@@ -71,6 +72,22 @@ afterEach(() => {
 });
 
 describe("isNonUserCaptureContext — adversarial / system-context guard", () => {
+  it("rejects pasted operational reports containing embedded agent rules", () => {
+    const report = `check autoreview for this failure:
+
+✏️ review: request-changes — org/repo#7040 · 0/2 gates passed
+Touch-map:
+repo notes: Local review only. Agents never commit or push in ~/Projects/repo.
+
+❌ test: pnpm test
+Usage Error: dependencies missing
+${"failure output\n".repeat(40)}
+(no provider review — verdict from gates only)`;
+
+    expect(isNonUserCaptureContext(report)).toBe(true);
+    expect(detectCorrections(report)).toEqual([]);
+  });
+
   it("rejects prompt-injection / agent-eval artifacts (the oktapod poison set)", () => {
     // Verbatim texts that leaked into the oktapod scope during an agent-scorecard eval.
     expect(
@@ -267,6 +284,43 @@ describe("processCorrection regex fallback global dedup", () => {
 });
 
 describe("processCorrection LLM enqueue", () => {
+  it("lets an agent semantic capture bypass keyword screening in any language", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "false";
+    const db = freshDb();
+    const statement = "Në këtë depo zakonisht kërkojmë miratim para commit-it.";
+    expect(isPromptWorthLLM(statement)).toBe(false);
+
+    const result = await processCorrection(db, statement, {
+      sessionId: "s1",
+      repo: "test/repo",
+      agent: "codex",
+      force_semantic_capture: true,
+    });
+
+    expect(result.ids).toEqual([]);
+    expect(result.pendingTaskId).toBeTruthy();
+    expect(peekTasks(db, { kinds: ["extract_rules_from_prompt"] })).toHaveLength(1);
+  });
+
+  it("keeps an agent-recognized multilingual rule as a candidate without an LLM provider", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+    const result = await processCorrection(
+      db,
+      "Në këtë depo zakonisht kërkojmë miratim para commit-it.",
+      {
+        sessionId: "s1",
+        repo: "test/repo",
+        agent: "codex",
+        force_semantic_capture: true,
+      },
+    );
+
+    expect(result.ids).toHaveLength(1);
+    expect(getMemory(db, result.ids[0]!)!.status).toBe("candidate");
+  });
+
   it("dedupes duplicate hook deliveries for the same prompt", async () => {
     process.env.OPENAI_API_KEY = "test-key";
     process.env.RECALL_LLM_CAPTURE_DISABLED = "false";
@@ -381,6 +435,184 @@ describe("applyExtractRulesFromPrompt", () => {
     });
     expect(outcome.changed_fields).toEqual([]);
     expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(0);
+  });
+
+  it("drops task-local no-commit constraints even when the LLM assigns repo scope", () => {
+    const db = freshDb();
+    const task = fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "Fix the two review findings in the existing worktree. Run focused tests. Do not commit/push.",
+    });
+
+    const outcome = applyExtractRulesFromPrompt(db, task, {
+      rules: [{
+        text: "Do not commit or push changes to the repository without additional instruction.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.95,
+      }],
+    });
+
+    expect(outcome.changed_fields).toEqual([]);
+    expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(0);
+  });
+
+  it("does not persist rules the LLM correctly labels session-only", () => {
+    const db = freshDb();
+    const task = fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "Just for this task, skip the commit.",
+    });
+
+    applyExtractRulesFromPrompt(db, task, {
+      rules: [{
+        text: "Do not commit during this task.",
+        type: "rule",
+        scope: "session",
+        confidence: 0.95,
+      }],
+    });
+
+    expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(0);
+  });
+
+  it("keeps an explicitly durable repo no-commit rule as a candidate", () => {
+    const db = freshDb();
+    const task = fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "For this repo, never commit or push without asking me first.",
+    });
+
+    applyExtractRulesFromPrompt(db, task, {
+      rules: [{
+        text: "Do not commit or push without asking the user first.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.95,
+      }],
+    });
+
+    const memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.status).toBe("candidate");
+  });
+
+  it("keeps object-specific commit safety rules", () => {
+    const db = freshDb();
+    const task = fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "For this repo, do not commit secrets or .env files.",
+    });
+
+    applyExtractRulesFromPrompt(db, task, {
+      rules: [{
+        text: "Do not commit secrets or .env files.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.95,
+      }],
+    });
+
+    expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(1);
+  });
+
+  it("uses semantic durability judgments across languages", () => {
+    const db = freshDb();
+
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "sq-ephemeral",
+      raw_prompt: "Rregullo testet. Mos bëj commit ose push këtë herë.",
+    }), {
+      rules: [{
+        text: "Do not commit or push during this task.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.95,
+        durability: "ephemeral",
+        durability_evidence: "Mos bëj commit ose push këtë herë",
+      }],
+    });
+
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "sq-durable",
+      raw_prompt: "Në këtë depo zakonisht kërkojmë miratim para se të bëjmë commit.",
+    }), {
+      rules: [{
+        text: "Ask for approval before committing in this repository.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.9,
+        durability: "durable",
+        durability_evidence: "zakonisht kërkojmë miratim para se të bëjmë commit",
+      }],
+    });
+
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "es-ambiguous",
+      raw_prompt: "Quizá no hagamos push todavía.",
+    }), {
+      rules: [{
+        text: "Do not push yet.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.55,
+        durability: "ambiguous",
+        durability_evidence: "Quizá no hagamos push todavía",
+      }],
+    });
+
+    const memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.text).toContain("Ask for approval");
+    expect(memories[0]!.status).toBe("candidate");
+  });
+
+  it("lets a semantic durable judgment override the English fallback heuristic", () => {
+    const db = freshDb();
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "Do not commit or push without explicit authorization.",
+    }), {
+      rules: [{
+        text: "Do not commit or push without explicit authorization.",
+        type: "rule",
+        scope: "repo",
+        confidence: 0.9,
+        durability: "durable",
+        durability_evidence: "Do not commit or push without explicit authorization",
+      }],
+    });
+
+    expect(queryMemories(db, { repo: "test/repo" })).toHaveLength(1);
+  });
+
+  it("prompts the judge for semantic multilingual durability evidence", () => {
+    const prompt = buildPrompt(fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "Në këtë depo zakonisht kërkojmë miratim para commit-it.",
+    }))!;
+
+    expect(prompt.system).toContain("never require magic keywords");
+    expect(prompt.system).toContain("whatever language");
+    expect(prompt.user).toContain("durability_evidence");
   });
 
   it("deduplicates against existing similar memory in the same repo", () => {

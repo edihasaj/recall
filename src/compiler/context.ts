@@ -160,11 +160,12 @@ export function compileContext(
     auto_inject: true,
   });
   const allActive = dedupeById([...repoActive, ...globalActive]);
+  const sessionScoped = filterSessionScoped(allActive, req.session_id);
 
   // 2. Filter by path scope if provided
   const scoped = req.path
-    ? allActive.filter((m) => pathMatches(m, req.path!))
-    : allActive;
+    ? sessionScoped.filter((m) => pathMatches(m, req.path!))
+    : sessionScoped;
 
   // 3. Apply hard confidence threshold
   const passing = scoped.filter(
@@ -307,9 +308,10 @@ export async function compileContextHybrid(
     return Boolean(effectiveQuery) && memory.status === "active";
   });
 
+  const sessionScoped = filterSessionScoped(allMemories, req.session_id);
   const scoped = req.path
-    ? allMemories.filter((memory) => pathMatches(memory, req.path!))
-    : allMemories;
+    ? sessionScoped.filter((memory) => pathMatches(memory, req.path!))
+    : sessionScoped;
 
   const candidateConfidenceFloor = Math.min(config.confidence_threshold, 0.45);
   const passing = scoped.filter((memory) => {
@@ -754,4 +756,17 @@ function dedupeById(memories: MemoryItem[]): MemoryItem[] {
     out.push(m);
   }
   return out;
+}
+
+function filterSessionScoped(
+  memories: MemoryItem[],
+  sessionId: string | undefined,
+): MemoryItem[] {
+  return memories.filter((memory) => {
+    if (memory.scope !== "session") return true;
+    if (!sessionId) return false;
+    return memory.evidence.some((entry) => (
+      entry.type === "session_correction" && entry.session === sessionId
+    ));
+  });
 }

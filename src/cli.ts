@@ -928,6 +928,7 @@ program
       sessionId: opts.session,
       repo: opts.repo,
       path: opts.path,
+      force_semantic_capture: true,
     });
     createActivityEvent(db, {
       session_id: opts.session,

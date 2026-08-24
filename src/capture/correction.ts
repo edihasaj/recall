@@ -7,7 +7,6 @@ import {
   countDistinctCorrectionSessions,
   createMemory,
   getMemory,
-  getMemoryFeedback,
   incrementMemoryRepetition,
   promoteMemory,
   queryMemories,
@@ -26,7 +25,7 @@ import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { qualityReasons } from "../maintenance/cleanup.js";
 import { normalizeDedupeText } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
-import { isNonUserCaptureContext } from "./context.js";
+import { isNonUserCaptureContext, looksLikePastedOperationalReport } from "./context.js";
 
 export { isNonUserCaptureContext } from "./context.js";
 
@@ -284,6 +283,10 @@ export interface CorrectionContext {
   agent?: string;
   prev_assistant_turn?: string;
   recent_tool_calls?: readonly RecentToolCall[];
+  /** The calling agent already judged this as a possible durable rule from
+   * meaning/context, so bypass the cheap keyword screen and invoke the
+   * semantic capture judge when available. */
+  force_semantic_capture?: boolean;
 }
 
 function stripTrailingPunctuation(text: string): string {
@@ -316,6 +319,7 @@ const TRANSCRIPT_LINE_RE =
   /^(?:[⏺⎿❯✻※]|(?:Bash|Edit|Write|Read|Grep|Glob|Task|TodoWrite)\(|\s*(?:│|├|┌|└|─)|\s*…|\s*={3,})/u;
 
 function looksLikePastedTranscript(text: string): boolean {
+  if (looksLikePastedOperationalReport(text)) return true;
   if (text.length < 1_200) return false;
   const markerCount = TRANSCRIPT_MARKERS.reduce(
     (total, marker) => total + (text.includes(marker) ? 1 : 0),
@@ -371,16 +375,17 @@ export async function processCorrection(
   // additionally guarded inside detectCorrections.
   if (isNonUserCaptureContext(text)) return { ids: [] };
 
-  // LLM-primary path: when a provider is configured and the prompt passes
-  // the cheap multi-language pre-screen, hand the raw prompt to the LLM via
-  // an extract_rules_from_prompt task. The LLM extracts AND judges in one
-  // call; the applier creates candidate memories from its output. The hook
-  // doesn't block — it just enqueues and returns. The daemon dispatcher
-  // (woken via /dispatch/wake) processes the task within seconds.
+  // LLM-primary path: when a provider is configured and either the cheap
+  // pre-screen sees a rule signal or the calling agent semantically recognized
+  // one, hand the raw statement to the LLM. The LLM extracts AND judges in one
+  // call; the hook does not block while the dispatcher processes it.
   //
   // We deliberately bypass the regex extractor here. The LLM is the judge.
-  // Regex stays as a fallback for when no provider is configured.
-  if (process.env.RECALL_LLM_CAPTURE_DISABLED !== "true" && hasAnyLlmProvider() && isPromptWorthLLM(text)) {
+  if (
+    process.env.RECALL_LLM_CAPTURE_DISABLED !== "true" &&
+    hasAnyLlmProvider() &&
+    (ctx.force_semantic_capture || isPromptWorthLLM(text))
+  ) {
     const promptId = stablePromptId(ctx.sessionId, ctx.repo, text);
     const taskId = enqueueExtractRulesFromPrompt(db, {
       prompt_id: promptId,
@@ -402,6 +407,17 @@ export async function processCorrection(
 
   // --- Fallback: regex path (used when no LLM provider configured) ---
   const corrections = detectCorrections(text);
+  // Without an LLM provider, an explicit semantic capture tool call is still
+  // useful evidence. Store the concise user statement as a low-confidence
+  // candidate; repetition/confirmation remains required before activation.
+  if (corrections.length === 0 && ctx.force_semantic_capture) {
+    corrections.push({
+      type: "rule",
+      text: ensureSentence(text),
+      confidence: 0.35,
+      original: text,
+    });
+  }
   if (corrections.length === 0) return { ids: [] };
   const profile = getRepoQualityProfile(db, ctx.repo);
 
@@ -490,6 +506,10 @@ export async function processCorrection(
         original_text: text,
       },
     );
+    // Recall is the cross-session store. A "just for now" instruction stays
+    // authoritative in conversation context but must not become persistent
+    // memory.
+    if (inferredScope.scope === "session") continue;
     const input: CreateMemoryInput = {
       type: correction.type,
       text: correction.text,
@@ -509,7 +529,6 @@ export async function processCorrection(
     };
 
     const id = createMemory(db, input);
-    maybePromoteGroupCandidate(db, id);
     // Phase E1: enqueue an LLM verify pass. No-op when no provider credentials
     // are configured — the task accumulates and surfaces via SessionStart for
     // the live agent to claim, or runs from the daemon dispatcher.
@@ -533,40 +552,6 @@ function stablePromptId(sessionId: string, repo: string | undefined, text: strin
     .digest("hex")
     .slice(0, 16);
   return `prompt:${sessionId}:${hash}`;
-}
-
-function maybePromoteGroupCandidate(
-  db: RecallDb,
-  candidateId: string,
-) {
-  const candidate = getMemory(db, candidateId);
-  if (!candidate || candidate.status !== "candidate") return;
-  if (isHighRiskRule(candidate.text)) return;
-
-  const followedCount = queryMemories(db, {
-    repo: candidate.repo ?? undefined,
-    type: candidate.type,
-    scope: candidate.scope,
-  })
-    .filter((memory) => memory.id !== candidate.id)
-    .reduce((total, memory) => (
-      total + getMemoryFeedback(db, memory.id).filter((entry) => entry.outcome === "followed").length
-    ), 0);
-
-  if (followedCount < 3) return;
-
-  const before = candidate;
-  promoteMemory(db, candidate.id, "repeat_correction");
-  const after = getMemory(db, candidate.id);
-  recordAuditWithSnapshot(
-    db,
-    candidate.id,
-    "promoted",
-    "system",
-    `repetition:group_followed:${followedCount}`,
-    before,
-    after ?? null,
-  );
 }
 
 function buildCaptureContext(ctx: CorrectionContext): CaptureContext | null {

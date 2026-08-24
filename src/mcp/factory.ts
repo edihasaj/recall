@@ -266,7 +266,7 @@ tool(
 
 tool(
   "report_correction",
-  "Report a correction or rule to be learned. Accepts optional assistant/tool context and creates candidate memories from the correction text.",
+  "Report a possible durable correction or standing rule based on its meaning in any language. Do not use for instructions limited to the current task. Accepts optional assistant/tool context and creates only candidate memories.",
   {
     text: z.string().describe("The correction or rule (e.g., 'don't use pip, use uv')"),
     repo: z.string().optional().describe("Repository name"),
@@ -309,7 +309,7 @@ tool(
         content: [
           {
             type: "text" as const,
-            text: "No correction pattern detected. Try phrasing as a rule (e.g., 'always use X' or 'don't use Y, use Z').",
+            text: "No durable correction was accepted from this statement.",
           },
         ],
       };
@@ -328,7 +328,7 @@ tool(
 
 tool(
   "capture_correction",
-  "Call this right after the user corrects the assistant or states a repo rule. Captures the correction with richer context so scope inference stays accurate.",
+  "Call this right after the user semantically expresses a durable correction, standing preference, default, or repo/team rule in any language—even without special keywords. Do not call for a one-task instruction such as 'do not commit this time'. Captures richer context and creates only a candidate until repeated or confirmed.",
   {
     text: z.string().describe("The user correction or rule text to capture."),
     repo: z.string().optional().describe("Repository name when known."),

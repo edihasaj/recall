@@ -6,6 +6,15 @@ Everything Recall reads at runtime from the environment, plus how to wire up LLM
 
 Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects a compact repo memory pack on `SessionStart` (once per session). Startup injection is capped at three memory lines and does not emit history-only context, so stale session summaries do not flood new agent sessions. `UserPromptSubmit` also runs per-prompt relevance injection by default; hybrid retrieval scores the prompt against repo memory and only emits matches above the relevance floor (with per-session dedup so already-delivered memories don't repeat). For attachment-heavy prompts, Recall distills the short leading request into content-bearing terms, excluding issue IDs and URLs, instead of allowing an appended PR body, issue description, or transcript to dilute retrieval. Set `RECALL_HOOK_INJECT_PROMPT=false` to opt out and keep prompts silent after SessionStart.
 
+Recall distinguishes live-task constraints from durable rules. Phrases such as
+`do not commit/push` normally apply to the current task, while habitual
+behavior, standing preferences, defaults, and repo/team conventions can be
+durable. The capture judge makes that distinction semantically in the user's
+language; words such as `never`, `from now on`, or `for this repo` are useful
+evidence, not required syntax. New durable correction memories remain
+candidates until repeated in distinct sessions or explicitly confirmed;
+feedback on other rules never promotes a new candidate.
+
 Routine app launch, daemon start, and daemon restart do not restore removed hooks or repo instruction files. Reinstalling agent integrations is explicit: run `recall setup --yes`, `recall doctor --fix`, or use the app's Install + Start action.
 
 You can tune that with these env vars (read fresh on each hook invocation — no daemon restart needed):

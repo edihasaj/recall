@@ -258,6 +258,7 @@ export function promoteRepetitionCandidates(db: RecallDb): number {
 
   for (const candidate of candidates) {
     if (!candidate.repo) continue;
+    if (candidate.scope === "session") continue;
     const profile = getRepoQualityProfile(db, candidate.repo);
     if (candidate.repetition_count < profile.repeat_sessions_required) continue;
 

@@ -205,7 +205,7 @@ export function buildRecallRulesBody(toolLabel: string): string {
 
 Recall is the single source of truth for durable memory across agents and sessions. It is wired into ${toolLabel} through the \`recall\` MCP server.
 
-- ${toolLabel} has no lifecycle hooks, so capture is **manual**: when the user corrects you, states a durable preference, or says "remember this", call \`capture_correction\` on the \`recall\` MCP server. Phrase it as \`always X\` / \`never Y\`.
+- ${toolLabel} has no lifecycle hooks, so capture is **manual**: use your semantic understanding in any language. When the user expresses a durable correction, standing preference, default, or repo/team convention, call \`capture_correction\` with the concise user statement—even without special keywords. Do not capture an instruction limited to the current task.
 - Before non-trivial work in a repo, call \`query\` to pull relevant memories. Do it again when you move to an unfamiliar area.
 - A memory that turns out to be wrong or outdated: \`reject\` it. One that proves right: \`confirm\` it.
 - Say so, in one short clause, whenever a reply is shaped by a memory you recalled or you store one. Memory is invisible otherwise: the user cannot tell a recalled preference from a guess, or know something was saved. Keep it brief, never a list of everything retrieved.

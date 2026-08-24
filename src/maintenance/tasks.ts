@@ -903,6 +903,10 @@ const ExtractedRule = z.object({
   scope: MemoryScope,
   path_scope: z.string().max(512).nullable().optional(),
   confidence: z.number().min(0).max(1),
+  // Optional for compatibility with already-queued tasks and older model
+  // responses. New extraction prompts require this semantic judgment.
+  durability: z.enum(["durable", "ephemeral", "ambiguous"]).optional(),
+  durability_evidence: z.string().max(500).nullable().optional(),
   is_destructive_risky: z.boolean().optional(),
   rationale: z.string().max(500).nullable().optional(),
 });

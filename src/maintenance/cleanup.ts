@@ -856,8 +856,8 @@ function applyRejectGenericScannedTooling(db: RecallDb, runId: string, plan: Rej
 // signal (≥2 distinct sessions producing the same correction). Shape alone
 // (e.g. starting with "always") is NOT enough — that produced false-positive
 // active rules from voice-transcript fragments. Promote-by-shape is gone.
-// Manual `recall confirm` and `maybePromoteGroupCandidate` (followed-feedback
-// from sibling memories) remain the other promotion paths.
+// Manual `recall confirm` remains the other promotion path. Feedback on
+// sibling memories is not evidence that a brand-new rule is true.
 export function planPromoteRepeats(db: RecallDb): PromoteRepeatPlan[] {
   const rows = db.select({
     id: memories.id,
@@ -865,6 +865,7 @@ export function planPromoteRepeats(db: RecallDb): PromoteRepeatPlan[] {
     repetition_count: memories.repetition_count,
     source: memories.source,
     status: memories.status,
+    scope: memories.scope,
   })
     .from(memories)
     .where(and(eq(memories.status, "candidate"), eq(memories.source, "user_correction")))
@@ -873,6 +874,7 @@ export function planPromoteRepeats(db: RecallDb): PromoteRepeatPlan[] {
   const out: PromoteRepeatPlan[] = [];
   for (const row of rows) {
     const text = row.text.trim();
+    if (row.scope === "session") continue;
     // Skip rows that the fragment filter would also match — let it reject them
     // first so we don't flip-flop.
     if (qualityReasons(text).length > 0) continue;

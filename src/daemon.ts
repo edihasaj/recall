@@ -703,6 +703,7 @@ const server = createServer(async (req, res) => {
         sessionId: body.session_id ?? "hook",
         repo,
         path: body.path,
+        force_semantic_capture: true,
       });
       createActivityEvent(db, {
         session_id: body.session_id ?? "hook",
