@@ -322,7 +322,8 @@ export async function compileContextHybrid(
     return false;
   });
 
-  const dropped = scoped.filter((memory) => !passing.includes(memory));
+  const passingIds = new Set(passing.map((memory) => memory.id));
+  const dropped = scoped.filter((memory) => !passingIds.has(memory.id));
 
   if (passing.length === 0 && selectedHistory.length === 0) {
     return {

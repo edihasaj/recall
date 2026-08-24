@@ -13,7 +13,7 @@ import {
 } from "../src/models/memory.js";
 import { createPolicy, listPolicies, togglePolicy, deletePolicy, evaluatePolicy, matchesAutoApprove, requestApproval, resolveApproval, listPendingApprovals } from "../src/policy/engine.js";
 import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "../src/health/scoring.js";
-import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "../src/contradictions/detector.js";
+import { countContradictionCandidates, detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "../src/contradictions/detector.js";
 import { pruneMemories, formatPruneReport } from "../src/pruning/pruner.js";
 import { recordAudit, getAuditTrail, getRecentAudit, formatAuditTrail, diffSnapshots, rollbackMemory, recordAuditWithSnapshot } from "../src/audit/trail.js";
 import { recordSignal } from "../src/feedback/implicit.js";
@@ -199,6 +199,22 @@ describe("health scoring", () => {
     expect(score.signal_ratio_component).toBeCloseTo(2 / 3);
   });
 
+  it("batch health scores preserve feedback and signal components", () => {
+    const db = freshDb();
+    const memId = makeMemory(db, { confidence: 0.7 });
+    confirmMemory(db, memId);
+    recordFeedback(db, memId, "s1", true, "followed");
+    recordFeedback(db, memId, "s2", true, "overridden");
+    recordSignal(db, memId, "s1", "test_pass");
+    recordSignal(db, memId, "s1", "test_fail");
+
+    const single = computeHealthScore(db, memId)!;
+    const batch = computeAllHealthScores(db).find((score) => score.memory_id === memId)!;
+    expect(batch.follow_rate_component).toBe(single.follow_rate_component);
+    expect(batch.signal_ratio_component).toBe(single.signal_ratio_component);
+    expect(batch.score).toBeCloseTo(single.score);
+  });
+
   it("formats health report", () => {
     const db = freshDb();
     makeMemory(db, { confidence: 0.8 });
@@ -212,6 +228,17 @@ describe("health scoring", () => {
 // --- Contradiction detection ---
 
 describe("contradiction detection", () => {
+  it("counts only eligible candidates in the requested repo", () => {
+    const db = freshDb();
+    makeMemory(db, { text: "use npm for package management" });
+    makeMemory(db, { text: "use yarn for package management", repo: "other/repo" });
+    const rejected = makeMemory(db, { text: "never use npm" });
+    rejectMemory(db, rejected, "test");
+
+    expect(countContradictionCandidates(db)).toBe(2);
+    expect(countContradictionCandidates(db, "test/repo")).toBe(1);
+  });
+
   it("detects direct negation", () => {
     const db = freshDb();
     makeMemory(db, { text: "always use strict mode", confidence: 0.8 });

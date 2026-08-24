@@ -4,7 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
@@ -566,8 +566,15 @@ export async function hybridSearch(
       )
     : [];
 
+  const matchedIds = [...new Set([
+    ...lexicalMatches.map((match) => match.memory_id),
+    ...semanticMatches.map((match) => match.memory_id),
+  ])];
   const rowsById = new Map(
-    db.select().from(memories).all().map((row) => [row.id, row]),
+    (matchedIds.length > 0
+      ? db.select().from(memories).where(inArray(memories.id, matchedIds)).all()
+      : [])
+      .map((row) => [row.id, row]),
   );
 
   // RECALL_FUSION=weighted falls back to the legacy weighted-sum so the

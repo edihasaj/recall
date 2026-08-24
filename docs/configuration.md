@@ -231,6 +231,7 @@ Fragment-rejection signals: `too_short` (<20 chars), `too_long` (>300 chars), `b
 |---|---|---|
 | `RECALL_CLEANUP_ENABLED` | `true` | Set to `false` to disable the deterministic cleanup loop. |
 | `RECALL_CLEANUP_INTERVAL_SECONDS` | `86400` | Seconds between cleanup ticks. Daily by default. |
+| `RECALL_BACKGROUND_CONTRADICTION_LIMIT` | `2000` | Maximum active/candidate memories eligible for the cleanup loop's automatic all-pairs contradiction scan. Larger stores skip that scan to keep the daemon responsive; explicit CLI/MCP scans remain available. Set `0` to disable automatic scans. |
 
 Run on demand: `recall maintenance cleanup` (dry-run) or `recall maintenance cleanup --apply`.
 

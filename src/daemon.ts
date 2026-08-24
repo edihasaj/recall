@@ -18,7 +18,7 @@ import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession, 
 import { recordSignal, getSignalStats } from "./feedback/implicit.js";
 import { createPolicy, listPolicies, evaluatePolicy, requestApproval, resolveApproval, listPendingApprovals } from "./policy/engine.js";
 import { computeHealthScore, computeAllHealthScores } from "./health/scoring.js";
-import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
+import { countContradictionCandidates, detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
@@ -110,6 +110,14 @@ const qualitySnapshotConfig = {
   intervalSeconds: parseInt(process.env.RECALL_QUALITY_SNAPSHOT_INTERVAL_SECONDS ?? "604800", 10),
 };
 let qualitySnapshotRunning = false;
+
+const parsedBackgroundContradictionLimit = parseInt(
+  process.env.RECALL_BACKGROUND_CONTRADICTION_LIMIT ?? "2000",
+  10,
+);
+const backgroundContradictionLimit = Number.isFinite(parsedBackgroundContradictionLimit)
+  ? Math.max(0, parsedBackgroundContradictionLimit)
+  : 2000;
 
 const parseBody = parseJsonBody;
 
@@ -247,10 +255,19 @@ function scheduleCleanupLoop() {
           suppressions: c.command_suppressions,
         });
       }
-      // Surface logical conflicts after each tick. Cheap (O(n²) over active
-      // memories) and lets users see "Use pnpm" vs "Use bun" before the
-      // model gets the contradictory pair injected.
-      const newContradictions = detectContradictions(db);
+      // Surface logical conflicts after each tick. The detector is all-pairs,
+      // so never let an automatic maintenance run monopolize the daemon's
+      // single event loop on a large store. Explicit CLI/MCP scans remain
+      // available when a full scan is intentionally requested.
+      const contradictionCandidates = countContradictionCandidates(db);
+      const newContradictions = contradictionCandidates <= backgroundContradictionLimit
+        ? detectContradictions(db)
+        : [];
+      if (contradictionCandidates > backgroundContradictionLimit) {
+        console.log(
+          `[recall] background contradiction scan skipped: ${contradictionCandidates} candidates exceed limit ${backgroundContradictionLimit}`,
+        );
+      }
       if (newContradictions.length > 0) {
         console.log(
           `[recall] contradictions detected: ${newContradictions.length} new pair(s)`,

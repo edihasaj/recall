@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.1 - 2026-08-24
+
+### Fixed
+
+- **Large local stores no longer stall context compilation or the daemon.**
+  Hybrid compile now avoids quadratic candidate filtering and per-memory health
+  queries, retrieval fetches only matching rows, and automatic contradiction
+  scans skip safely above a configurable candidate limit. At 10,060 memories,
+  `/compile` p50 fell from 2.01 s to 241 ms.
+- **The dashboard no longer loads the 3D graph stack on every page.** The graph
+  route is lazy-loaded, reducing the initial JavaScript payload from 508 kB to
+  94 kB gzip.
+- **The load harness now sends a valid graph-query payload.** Graph benchmark
+  results no longer report every request as an error.
+
 ## 1.3.0 - 2026-08-22
 
 ### Added

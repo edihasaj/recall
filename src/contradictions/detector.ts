@@ -10,7 +10,7 @@
  * Automatically demotes the weaker side of detected contradictions.
  */
 
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { contradictions, memories } from "../db/schema.js";
@@ -20,6 +20,19 @@ import type { Contradiction, MemoryItem } from "../types.js";
 import { matchTokens, textMatchScore } from "../text/match.js";
 
 // --- Detect contradictions ---
+
+export function countContradictionCandidates(
+  db: RecallDb,
+  repo?: string,
+): number {
+  const conditions = [inArray(memories.status, ["active", "candidate"] as const)];
+  if (repo) conditions.push(eq(memories.repo, repo));
+  return db
+    .select({ count: sql<number>`count(*)` })
+    .from(memories)
+    .where(and(...conditions))
+    .get()?.count ?? 0;
+}
 
 export function detectContradictions(
   db: RecallDb,

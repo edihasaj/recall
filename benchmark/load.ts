@@ -64,7 +64,11 @@ const ENDPOINTS: Endpoint[] = [
     name: "POST /graph/query",
     method: "POST",
     path: "/graph/query",
-    body: () => ({ repo: REPO, limit: 20 }),
+    body: (i) => ({
+      repo: REPO,
+      query: QUERY_TEXTS[i % QUERY_TEXTS.length],
+      limit: 20,
+    }),
   },
   {
     name: "GET /memories",

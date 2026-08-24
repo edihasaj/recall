@@ -10,7 +10,7 @@
  * Memories decay over time if not validated/injected.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents, implicitSignals } from "../db/schema.js";
 import { getMemory, queryMemories, listMemories } from "../models/memory.js";
@@ -63,15 +63,75 @@ export function computeAllHealthScores(
   repo?: string,
 ): HealthScore[] {
   const mems = repo ? queryMemories(db, { repo }) : listMemories(db);
-  const scores: HealthScore[] = [];
+  const feedbackRows = db
+    .select({
+      memory_id: feedbackEvents.memory_id,
+      outcome: feedbackEvents.outcome,
+      count: sql<number>`count(*)`,
+    })
+    .from(feedbackEvents)
+    .innerJoin(memories, eq(feedbackEvents.memory_id, memories.id))
+    .where(repo ? eq(memories.repo, repo) : undefined)
+    .groupBy(feedbackEvents.memory_id, feedbackEvents.outcome)
+    .all();
+  const signalRows = db
+    .select({
+      memory_id: implicitSignals.memory_id,
+      signal_type: implicitSignals.signal_type,
+      count: sql<number>`count(*)`,
+    })
+    .from(implicitSignals)
+    .innerJoin(memories, eq(implicitSignals.memory_id, memories.id))
+    .where(repo ? eq(memories.repo, repo) : undefined)
+    .groupBy(implicitSignals.memory_id, implicitSignals.signal_type)
+    .all();
 
-  for (const mem of mems) {
-    if (mem.status === "rejected") continue;
-    const score = computeHealthScore(db, mem.id);
-    if (score) scores.push(score);
+  const feedbackByMemory = new Map<string, { followed: number; total: number }>();
+  for (const row of feedbackRows) {
+    const summary = feedbackByMemory.get(row.memory_id) ?? { followed: 0, total: 0 };
+    summary.total += row.count;
+    if (row.outcome === "followed") summary.followed += row.count;
+    feedbackByMemory.set(row.memory_id, summary);
+  }
+  const signalsByMemory = new Map<string, { positive: number; total: number }>();
+  for (const row of signalRows) {
+    const summary = signalsByMemory.get(row.memory_id) ?? { positive: 0, total: 0 };
+    summary.total += row.count;
+    if (["test_pass", "file_unchanged", "task_accepted"].includes(row.signal_type)) {
+      summary.positive += row.count;
+    }
+    signalsByMemory.set(row.memory_id, summary);
   }
 
-  return scores.sort((a, b) => b.score - a.score);
+  return mems
+    .filter((mem) => mem.status !== "rejected")
+    .map((mem) => {
+      const feedback = feedbackByMemory.get(mem.id);
+      const signals = signalsByMemory.get(mem.id);
+      const confidence = mem.confidence;
+      const freshness = computeFreshness(mem);
+      const followRate = feedback && feedback.total > 0
+        ? feedback.followed / feedback.total
+        : 0.5;
+      const signalRatio = signals && signals.total > 0
+        ? signals.positive / signals.total
+        : 0.5;
+      return {
+        memory_id: mem.id,
+        score: clamp(
+          WEIGHTS.confidence * confidence +
+          WEIGHTS.freshness * freshness +
+          WEIGHTS.follow_rate * followRate +
+          WEIGHTS.signal_ratio * signalRatio,
+        ),
+        confidence_component: confidence,
+        freshness_component: freshness,
+        follow_rate_component: followRate,
+        signal_ratio_component: signalRatio,
+        computed_at: new Date().toISOString(),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
 // --- Freshness ---

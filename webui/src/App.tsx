@@ -1,11 +1,16 @@
+import { lazy, Suspense } from "react";
 import { NavLink, Route, Routes, Navigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./lib/api";
 import { MemoriesPage } from "./pages/MemoriesPage";
-import { GraphPage } from "./pages/GraphPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { SessionsPage } from "./pages/SessionsPage";
 import { ContradictionsPage } from "./pages/ContradictionsPage";
+
+const GraphPage = lazy(async () => {
+  const module = await import("./pages/GraphPage");
+  return { default: module.GraphPage };
+});
 
 export function App() {
   const health = useQuery({
@@ -42,7 +47,14 @@ export function App() {
           <Route path="/" element={<Navigate to="/memories" replace />} />
           <Route path="/memories" element={<MemoriesPage />} />
           <Route path="/memories/:id" element={<MemoriesPage />} />
-          <Route path="/graph" element={<GraphPage />} />
+          <Route
+            path="/graph"
+            element={(
+              <Suspense fallback={<p className="empty-state">Loading graph…</p>}>
+                <GraphPage />
+              </Suspense>
+            )}
+          />
           <Route path="/timeline" element={<TimelinePage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/contradictions" element={<ContradictionsPage />} />
