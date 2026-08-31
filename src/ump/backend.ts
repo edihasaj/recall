@@ -122,7 +122,7 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
       return id;
     },
 
-    tombstone: (id) => rejectMemory(db, id),
+    tombstone: (id) => rejectMemory(db, id, "ump"),
 
     capture: async ({ text, repo, path }) => {
       const res = await processCorrection(db, text, {

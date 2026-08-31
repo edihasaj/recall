@@ -257,7 +257,7 @@ export function resolveApproval(
   if (status === "approved") {
     confirmMemory(db, row.memory_id);
   } else {
-    rejectMemory(db, row.memory_id);
+    rejectMemory(db, row.memory_id, "policy");
   }
 
   recordAudit(db, row.memory_id, "approval_resolved", reviewedBy, reason ?? null);

@@ -837,7 +837,7 @@ program
       process.exit(1);
     }
     const before = JSON.stringify(mem);
-    rejectMemory(db, mem.id);
+    rejectMemory(db, mem.id, "cli");
     const after = getMemory(db, mem.id);
     recordAudit(
       db,

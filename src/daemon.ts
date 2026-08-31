@@ -775,7 +775,7 @@ const server = createServer(async (req, res) => {
     if (path === "/reject" && method === "POST") {
       const body = await parseBody(req);
       const before = getMemory(db, body.memory_id);
-      const ok = rejectMemory(db, body.memory_id);
+      const ok = rejectMemory(db, body.memory_id, "daemon");
       if (ok) {
         const after = getMemory(db, body.memory_id);
         recordAudit(

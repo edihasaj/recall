@@ -151,7 +151,7 @@ tool(
     path: z.string().optional().describe("Current file path for path-scoped filtering"),
     query_text: z.string().optional().describe("Optional task/query text for hybrid reranking"),
     include_candidates: z.boolean().optional().describe("Allow strong candidate memories into hybrid ranking"),
-    min_confidence: z.number().optional().describe("Minimum confidence threshold (default: 0.6)"),
+    min_confidence: z.number().optional().describe("Minimum confidence threshold. Defaults to the repo's adaptive gate from `quality` (0.6-0.82, rising as a repo matures), NOT a fixed 0.6."),
     session_id: z.string().optional().describe("Optional session identifier"),
   },
   async ({ repo, repo_path, path, query_text, include_candidates, min_confidence, session_id }) => {
@@ -184,7 +184,7 @@ tool(
           session_id,
           query_text,
           config: {
-            ...(min_confidence ? { confidence_threshold: min_confidence } : {}),
+            ...(min_confidence != null ? { confidence_threshold: min_confidence } : {}),
             include_candidates: include_candidates ?? false,
           },
         })
@@ -192,7 +192,7 @@ tool(
           repo,
           path,
           session_id,
-          config: min_confidence ? { confidence_threshold: min_confidence } : {},
+          config: min_confidence != null ? { confidence_threshold: min_confidence } : {},
         });
     createActivityEvent(db, {
       session_id: session_id ?? null,
@@ -217,11 +217,33 @@ tool(
     });
 
     if (!result.text) {
+      // Naming the gate matters more than it looks. The threshold is usually
+      // the repo's adaptive one, so "nothing above threshold" reads as "this
+      // repo has no such memory" when the truth can be a rule sitting 0.01
+      // under the bar. Callers acted on the wrong reading.
+      const gate = result.confidence_threshold;
+      const lines = [
+        gate != null
+          ? `No memories above the confidence gate (${gate.toFixed(2)}) for this context.`
+          : "No memories above confidence threshold for this context.",
+      ];
+      const nearMisses = result.near_misses ?? [];
+      if (nearMisses.length > 0) {
+        lines.push(
+          "",
+          `${nearMisses.length} memory/memories cleared every other filter and failed only on confidence:`,
+          ...nearMisses.slice(0, 5).map(
+            (m) => `- [${m.confidence.toFixed(2)}] ${m.text}`,
+          ),
+          "",
+          "Re-run with a lower min_confidence to include them, or `confirm` one to raise its confidence.",
+        );
+      }
       return {
         content: [
           {
             type: "text" as const,
-            text: "No memories above confidence threshold for this context.",
+            text: lines.join("\n"),
           },
         ],
       };
@@ -367,6 +389,16 @@ tool(
           ],
         };
       }
+      if (result.blockedByRejectedExemplar) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Not captured: this closely matches ${result.blockedByRejectedExemplar} memory/memories you previously rejected, so it is treated as a "do not capture this" exemplar. If you want the rule after all, re-word it away from the rejected phrasing, or use \`list\` with status "rejected" to find and \`confirm\` the original.`,
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
@@ -458,7 +490,7 @@ tool(
   },
   async ({ memory_id }) => {
     const before = getMemory(db, memory_id);
-    const success = rejectMemory(db, memory_id);
+    const success = rejectMemory(db, memory_id, "mcp");
     if (!success) {
       return {
         content: [

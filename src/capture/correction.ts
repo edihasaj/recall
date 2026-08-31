@@ -360,6 +360,13 @@ export interface ProcessCorrectionResult {
    * "no pattern detected" (both fields empty) from "queued for LLM extraction".
    */
   pendingTaskId?: string;
+  /**
+   * Captures skipped because they resembled something a human rejected. Kept
+   * separate from "nothing detected": the two look identical to a caller but
+   * mean opposite things, and reporting the wrong one sent agents looking for
+   * a phrasing problem that did not exist.
+   */
+  blockedByRejectedExemplar?: number;
 }
 
 export async function processCorrection(
@@ -423,6 +430,7 @@ export async function processCorrection(
 
   const ids: string[] = [];
   const captureContext = buildCaptureContext(ctx);
+  let blockedByRejectedExemplar = 0;
 
   for (const correction of corrections) {
     // Drop voice/typing fragments at capture time. Mirrors the daemon-side
@@ -436,7 +444,10 @@ export async function processCorrection(
     // Phase D + D.next: skip captures that closely match something the user
     // previously rejected. Lexical Jaccard is the fast pre-pass; semantic
     // cosine via embeddings catches paraphrases when a provider is configured.
-    if (await isSimilarToRejectedFragmentSemantic(db, correction.text)) continue;
+    if (await isSimilarToRejectedFragmentSemantic(db, correction.text)) {
+      blockedByRejectedExemplar++;
+      continue;
+    }
 
     const evidence: EvidenceEntry = correction.type === "review_pattern"
       ? {
@@ -543,7 +554,7 @@ export async function processCorrection(
     ids.push(id);
   }
 
-  return { ids };
+  return { ids, blockedByRejectedExemplar };
 }
 
 function stablePromptId(sessionId: string, repo: string | undefined, text: string): string {
@@ -690,19 +701,34 @@ const REJECTED_EXEMPLAR_SEMANTIC_THRESHOLD = 0.85;
 // whether the user wants the rule — treating those as exemplars created a
 // doom loop: a good rule expired, and the user's attempt to teach it again
 // was blocked as "similar to something rejected".
-function isMachineRejection(db: RecallDb, memoryId: string): boolean {
-  const latest = db
+//
+// This is a positive test on purpose. It previously blocklisted known machine
+// actors and treated everything else as a human verdict — including a
+// rejection carrying no audit row at all. Most rejections carry no audit row,
+// so that inverted the intent: on a real database 1213 of 2341 rejected
+// corrections became "never capture this again" exemplars that no human ever
+// chose, against the 27 actually rejected by hand. Absence of evidence is not
+// a human judgement, so an unattributed rejection now blocks nothing.
+//
+// `mcp` and `cli` are the two surfaces a reject is issued through by hand;
+// every other actor is machinery (auto-pruner, cleanup_script, cloud-sync,
+// system, and the maintenance:* family).
+const HUMAN_REJECTION_ACTORS = ["mcp", "cli"];
+
+function isHumanRejection(db: RecallDb, memoryId: string): boolean {
+  // "Did a human ever reject this", not "who rejected it last". A single
+  // rejection can now leave two audit rows — rejectMemory writes one and an
+  // attributing caller may write another in the same millisecond — and
+  // ISO timestamps have no sub-millisecond ordering, so picking the latest row
+  // would be a coin flip. Existence is both deterministic and the question
+  // actually being asked.
+  const rows = db
     .select({ actor: auditTrail.actor })
     .from(auditTrail)
     .where(and(eq(auditTrail.memory_id, memoryId), eq(auditTrail.action, "rejected")))
-    .orderBy(desc(auditTrail.timestamp))
-    .limit(1)
-    .get();
-  if (!latest) return false;
-  return MACHINE_REJECTION_ACTORS.some((actor) => latest.actor.startsWith(actor));
+    .all();
+  return rows.some((row) => HUMAN_REJECTION_ACTORS.includes(row.actor));
 }
-
-const MACHINE_REJECTION_ACTORS = ["auto-pruner", "cleanup_script", "maintenance:cleanup"];
 
 export function isSimilarToRejectedFragment(
   db: RecallDb,
@@ -713,7 +739,7 @@ export function isSimilarToRejectedFragment(
     .filter((m) => m.source === "user_correction" || m.source === "user_reported_review");
   for (const exemplar of rejected) {
     if (textSimilarity(text, exemplar.text) < threshold) continue;
-    if (isMachineRejection(db, exemplar.id)) continue;
+    if (!isHumanRejection(db, exemplar.id)) continue;
     return true;
   }
   return false;
@@ -736,7 +762,12 @@ export async function isSimilarToRejectedFragmentSemantic(
   const config = loadEmbeddingConfigFromEnv();
   if (!config) return false;
 
-  const match = await findSimilarRejectedExemplar(db, text, config, semanticT);
+  // Same rule as the lexical pass: only a rejection a human actually issued is
+  // an exemplar. Without narrowing the pool the semantic path would re-admit
+  // every unattributed rejection the lexical pass just stopped trusting.
+  const match = await findSimilarRejectedExemplar(db, text, config, semanticT, (id) =>
+    isHumanRejection(db, id),
+  );
   return match != null;
 }
 

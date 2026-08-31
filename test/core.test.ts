@@ -464,7 +464,9 @@ ${"x".repeat(1_300)}
     });
     expect(seedIds.length).toBe(1);
     await flushEmbeddingJobs();
-    rejectMemory(db, seedIds[0]);
+    // Rejected by hand: only a human verdict makes an exemplar, so the actor
+    // is part of what this test is asserting.
+    rejectMemory(db, seedIds[0], "cli");
     await flushEmbeddingJobs();
 
     // Paraphrase: different words, same intent. Lexical Jaccard ~0 (no shared

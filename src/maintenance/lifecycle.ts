@@ -307,7 +307,7 @@ export function reconcileScannedMemories(db: RecallDb): {
 
     if (evaluated.action === "reject") {
       if (memory.status !== "rejected") {
-        rejectMemory(db, memory.id);
+        rejectMemory(db, memory.id, "maintenance:lifecycle");
         rejected += 1;
       }
       continue;

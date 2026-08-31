@@ -23,6 +23,8 @@ export interface CaptureCorrectionResult {
   session_id: string;
   /** Set when the LLM-primary path enqueued the prompt for background extraction. */
   pendingTaskId?: string;
+  /** Captures skipped because they resembled a human-rejected memory. */
+  blockedByRejectedExemplar?: number;
 }
 
 export interface SignalOutcomeInput {
@@ -57,7 +59,7 @@ export async function captureCorrectionFallback(
   source: ActivitySource,
 ): Promise<CaptureCorrectionResult> {
   const sessionId = input.session_id ?? `${source}-capture`;
-  const { ids, pendingTaskId } = await processCorrection(db, input.text, {
+  const { ids, pendingTaskId, blockedByRejectedExemplar } = await processCorrection(db, input.text, {
     sessionId,
     repo: input.repo,
     path: input.path,
@@ -91,6 +93,7 @@ export async function captureCorrectionFallback(
     ids,
     session_id: sessionId,
     pendingTaskId,
+    blockedByRejectedExemplar,
   };
 }
 

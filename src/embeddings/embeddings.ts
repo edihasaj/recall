@@ -763,13 +763,19 @@ export async function findSimilarRejectedExemplar(
   text: string,
   config: EmbeddingConfig,
   threshold: number,
+  // Callers narrow the exemplar pool — the capture path admits only rejections
+  // a human issued. Filtering the pool rather than the winner matters: a
+  // machine rejection at 0.92 would otherwise mask an eligible human one at
+  // 0.86 and silently flip the verdict.
+  isEligible?: (memoryId: string) => boolean,
 ): Promise<{ id: string; text: string; similarity: number } | null> {
   const queryEmbedding = await generateEmbedding(text, config, "query");
 
   const rejectedRows = db.select().from(memories)
     .where(eq(memories.status, "rejected"))
     .all()
-    .filter((row) => row.source === "user_correction" || row.source === "user_reported_review");
+    .filter((row) => row.source === "user_correction" || row.source === "user_reported_review")
+    .filter((row) => (isEligible ? isEligible(row.id) : true));
 
   if (rejectedRows.length === 0) return null;
 

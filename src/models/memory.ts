@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
 import { memoryDedupeKey } from "./dedupe.js";
+import { recordAudit } from "../audit/trail.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { safeIngestMemoryById } from "../graph/ingest.js";
 import {
@@ -310,9 +311,24 @@ export function demoteGlobalMemory(
   return { ok: true, outcome: targetRepo ? "rescoped" : "rejected", memory: updated };
 }
 
-export function rejectMemory(db: RecallDb, id: string): boolean {
+/**
+ * Reject a memory.
+ *
+ * `actor` records who decided. This matters beyond bookkeeping: a rejection a
+ * human issued becomes a "never capture this again" exemplar for the capture
+ * path, while a machine retirement (staleness, policy, pruning) must not. This
+ * function previously wrote no audit row at all, so provenance was simply
+ * absent for most rejections and the capture path had to guess — it guessed
+ * "human", which turned routine cleanup into permanent capture blocks.
+ *
+ * Defaults to "system" so an unattributed caller is never mistaken for a
+ * deliberate human verdict.
+ */
+export function rejectMemory(db: RecallDb, id: string, actor = "system"): boolean {
   const mem = getMemory(db, id);
   if (!mem) return false;
+
+  const beforeSnapshot = JSON.stringify(mem);
 
   db.update(memories)
     .set({
@@ -323,6 +339,8 @@ export function rejectMemory(db: RecallDb, id: string): boolean {
     })
     .where(eq(memories.id, id))
     .run();
+
+  recordAudit(db, id, "rejected", actor, null, beforeSnapshot);
 
   queueMemoryEmbeddingSync(db, id);
   return true;

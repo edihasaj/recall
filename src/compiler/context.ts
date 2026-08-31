@@ -131,6 +131,42 @@ export interface CompiledContext {
   memories_dropped: string[];
   history_included: string[];
   token_estimate: number;
+  /**
+   * The confidence gate actually applied. Callers cannot infer this: with no
+   * explicit override it comes from the repo quality profile and rises as a
+   * repo matures, so an empty result is otherwise indistinguishable from an
+   * empty repo.
+   */
+  confidence_threshold?: number;
+  /**
+   * Memories that cleared every other gate and failed only on confidence,
+   * within NEAR_MISS_BAND of the threshold. A rule sitting 0.01 under the bar
+   * is the single most misleading way for a query to return nothing.
+   */
+  near_misses?: NearMissMemory[];
+}
+
+export interface NearMissMemory {
+  id: string;
+  confidence: number;
+  text: string;
+}
+
+/** How far below the gate still counts as "you nearly had this". */
+const NEAR_MISS_BAND = 0.1;
+
+function collectNearMisses(
+  candidates: readonly { id: string; confidence: number; text: string }[],
+  threshold: number,
+): NearMissMemory[] {
+  return candidates
+    .filter(
+      (m) =>
+        m.confidence + CONFIDENCE_EPSILON < threshold
+        && m.confidence >= threshold - NEAR_MISS_BAND,
+    )
+    .sort((a, b) => b.confidence - a.confidence)
+    .map((m) => ({ id: m.id, confidence: m.confidence, text: m.text }));
 }
 
 export function compileContext(
@@ -174,9 +210,12 @@ export function compileContext(
   const dropped = scoped.filter(
     (m) => m.confidence + CONFIDENCE_EPSILON < config.confidence_threshold,
   );
+  const nearMisses = collectNearMisses(scoped, config.confidence_threshold);
 
   if (passing.length === 0 && selectedHistory.length === 0) {
     return {
+      confidence_threshold: config.confidence_threshold,
+      near_misses: nearMisses,
       text: "",
       memories_included: [],
       memories_dropped: dropped.map((m) => m.id),
@@ -258,6 +297,8 @@ export function compileContext(
   });
 
   return {
+    confidence_threshold: config.confidence_threshold,
+    near_misses: nearMisses,
     text: finalText,
     memories_included: selected.map((m) => m.id),
     memories_dropped: [
@@ -326,9 +367,12 @@ export async function compileContextHybrid(
 
   const passingIds = new Set(passing.map((memory) => memory.id));
   const dropped = scoped.filter((memory) => !passingIds.has(memory.id));
+  const hybridNearMisses = collectNearMisses(scoped, config.confidence_threshold);
 
   if (passing.length === 0 && selectedHistory.length === 0) {
     return {
+      confidence_threshold: config.confidence_threshold,
+      near_misses: hybridNearMisses,
       text: "",
       memories_included: [],
       memories_dropped: dropped.map((m) => m.id),
@@ -441,6 +485,8 @@ export async function compileContextHybrid(
         repo: req.repo,
       });
       return {
+        confidence_threshold: config.confidence_threshold,
+        near_misses: hybridNearMisses,
         text: historyOnlyText,
         memories_included: [],
         memories_dropped: [...dropped, ...passing].map((m) => m.id),
@@ -450,6 +496,8 @@ export async function compileContextHybrid(
     }
 
     return {
+      confidence_threshold: config.confidence_threshold,
+      near_misses: hybridNearMisses,
       text: "",
       memories_included: [],
       memories_dropped: [...dropped, ...passing].map((m) => m.id),
@@ -484,6 +532,8 @@ export async function compileContextHybrid(
     repo: req.repo,
   });
   return {
+    confidence_threshold: config.confidence_threshold,
+    near_misses: hybridNearMisses,
     text: finalText,
     memories_included: selected.map((m) => m.id),
     memories_dropped: [
