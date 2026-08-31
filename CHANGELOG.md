@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.4.1 - 2026-08-31
+
+### Fixed
+
+- **`query` no longer hides rules that exist.** `min_confidence` advertised a
+  0.6 default but actually fell back to the repo's adaptive gate, which rises
+  to 0.82 as a repo matures. A rule sitting at 0.67 under a 0.68 gate vanished
+  while `list` showed it plainly, and the empty reply — "No memories above
+  confidence threshold" — read as "this repo has no such rule". Queries now
+  name the gate they applied and list anything that failed only on confidence,
+  and an explicit `min_confidence` of `0` is honoured instead of dropped as
+  falsy.
+
+- **Routine cleanup no longer blocks a rule forever.** Every rejection was
+  treated as a deliberate "never capture this again" verdict, but rejections
+  recorded no actor, so the check read missing provenance as a human decision.
+  On a mature database that turned roughly half of all rejected corrections
+  into blocks nobody chose. Rejections now record who made them, and only a
+  rejection issued by hand creates an exemplar.
+
+- **An explicit capture is never silently dropped.** A partial extraction — a
+  fragment stripped of its subject — satisfied the "did we find anything"
+  check, suppressed the explicit-capture fallback, and was then discarded by
+  the quality filter, so `capture_correction` stored nothing and blamed the
+  user's phrasing. Filtering now runs before that check. Ambient prompt
+  scanning is unchanged.
+
+### Added
+
+- **`reactivate` restores a rejected memory.** The underlying function existed
+  with no caller on any surface, so a rule rejected in error could not be
+  recovered and, being an exemplar, refused to be taught again. Restored
+  memories return as candidates, so recovery still earns injection through
+  `confirm`.
+
 ## 1.4.0 - 2026-08-25
 
 ### Added
