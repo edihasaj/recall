@@ -10,7 +10,7 @@ import {
   rejectMemory,
   recordFeedback,
   listMemories,
-  demoteGlobalMemory,
+  demoteGlobalMemory, reactivateMemory
 } from "../models/memory.js";
 import { recordAudit } from "../audit/trail.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
@@ -477,6 +477,68 @@ tool(
     return {
       content: [
         { type: "text" as const, text: `Memory ${memory_id.slice(0, 8)} confirmed and promoted to active.` },
+      ],
+    };
+  },
+);
+
+tool(
+  "reactivate",
+  "Restore a rejected memory. Use when a rule was rejected in error, or when the user asks for something back that was previously turned down. Returns it as a low-confidence candidate, so `confirm` it afterwards to make it eligible for injection again.",
+  {
+    memory_id: z.string().describe("Memory ID to reactivate"),
+  },
+  async ({ memory_id }) => {
+    const before = getMemory(db, memory_id);
+    if (!before) {
+      return {
+        content: [{ type: "text" as const, text: `Memory ${memory_id} not found.` }],
+      };
+    }
+    if (before.status !== "rejected") {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Memory ${memory_id} is ${before.status}, not rejected — nothing to reactivate.`,
+          },
+        ],
+      };
+    }
+    const success = reactivateMemory(db, memory_id, {
+      type: "session_correction",
+      session: "mcp",
+      timestamp: new Date().toISOString(),
+      context: "user asked for this rule back after it was rejected",
+    });
+    if (!success) {
+      // The only other failure is an active memory already holding this
+      // dedupe key — say so, because "it did not work" is useless here.
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Could not reactivate ${memory_id}: another active memory already covers the same rule. Find it with \`list\` and confirm that one instead.`,
+          },
+        ],
+      };
+    }
+    const after = getMemory(db, memory_id);
+    recordAudit(
+      db,
+      memory_id,
+      "reactivated",
+      "mcp",
+      "manual reactivate",
+      JSON.stringify(before),
+      after ? JSON.stringify(after) : null,
+    );
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Reactivated ${memory_id} as a ${after?.status} at ${after?.confidence.toFixed(2)}. Call \`confirm\` to raise it above the injection gate.`,
+        },
       ],
     };
   },

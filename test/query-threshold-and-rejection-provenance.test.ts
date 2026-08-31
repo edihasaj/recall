@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { compileContext, compileContextHybrid } from "../src/compiler/context.js";
-import { createMemory, getMemory, rejectMemory } from "../src/models/memory.js";
+import { createMemory, getMemory, reactivateMemory, rejectMemory } from "../src/models/memory.js";
 import { processCorrection } from "../src/capture/correction.js";
 import { recordAudit } from "../src/audit/trail.js";
 
@@ -143,7 +143,7 @@ describe("only a human rejection blocks re-capture", () => {
     const memoryId = first.ids[0]!;
     rejectMemory(db, memoryId, "maintenance:lifecycle");
     // A human edited it once; that is not a rejection and must not block.
-    recordAudit(db, memoryId, "updated", "cli", "user edited wording");
+    recordAudit(db, memoryId, "edited", "cli", "user edited wording");
 
     const second = await processCorrection(db, "never commit secrets to the repo", {
       sessionId: "s2",
@@ -235,5 +235,62 @@ describe("an explicit capture is never silently dropped", () => {
       { sessionId: "s1", repo: REPO },
     );
     expect(result.ids).toHaveLength(0);
+  });
+});
+
+// Regression: reactivateMemory existed but nothing called it — no MCP tool, no
+// CLI command. A rule rejected in error was therefore unreachable through
+// every surface, which is how a team convention stayed lost while the user
+// kept trying to teach it again.
+describe("a rejected memory can be recovered", () => {
+  const evidence = {
+    type: "session_correction" as const,
+    session: "test",
+    timestamp: new Date().toISOString(),
+    context: "user asked for this rule back",
+  };
+
+  it("restores a rejected memory as a candidate", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule",
+      text: "Treat a second review as a functional review, not a code review.",
+      scope: "repo",
+      repo: REPO,
+      confidence: 0.99,
+      source: "user_correction",
+    });
+    rejectMemory(db, id, "cli");
+    expect(getMemory(db, id)?.status).toBe("rejected");
+
+    expect(reactivateMemory(db, id, evidence)).toBe(true);
+    const restored = getMemory(db, id);
+    // Deliberately a candidate: recovery is not a back door to an active rule.
+    expect(restored?.status).toBe("candidate");
+  });
+
+  it("refuses when an active memory already covers the same rule", () => {
+    const db = freshDb();
+    const text = "Always rebase before merging.";
+    const id = createMemory(db, {
+      type: "rule", text, scope: "repo", repo: REPO,
+      confidence: 0.9, source: "user_correction",
+    });
+    rejectMemory(db, id, "cli");
+    createMemory(db, {
+      type: "rule", text, scope: "repo", repo: REPO,
+      confidence: 0.9, source: "user_correction",
+    });
+
+    expect(reactivateMemory(db, id, evidence)).toBe(false);
+  });
+
+  it("does nothing for a memory that was never rejected", () => {
+    const db = freshDb();
+    const id = createMemory(db, {
+      type: "rule", text: "Prefer const over let.", scope: "repo", repo: REPO,
+      confidence: 0.9, source: "user_correction",
+    });
+    expect(reactivateMemory(db, id, evidence)).toBe(false);
   });
 });
