@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { compileContext, compileContextHybrid } from "../src/compiler/context.js";
-import { createMemory, rejectMemory } from "../src/models/memory.js";
+import { createMemory, getMemory, rejectMemory } from "../src/models/memory.js";
 import { processCorrection } from "../src/capture/correction.js";
 import { recordAudit } from "../src/audit/trail.js";
 
@@ -169,5 +169,71 @@ describe("only a human rejection blocks re-capture", () => {
       .prepare("SELECT actor FROM audit_trail WHERE memory_id = ? AND action = 'rejected'")
       .all(id) as { actor: string }[];
     expect(rows.map((r) => r.actor)).toContain("maintenance:lifecycle");
+  });
+});
+
+// Regression: an explicit capture_correction call must never silently store
+// nothing. The regex extractor could produce a single unusable fragment (e.g.
+// "must assess the ..." with its subject stripped), which satisfied the
+// "did we find anything" check, suppressed the explicit-capture fallback, and
+// was then discarded by the quality filter. The user was told "no correction
+// pattern detected" for a rule they had stated three different ways.
+describe("an explicit capture is never silently dropped", () => {
+  const phrasings: [string, string][] = [
+    [
+      "declarative",
+      "The purpose of a 2nd review is to assess the functional requirements of the ticket: are we actually solving the underlying problem, and do we understand how the user would interact with it and why.",
+    ],
+    [
+      "imperative",
+      "Always treat a 2nd review as a functional review, not a code review. Assess whether we are actually solving the underlying problem.",
+    ],
+    [
+      "corrective",
+      "No, that's wrong. Don't treat 2nd review as a code/technical review. From now on, a 2nd review must assess the functional requirements of the ticket.",
+    ],
+  ];
+
+  for (const [label, text] of phrasings) {
+    it(`captures the ${label} phrasing of the same rule`, async () => {
+      process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+      const db = freshDb();
+      const result = await processCorrection(db, text, {
+        sessionId: "s1",
+        repo: REPO,
+        force_semantic_capture: true,
+      });
+      expect(result.ids.length).toBeGreaterThan(0);
+      expect(result.blockedByRejectedExemplar ?? 0).toBe(0);
+    });
+  }
+
+  it("stores the forced fallback as a candidate, not an active rule", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+    // Declarative phrasing the regex extractor produces nothing usable for.
+    const result = await processCorrection(
+      db,
+      "The purpose of a 2nd review is to assess the functional requirements of the ticket.",
+      { sessionId: "s1", repo: REPO, force_semantic_capture: true },
+    );
+    const stored = getMemory(db, result.ids[0]!);
+    // Confirmation still has to earn activation; the safety net must not be a
+    // back door for promoting unvetted text.
+    expect(stored?.status).toBe("candidate");
+    expect(stored?.confidence).toBeLessThan(0.6);
+  });
+
+  it("still captures nothing for ambient text with no explicit capture call", async () => {
+    process.env.RECALL_LLM_CAPTURE_DISABLED = "true";
+    const db = freshDb();
+    // No force_semantic_capture: this is passive prompt scanning, where the
+    // quality filter must still throw junk away rather than store paragraphs.
+    const result = await processCorrection(
+      db,
+      "The purpose of a 2nd review is to assess the functional requirements of the ticket.",
+      { sessionId: "s1", repo: REPO },
+    );
+    expect(result.ids).toHaveLength(0);
   });
 });

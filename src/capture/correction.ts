@@ -413,10 +413,25 @@ export async function processCorrection(
   }
 
   // --- Fallback: regex path (used when no LLM provider configured) ---
-  const corrections = detectCorrections(text);
+  // Quality-filter up front rather than inside the capture loop. The filter
+  // used to run per-correction mid-loop, which meant a junk extraction was
+  // worse than no extraction: it satisfied the "did the regex find anything"
+  // check, suppressed the explicit-capture safety net below, and was then
+  // discarded — so an intentional capture_correction call returned nothing and
+  // reported "no correction pattern detected". Deciding what is usable before
+  // asking whether anything is usable is the whole fix.
+  const corrections = detectCorrections(text).filter(
+    (correction) =>
+      correction.type === "review_pattern"
+      || qualityReasons(correction.text).length === 0,
+  );
   // Without an LLM provider, an explicit semantic capture tool call is still
   // useful evidence. Store the concise user statement as a low-confidence
   // candidate; repetition/confirmation remains required before activation.
+  //
+  // Deliberately not quality-filtered: the caller has already judged this a
+  // durable rule, and 0.35 keeps it a candidate needing confirmation. Losing
+  // it outright is the worse failure — the user believes a rule was stored.
   if (corrections.length === 0 && ctx.force_semantic_capture) {
     corrections.push({
       type: "rule",
@@ -433,14 +448,6 @@ export async function processCorrection(
   let blockedByRejectedExemplar = 0;
 
   for (const correction of corrections) {
-    // Drop voice/typing fragments at capture time. Mirrors the daemon-side
-    // rejectFragmentCandidates filter so trash never enters the candidate
-    // queue in the first place.
-    if (correction.type !== "review_pattern") {
-      const reasons = qualityReasons(correction.text);
-      if (reasons.length > 0) continue;
-    }
-
     // Phase D + D.next: skip captures that closely match something the user
     // previously rejected. Lexical Jaccard is the fast pre-pass; semantic
     // cosine via embeddings catches paraphrases when a provider is configured.
