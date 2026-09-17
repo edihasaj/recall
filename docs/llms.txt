@@ -1,0 +1,61 @@
+# Recall
+
+> Recall is a local repo-memory compiler for coding agents. It learns durable rules from your corrections, review feedback, repo scans, and session outcomes, then re-injects them into every session through CLI, MCP, daemon endpoints, and lifecycle hooks.
+
+## What is Recall?
+
+Recall (recallmemory.dev) fixes the loop where you correct your coding agent, it forgets, and you correct it again. Recall captures the durable rule hidden in a correction once, stores it locally, and injects a compact trusted instruction set at the start of every session.
+
+Local-first. No cloud and no API keys required for the common path. Recall Cloud is an optional hosted layer for sync, search, and team access.
+
+- Website: https://recallmemory.dev/
+- Source: https://github.com/edihasaj/recall
+- Recall Cloud: https://app.recallmemory.dev/
+- Releases: https://github.com/edihasaj/recall/releases
+- Support: support@recallmemory.dev
+
+## How it works
+
+```bash
+recall correct -r owner/repo "don't use npm, use pnpm"
+# next session start:
+# the SessionStart hook injects: "- use pnpm as the package manager"
+```
+
+Capture sources: explicit corrections, code review feedback, repository scans, and session outcomes. Retrieval is hybrid (lexical plus vector), quality-gated, and scoped per repository with a global tier for rules that apply everywhere.
+
+## Interfaces
+
+- CLI: `recall correct`, `recall query`, `recall setup`, `recall doctor`, `recall scan`
+- MCP server: `capture_correction`, `query`, `confirm`, `reject`, and the rest of the memory tools for any MCP-capable agent
+- Lifecycle hooks: SessionStart injection and per-prompt capture for Claude Code, Codex, opencode, and other agents
+- Daemon endpoints for editors and custom integrations
+- Web dashboard: memories, knowledge graph (2D and 3D), event timeline, and live sessions
+
+## Benchmarks
+
+LongMemEval-S, N=500 non-abstention, the same dataset agentmemory publishes.
+
+| System | R@5 | R@10 | R@20 | NDCG@10 | MRR |
+| --- | --- | --- | --- | --- | --- |
+| agentmemory BM25 + vector | 95.2% | 98.6% | 99.4% | 87.9 | 88.2 |
+| Recall, same model (all-MiniLM-L6-v2) | 96.6% | 97.6% | 99.8% | 87.0 | 86.8 |
+| Recall shipped (multilingual-e5-small) | 97.4% | 99.4% | 99.6% | 90.1 | 89.5 |
+
+Full methodology: https://github.com/edihasaj/recall/blob/main/benchmark/COMPARISON.md
+
+## Install
+
+```bash
+brew install --cask edihasaj/tap/recall
+recall setup --yes
+recall doctor
+```
+
+Or: `curl -fsSL https://recallmemory.dev/install.sh | bash`
+
+macOS ships a menu bar app; Linux and Windows builds are available from the releases page.
+
+## Author
+
+Built by Edi Hasaj (https://edihasaj.com).

@@ -796,6 +796,27 @@ pre code {
   line-height: 1.03;
 }
 
+.ask-ai {
+  width: min(1180px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 0 0 28px;
+  color: var(--ink-soft);
+}
+
+.ask-ai-label {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.ask-ai-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 14px;
+}
+
 footer {
   display: flex;
   justify-content: space-between;
@@ -864,6 +885,7 @@ footer {
 @media (max-width: 920px) {
   .site-head,
   main,
+  .ask-ai,
   footer {
     width: min(100% - 28px, 720px);
   }
@@ -979,6 +1001,7 @@ footer {
 @media (max-width: 380px) {
   .site-head,
   main,
+  .ask-ai,
   footer {
     width: calc(100% - 20px);
   }
