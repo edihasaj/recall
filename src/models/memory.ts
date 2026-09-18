@@ -1,5 +1,6 @@
 import { eq, and, gte, inArray, like, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { hasNonDurableProvenance } from "../capture/provenance.js";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
 import { memoryDedupeKey } from "./dedupe.js";
@@ -195,6 +196,7 @@ export function promoteMemory(
   const mem = getMemory(db, id);
   if (!mem) return false;
   if (mem.status === "rejected") return false; // must use reactivate
+  if (reason !== "explicit_confirm" && hasNonDurableProvenance(mem)) return false;
 
   let newConfidence: number;
   if (reason === "explicit_confirm") {
@@ -413,7 +415,7 @@ export function appendEvidence(
 // into automatic injection instead of leaving it retrievable-but-silent.
 export function restoreAutoInject(db: RecallDb, id: string): boolean {
   const mem = getMemory(db, id);
-  if (!mem || mem.auto_inject) return false;
+  if (!mem || mem.auto_inject || hasNonDurableProvenance(mem)) return false;
 
   db.update(memories)
     .set({ auto_inject: true, updated_at: new Date().toISOString() })
@@ -499,7 +501,7 @@ export function recordFeedback(
     .run();
 
   const mem = getMemory(db, memoryId);
-  if (!mem) return id;
+  if (!mem || mem.status === "rejected" || hasNonDurableProvenance(mem)) return id;
 
   const delta = outcome === "followed"
     ? 0.05

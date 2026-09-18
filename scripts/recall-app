@@ -11,4 +11,5 @@ while [ -L "$launcher" ]; do
 done
 
 runtime_dir=$(CDPATH= cd -- "$(dirname -- "$launcher")/.." && pwd)
+export RECALL_RUNTIME_DIR="$runtime_dir"
 exec "$runtime_dir/bin/node" "$runtime_dir/dist/cli.js" "$@"

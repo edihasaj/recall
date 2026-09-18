@@ -60,8 +60,9 @@ describe("Codex hooks.json adapter", () => {
     ]);
     expect(parsed.hooks.UserPromptSubmit[0].hooks[0].command).toContain("--codex-stdin");
     expect(parsed.hooks.UserPromptSubmit[0].hooks[0].command).toContain("recall:managed:codex:prompt");
-    expect(parsed.hooks.PostToolUse[0].matcher).toBe("Bash");
-    // Codex has no SessionEnd event — session-end rides on Stop.
+    expect(parsed.hooks.PostToolUse[0].matcher).toBe(".*");
+    expect(parsed.hooks.SessionStart[0].matcher).toContain("compact");
+    // Stop observes each completed turn, even when a session stays open.
     expect(parsed.hooks.Stop[0].hooks[0].command).toContain("hook session-end --agent codex --codex-stdin");
     expect(parsed.hooks.Stop[0].hooks[0].command).toContain("recall:managed:codex:session-end");
   });

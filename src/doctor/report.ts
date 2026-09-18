@@ -11,12 +11,16 @@ import { checkClaudeCodeMemoryOverride } from "../agents/claude-code.js";
 import { resolveCodexHomes } from "../agents/codex.js";
 import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index.js";
 import type { AgentName, RulesStatus } from "../agents/types.js";
+import { readHookActivity, missingCodexTrustKeys, type HookActivity } from "./hook-activity.js";
+import type { CodexTrustReport } from "./codex-trust.js";
 
 export interface AgentDoctorEntry {
   agent: AgentName;
   detected: boolean;
   mcp: boolean;
   hooks: boolean;
+  hook_activity?: HookActivity;
+  hook_trust?: CodexTrustReport[];
   legacy_notify_bridge?: boolean;
   config_path: string;
   hook_path?: string;
@@ -44,6 +48,7 @@ export interface CleanupHealth {
   pending_candidate_corrections: number;
   followed_rate_resolved: number | null;
   resolved_injections: number;
+  total_injections: number;
 }
 
 export interface DispatcherHealth {
@@ -108,6 +113,9 @@ export function getDoctorReport(): DoctorReport {
     : null;
 
   const agents = inspectAgentInstalls();
+  for (const agent of agents) {
+    if (agent.detected && !agent.hookless) agent.hook_activity = readHookActivity(dbPath, agent.agent);
+  }
   return {
     db_path: dbPath,
     db_user_version: getDbUserVersion(dbPath),
@@ -219,6 +227,7 @@ function readCleanupHealth(dbPath: string): CleanupHealth | null {
 
     let followedRate: number | null = null;
     let resolvedInjections = 0;
+    let totalInjections = 0;
     if (names.has("memory_injections")) {
       const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
       const rows = sqlite.prepare(
@@ -226,6 +235,7 @@ function readCleanupHealth(dbPath: string): CleanupHealth | null {
       ).all(since) as Array<{ outcome: string | null; c: number }>;
       let followed = 0;
       for (const r of rows) {
+        totalInjections += r.c;
         if (!r.outcome) continue;
         resolvedInjections += r.c;
         if (r.outcome === "followed") followed += r.c;
@@ -241,6 +251,7 @@ function readCleanupHealth(dbPath: string): CleanupHealth | null {
       pending_candidate_corrections: pending,
       followed_rate_resolved: followedRate,
       resolved_injections: resolvedInjections,
+      total_injections: totalInjections,
     };
   } catch {
     return null;
@@ -408,6 +419,14 @@ function inspectCodexHome(codexHome: string) {
     const managedHooksJson =
       existsSync(hooksPath) && readFileSync(hooksPath, "utf-8").includes("recall:managed:codex");
     hooks = featureFlagSet && managedHooksJson;
+    if (managedHooksJson) {
+      try {
+        const missing = missingCodexTrustKeys(raw, hooksPath, JSON.parse(readFileSync(hooksPath, "utf-8")));
+        if (missing.length) notes.push(`${missing.length} Recall hooks lack trust for this profile path. Review them with Codex /hooks; setup does not grant trust.`);
+      } catch {
+        notes.push("hooks.json could not be parsed for trust inspection");
+      }
+    }
     legacy_notify_bridge =
       raw.includes("# recall:managed:codex:start") &&
       raw.includes("codex-notify");
@@ -507,8 +526,19 @@ export function formatDoctorReport(report: DoctorReport): string {
     // Hookless agents have no hooks to report — the rules block is the equivalent.
     const wiring = agent.hookless
       ? ` rules:${agent.rules === "current" ? "ok" : (agent.rules ?? "missing").toUpperCase()}`
-      : ` hooks:${agent.hooks ? "ok" : "MISSING"}`;
+      : ` hooks:${agent.hooks ? "configured" : "MISSING"}`;
     lines.push(`${label} mcp:${mcp}${wiring}${claudeMd}${legacy}`);
+    if (agent.hook_activity) {
+      const activity = agent.hook_activity;
+      lines.push(`             invocation:${activity.status} last-success:${activity.last_success_at ?? "none"} (model delivery unverified)`);
+      for (const event of ["session_started", "prompt_submitted", "tool_invoked", "session_ended"]) {
+        lines.push(`             ${event}: ${activity.events[event] ?? "never"}`);
+      }
+    }
+    for (const trust of agent.hook_trust ?? []) {
+      lines.push(`             ${basename(trust.home)} trust:${trust.status}${trust.error ? ` (${trust.error})` : ""}`);
+      if (trust.status === "review-required") lines.push("             Review the current Recall commands in Codex /hooks for this profile.");
+    }
     for (const note of agent.notes) {
       lines.push(`             - ${note}`);
     }
@@ -527,6 +557,9 @@ export function formatDoctorReport(report: DoctorReport): string {
     }
     lines.push(`Total runs: ${report.cleanup.total_runs}`);
     lines.push(`Pending correction candidates: ${report.cleanup.pending_candidate_corrections}`);
+    const total = report.cleanup.total_injections ?? report.cleanup.resolved_injections;
+    const resolved = report.cleanup.resolved_injections;
+    lines.push(`Outcome coverage (last 14d): ${resolved}/${total} resolved; ${total - resolved} unknown. Selection is not proof of model delivery.`);
     if (report.cleanup.followed_rate_resolved != null) {
       const pct = (report.cleanup.followed_rate_resolved * 100).toFixed(1);
       lines.push(`Followed rate (last 14d, of ${report.cleanup.resolved_injections} resolved): ${pct}%`);
@@ -538,7 +571,7 @@ export function formatDoctorReport(report: DoctorReport): string {
   if (report.dispatcher) {
     lines.push("", "## Dispatcher (LLM refinement)");
     const provs = report.dispatcher.providers_configured;
-    lines.push(`Providers: ${provs.length === 0 ? "none configured (LLM tier dormant)" : provs.join(", ")}`);
+    lines.push(`Providers visible to this CLI: ${provs.length === 0 ? "none; daemon may have separate credentials" : provs.join(", ")}`);
     const pendingEntries = Object.entries(report.dispatcher.pending_tasks);
     if (pendingEntries.length === 0) {
       lines.push("Pending tasks: 0");
@@ -552,7 +585,7 @@ export function formatDoctorReport(report: DoctorReport): string {
       lines.push("Last dispatch: never");
     }
     if (provs.length === 0 && pendingEntries.length > 0) {
-      lines.push("Tasks are queued but no provider is configured. Run `recall maintenance dispatch --preview` to inspect prompts, or `recall maintenance credentials set <provider> <key>` to enable.");
+      lines.push("Tasks are queued. Check the running daemon's dispatch status before changing credentials; this CLI may have a different environment.");
     }
   }
 

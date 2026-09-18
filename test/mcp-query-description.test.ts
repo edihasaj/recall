@@ -5,10 +5,10 @@ import { join } from "node:path";
 const serverPath = join(process.cwd(), "src", "mcp", "factory.ts");
 
 describe("MCP query tool description", () => {
-  it("frames query as a fallback and discourages default invocation", () => {
+  it("requires retrieval when hook context is absent", () => {
     const source = readFileSync(serverPath, "utf-8");
-    expect(source).toMatch(/Fallback retrieval for repo memory/);
-    expect(source).toMatch(/lifecycle hooks already inject/);
+    expect(source).toMatch(/If no relevant Recall context is visible/);
+    expect(source).toMatch(/configured hooks are not proof/);
   });
 
   it("does not revert to the old primary-retrieval phrasing", () => {

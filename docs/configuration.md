@@ -37,6 +37,35 @@ Where to set them:
 - **At install time**: pass `--no-prompt-injection` to `recall setup` (or `recall setup local`) and the opt-out is written inline into the agent hook command — survives shell rc edits.
 - **Daemon-wide** (affects hooks invoked through the daemon transport only): edit `~/Library/LaunchAgents/com.recall.daemon.plist` under `EnvironmentVariables`, then `recall daemon restart`.
 
+## Delivery and pending preferences
+
+Hook configuration alone does not prove delivery. `recall doctor` reports
+recorded invocation age and checks Codex's current trust decision separately
+for each account profile. Symlinked hook files still need trust under each
+profile's path. Review changed Recall commands in that profile's `/hooks`
+screen. Setup never grants hook trust automatically. Codex tool matching covers
+all tool names, and startup injection also runs after compaction.
+
+When no relevant Recall context is visible, agents should query before
+non-trivial work. Query-based retrieval includes relevant, low-risk candidates
+with direct user correction evidence, labelled as unconfirmed preferences.
+They remain candidates and never authorize actions. Explicit
+`include_candidates: false` disables this path. Startup packs still contain
+active rules only.
+
+Generated system messages and subagent envelopes cannot teach or reinforce
+user rules. Existing memories whose correction evidence is entirely generated
+are excluded from compilation. Preview their reversible quarantine with
+`recall maintenance quarantine-generated`; add `--apply` to persist it.
+
+Doctor reports resolved and unknown outcomes together. A followed rate among
+resolved rows must not be interpreted as compliance across all sessions.
+Invocation and selection do not constitute model-receipt acknowledgements.
+
+`RECALL_RUNTIME_DIR` pins CLI/MCP/hook setup to an explicitly deployed runtime
+directory containing `bin/node` and `dist`. The launcher sets it to its own
+runtime so repair installations do not silently rewire to an older app bundle.
+
 ## Runtimes without lifecycle hooks
 
 GitHub Copilot, opencode, Cursor and Windsurf expose no hook API, so nothing can observe their prompts, tool calls, or session lifecycle. `recall setup --yes` still wires them, using the two levers they do offer:

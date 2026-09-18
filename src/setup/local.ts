@@ -91,6 +91,15 @@ type CommandRunner = (
 ) => void;
 
 export function resolveRuntimePaths(appPath?: string) {
+  const override = process.env.RECALL_RUNTIME_DIR;
+  if (override) {
+    return {
+      appPath: override,
+      runtimeNodePath: join(override, "bin", "node"),
+      runtimeCliPath: join(override, "dist", "cli.js"),
+      runtimeMcpPath: join(override, "dist", "mcp.js"),
+    };
+  }
   // macOS bundled-app layout: /Applications/Recall.app/Contents/Resources/Runtime
   if (appPath || (process.platform === "darwin" && existsSync("/Applications/Recall.app"))) {
     const resolvedAppPath = appPath ?? "/Applications/Recall.app";

@@ -130,7 +130,8 @@ export function resolveCodexHomes(options: { home?: string; env?: NodeJS.Process
   }
 
   discovered.sort();
-  return dedupeByRealPath([primary, ...discovered]);
+  const defaultHome = join(home, ".codex");
+  return dedupeByRealPath([primary, ...(looksLikeCodexHome(defaultHome) ? [defaultHome] : []), ...discovered]);
 }
 
 export interface CodexHookTarget {
@@ -523,7 +524,7 @@ function buildCodexManagedGroups(
 
   groups.SessionStart = [
     {
-      matcher: "startup|resume",
+      matcher: "startup|resume|clear|compact",
       hooks: [commandHook(`${commandPrefix} hook session-start --agent codex --codex-stdin`, "session-start")],
     },
   ];
@@ -540,15 +541,15 @@ function buildCodexManagedGroups(
   if (installedEvents.size === 0 || installedEvents.has("tool_invoked")) {
     groups.PostToolUse = [
       {
-        matcher: "Bash",
+        matcher: ".*",
         hooks: [commandHook(`${commandPrefix} hook tool --agent codex --codex-stdin`, "tool")],
       },
     ];
   }
 
   if (installedEvents.size === 0 || installedEvents.has("session_ended")) {
-    // Codex has no SessionEnd event; Stop (end of each agent turn) is the
-    // closest proxy. The session-end handler only resolves injections that
+    // Stop observes each completed turn, including sessions left open by an
+    // app-server client. The session-end handler only resolves injections that
     // were observably followed and leaves the rest pending, so firing it per
     // turn is safe — without it codex sessions never resolve outcomes.
     groups.Stop = [

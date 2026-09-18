@@ -144,7 +144,7 @@ function tool(name: string, description: string, schema: any, handler: (args: an
 
 tool(
   "query",
-  "Fallback retrieval for repo memory. Recall's lifecycle hooks already inject memory at SessionStart and on every UserPromptSubmit, so only call this tool when (a) injected context clearly missed something specific you need, (b) the user asks you to look up memory explicitly, or (c) you want memory for a different repo than the current one. Prefer query_text so results are ranked against your actual task.",
+  "Retrieve memory for the current task. If no relevant Recall context is visible, call query before non-trivial work; configured hooks are not proof that context was delivered. Also query when the task or repository changes or the user asks for memory. Prefer query_text for relevance. Pending preferences are labelled unconfirmed and never authorize actions.",
   {
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
     repo_path: z.string().optional().describe("Optional local repo path hint for first-time bootstrap"),
@@ -185,7 +185,7 @@ tool(
           query_text,
           config: {
             ...(min_confidence != null ? { confidence_threshold: min_confidence } : {}),
-            include_candidates: include_candidates ?? false,
+            ...(include_candidates != null ? { include_candidates } : {}),
           },
         })
       : compileContext(db, {
@@ -231,7 +231,7 @@ tool(
       if (nearMisses.length > 0) {
         lines.push(
           "",
-          `${nearMisses.length} memory/memories cleared every other filter and failed only on confidence:`,
+          `${nearMisses.length} potentially relevant memory/memories are below the confidence gate:`,
           ...nearMisses.slice(0, 5).map(
             (m) => `- [${m.confidence.toFixed(2)}] ${m.text}`,
           ),

@@ -9,6 +9,10 @@ import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddin
 import { listHistorySnippets } from "../history/snippets.js";
 import { searchHistorySnippets } from "../history/retrieval.js";
 import { textMatchScore } from "../text/match.js";
+import { hasDirectCorrectionEvidence, hasNonDurableProvenance, containsGeneratedHistory } from "../capture/provenance.js";
+import { isHighRiskRule } from "../capture/correction.js";
+import { isEphemeralTaskConstraint, isNonUserCaptureContext } from "../capture/context.js";
+import { memoryRepoAliases } from "../repo/aliases.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
@@ -185,17 +189,17 @@ export function compileContext(
   // 1. Pull repo-scoped + path-scoped memories. Skip rows that have been
   // suppressed from auto-injection (still queryable via MCP). Also include
   // scope='global' rules — those apply across every repo.
-  const repoActive = queryMemories(db, {
-    repo: req.repo,
+  const repoActive = memoryRepoAliases(db, req.repo).flatMap((repo) => queryMemories(db, {
+    repo,
     status: "active",
     auto_inject: true,
-  });
+  }));
   const globalActive = queryMemories(db, {
     scope: "global",
     status: "active",
     auto_inject: true,
   });
-  const allActive = dedupeById([...repoActive, ...globalActive]);
+  const allActive = dedupeById([...repoActive, ...globalActive]).filter((m) => !hasNonDurableProvenance(m));
   const sessionScoped = filterSessionScoped(allActive, req.session_id);
 
   // 2. Filter by path scope if provided
@@ -333,12 +337,25 @@ export async function compileContextHybrid(
     ? await selectRelevantHistory(db, req.repo, effectiveQuery, config.max_history_snippets)
     : selectRepoHistory(db, req.repo, config.max_history_snippets);
 
-  const repoMemories = queryMemories(db, { repo: req.repo });
+  const repoMemories = memoryRepoAliases(db, req.repo).flatMap((repo) => queryMemories(db, { repo }));
   const globalMemories = queryMemories(db, { scope: "global" });
+  // Relevant, low-risk user preferences can help before repetition confirms
+  // them. Keep inferred/unsafe candidates out and label pending ones clearly.
+  const eligibleCandidate = (memory: MemoryItem) => {
+    if (req.config?.include_candidates === false) return false;
+    if (isHighRiskRule(memory.text)) return false;
+    if (req.config?.include_candidates === true) return true;
+    return Boolean(effectiveQuery) && hasDirectCorrectionEvidence(memory)
+      && memory.evidence.some((entry) => entry.type === "session_correction"
+        && Boolean(entry.context)
+        && !isNonUserCaptureContext(entry.context ?? "")
+        && !isEphemeralTaskConstraint(memory.text, entry.context ?? ""));
+  };
   const allMemories = dedupeById([...repoMemories, ...globalMemories]).filter((memory) => {
+    if (hasNonDurableProvenance(memory)) return false;
     const statusEligible =
       memory.status === "active" ||
-      (config.include_candidates && memory.status === "candidate");
+      (memory.status === "candidate" && eligibleCandidate(memory));
     if (!statusEligible) return false;
     if (memory.auto_inject) return true;
     // Archived memories (retired from ambient injection by the stale-archiver)
@@ -346,7 +363,7 @@ export async function compileContextHybrid(
     // thing a rule covers, a rule that has simply gone unused is still the
     // right answer. They must still clear the retrieval relevance gate below,
     // and they never enter query-less ambient injection.
-    return Boolean(effectiveQuery) && memory.status === "active";
+    return Boolean(effectiveQuery) && (memory.status === "active" || eligibleCandidate(memory));
   });
 
   const sessionScoped = filterSessionScoped(allMemories, req.session_id);
@@ -354,12 +371,12 @@ export async function compileContextHybrid(
     ? sessionScoped.filter((memory) => pathMatches(memory, req.path!))
     : sessionScoped;
 
-  const candidateConfidenceFloor = Math.min(config.confidence_threshold, 0.45);
+  const candidateConfidenceFloor = Math.min(config.confidence_threshold, 0.35);
   const passing = scoped.filter((memory) => {
     if (memory.status === "active") {
       return memory.confidence + CONFIDENCE_EPSILON >= config.confidence_threshold;
     }
-    if (memory.status === "candidate" && config.include_candidates) {
+    if (memory.status === "candidate" && eligibleCandidate(memory)) {
       return memory.confidence >= candidateConfidenceFloor;
     }
     return false;
@@ -367,7 +384,10 @@ export async function compileContextHybrid(
 
   const passingIds = new Set(passing.map((memory) => memory.id));
   const dropped = scoped.filter((memory) => !passingIds.has(memory.id));
-  const hybridNearMisses = collectNearMisses(scoped, config.confidence_threshold);
+  const hybridNearMisses = collectNearMisses(
+    dropped.filter((memory) => !effectiveQuery || textMatchScore(effectiveQuery, memory.text).score >= QUERY_TEXT_MATCH_FLOOR),
+    config.confidence_threshold,
+  );
 
   if (passing.length === 0 && selectedHistory.length === 0) {
     return {
@@ -594,7 +614,8 @@ function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[]
 // "When user says X, do Y" reads as suspicious in an unrelated repo.
 function renderMemoryBullet(memory: MemoryItem): string {
   const prefix = memory.scope === "global" ? "[global] " : "";
-  return `- ${prefix}${renderMemoryText(memory)}`;
+  const pending = memory.status === "candidate" ? "[unconfirmed preference; not authorization] " : "";
+  return `- ${prefix}${pending}${renderMemoryText(memory)}`;
 }
 
 function renderMemoryText(memory: MemoryItem): string {
@@ -670,7 +691,7 @@ function selectRepoHistory(
 ): HistorySnippet[] {
   if (limit <= 0) return [];
   return listHistorySnippets(db, { repo, limit: Math.max(limit * 3, 6) })
-    .filter((snippet) => !snippet.session_id && HISTORY_KINDS.has(snippet.kind))
+    .filter((snippet) => !snippet.session_id && HISTORY_KINDS.has(snippet.kind) && !containsGeneratedHistory(snippet.text))
     .slice(0, limit);
 }
 
@@ -691,7 +712,7 @@ async function selectRelevantHistory(
       result.similarity >= HISTORY_VECTOR_RELEVANCE_FLOOR
     )
     .map((result) => result.snippet)
-    .filter((snippet) => HISTORY_KINDS.has(snippet.kind))
+    .filter((snippet) => HISTORY_KINDS.has(snippet.kind) && !containsGeneratedHistory(snippet.text))
     .slice(0, limit);
 }
 

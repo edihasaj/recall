@@ -18,7 +18,7 @@ import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import type { CaptureContext, EvidenceEntry, MaintenanceTask, MemoryType } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { isHighRiskRule } from "../capture/correction.js";
-import { isEphemeralTaskConstraint } from "../capture/context.js";
+import { isEphemeralTaskConstraint, isNonUserCaptureContext } from "../capture/context.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import type {
   ExtractedRule,
@@ -430,7 +430,7 @@ export function applyExtractRulesFromPrompt(
   const repo = payload.repo ?? null;
   const profile = getRepoQualityProfile(db, repo ?? undefined);
 
-  if (!result.rules || result.rules.length === 0) {
+  if (!result.rules || result.rules.length === 0 || isNonUserCaptureContext(payload.raw_prompt ?? "")) {
     return { audit_entry_id: null, target_id: task.id, changed_fields: [] };
   }
 

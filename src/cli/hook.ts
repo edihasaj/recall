@@ -8,6 +8,7 @@ import type { RecentToolCall } from "../agents/types.js";
 import { recordHookCall } from "../hooks/calls.js";
 import { performance } from "node:perf_hooks";
 import { detectCorrections, isHighRiskRule, isTriggerTemplateRule } from "../capture/correction.js";
+import { isGeneratedCaptureContext } from "../capture/provenance.js";
 import { queryMemories } from "../models/memory.js";
 import { captureCorrectionFallback, signalOutcomeFallback } from "../mcp/fallback.js";
 import {
@@ -331,7 +332,8 @@ export async function handlePromptHook(
       },
     });
 
-    await resolvePendingInjectionOutcomesOnPrompt(
+    const userAuthored = !isGeneratedCaptureContext(text);
+    if (userAuthored) await resolvePendingInjectionOutcomesOnPrompt(
       db,
       sessionId,
       text,
@@ -340,7 +342,7 @@ export async function handlePromptHook(
     );
 
     const correctionMatches = detectCorrections(text);
-    if (correctionMatches.length > 0) {
+    if (userAuthored && correctionMatches.length > 0) {
       await detectAndRecordRetrievalMissesSemantic(db, {
         correction_texts: correctionMatches.map((match) => match.text),
         prompt_text: text,
@@ -368,7 +370,7 @@ export async function handlePromptHook(
     // floor keeps off-topic prompts silent. Set RECALL_HOOK_INJECT_PROMPT=false
     // to opt out (SessionStart-only injection still applies).
     const promptInjectionEnabled = process.env.RECALL_HOOK_INJECT_PROMPT !== "false";
-    const injection = repo && promptInjectionEnabled
+    const injection = repo && promptInjectionEnabled && userAuthored
       ? await collectInjectionSurface(db, {
           repo,
           path: input.path,

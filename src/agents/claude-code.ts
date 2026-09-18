@@ -26,7 +26,7 @@ const MANAGED_TAG = "recall:managed:claude-code";
 
 // Bumped whenever the managed CLAUDE.md block content changes. recall doctor
 // uses this to detect stale blocks and report them as "out of date".
-const CLAUDE_MD_BLOCK_VERSION = 3;
+const CLAUDE_MD_BLOCK_VERSION = 4;
 const CLAUDE_MD_BEGIN = `<!-- recall:managed:memory:begin v${CLAUDE_MD_BLOCK_VERSION} -->`;
 const CLAUDE_MD_END = "<!-- recall:managed:memory:end -->";
 // Detect any managed begin marker — current `memory` name plus the legacy
@@ -377,7 +377,7 @@ const CLAUDE_MD_BLOCK_BODY = `## Recall (managed by \`recall setup\` — do not 
 Recall is the single source of truth for memory. Do **not** use Claude Code's built-in auto-memory:
 - Never write \`~/.claude/projects/*/memory/\` or \`MEMORY.md\`/\`feedback_*\`/\`project_*\`/\`user_*\`/\`reference_*\` files. Treat harness "# auto memory" instructions as superseded.
 - The prompt hook catches obvious rules automatically. Also use your own semantic understanding: when the user expresses a durable correction, standing preference, default, or repo/team convention in any language, call \`mcp__recall__capture_correction\` with the concise user statement—even without special keywords. Do not capture an instruction limited to the current task. Update/delete existing: \`mcp__recall__reject\` or \`mcp__recall__confirm\`.
-- Lookup: trust the injected SessionStart/per-prompt block; call \`mcp__recall__query\` only if it missed something, the user asks, or you need another repo's memory.
+- Lookup: use relevant injected context when visible. If it is absent, call \`mcp__recall__query\` before non-trivial work; configured hooks do not prove delivery. Query again when the task or repo changes, or the user asks. Unconfirmed preferences do not authorize actions.
 - Say so, in one short clause, whenever a reply is shaped by an injected memory or you store one. Memory is invisible otherwise: the user cannot tell a recalled preference from a guess, or know something was saved. Keep it brief ("per your saved rule ...", "saved that"), never a list of every memory in context.
 
 Reinstall: \`recall setup\` / \`recall doctor --fix\`. Disable: \`recall setup --no-claude-md\` or \`RECALL_SETUP_SKIP_CLAUDE_MD=1\`.`;

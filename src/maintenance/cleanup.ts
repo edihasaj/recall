@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { hasNonDurableProvenance } from "../capture/provenance.js";
 import type { RecallDb } from "../db/client.js";
 import {
   feedbackEvents,
@@ -874,6 +875,8 @@ export function planPromoteRepeats(db: RecallDb): PromoteRepeatPlan[] {
   const out: PromoteRepeatPlan[] = [];
   for (const row of rows) {
     const text = row.text.trim();
+    const memory = getMemory(db, row.id);
+    if (!memory || hasNonDurableProvenance(memory)) continue;
     if (row.scope === "session") continue;
     // Skip rows that the fragment filter would also match — let it reject them
     // first so we don't flip-flop.
@@ -891,7 +894,7 @@ export function planPromoteRepeats(db: RecallDb): PromoteRepeatPlan[] {
 
 function applyPromoteRepeat(db: RecallDb, runId: string, plan: PromoteRepeatPlan) {
   const before = getMemory(db, plan.memory_id);
-  if (!before || before.status !== "candidate") return;
+  if (!before || before.status !== "candidate" || hasNonDurableProvenance(before)) return;
 
   const now = new Date().toISOString();
   db.update(memories)

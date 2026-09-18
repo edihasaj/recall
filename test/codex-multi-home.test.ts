@@ -74,7 +74,7 @@ describe("Codex multi-home resolution", () => {
     // Primary first, and not duplicated by discovery.
     expect(homes[0]).toBe(custom);
     expect(homes.filter((entry) => entry === custom)).toHaveLength(1);
-    expect(homes).not.toContain(join(home, ".codex"));
+    expect(homes).toContain(join(home, ".codex"));
   });
 
   it("honours an explicit RECALL_CODEX_HOMES override verbatim", () => {

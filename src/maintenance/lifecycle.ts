@@ -26,6 +26,7 @@ import { removeHistoryVecRow } from "../vector/sqlite-vec-history.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { evaluateScannedMemory } from "../scanner/signal.js";
 import { detectCorrections } from "../capture/correction.js";
+import { isGeneratedCaptureContext } from "../capture/provenance.js";
 import {
   DEFAULT_ENQUEUE_CONFIG,
   enqueueMaintenanceTasks,
@@ -594,11 +595,11 @@ function summarizeSessionEvents(
   const corrections = events
     .filter((event) => event.event_type === "correction")
     .map((event) => String(event.request.text ?? ""))
-    .filter(Boolean);
+    .filter((text) => Boolean(text) && !isGeneratedCaptureContext(text));
   const reviews = events
     .filter((event) => event.event_type === "review")
     .map((event) => String(event.request.feedback ?? ""))
-    .filter(Boolean);
+    .filter((text) => Boolean(text) && !isGeneratedCaptureContext(text));
   const decisions = extractPromptDecisions(events);
   const compileEvents = events.filter((event) => event.event_type === "compile");
 
@@ -738,7 +739,7 @@ function extractPromptDecisions(
     if (event.event_type !== "session_event") continue;
     if (event.request.name !== "prompt_submitted") continue;
     const text = String(event.result.text ?? "").trim();
-    if (!text) continue;
+    if (!text || isGeneratedCaptureContext(text)) continue;
 
     const durable = detectCorrections(text)
       .filter((match) => match.type === "decision")

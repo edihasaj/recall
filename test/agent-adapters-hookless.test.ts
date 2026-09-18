@@ -180,7 +180,7 @@ describe("managed rules blocks", () => {
     opencodeAdapter.installRules!({ configPath: target });
 
     const content = readFileSync(target, "utf-8");
-    expect(content).toContain("recall:managed:memory:begin v3");
+    expect(content).toContain("recall:managed:memory:begin v4");
     expect(content).toContain("recall:managed:opencode-memory:begin v1");
     expect(content).toContain("Recall is the single source of truth for memory");
     expect(content).toContain("wired into opencode");

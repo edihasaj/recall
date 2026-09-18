@@ -123,7 +123,7 @@ program
   .description("Show local Recall runtime, DB, embedding, and agent-install health")
   .option("--json", "Emit raw JSON report")
   .option("--fix", "Install missing hooks/MCP for detected agents")
-  .action((opts) => {
+  .action(async (opts) => {
     const report = getDoctorReport();
     if (opts.fix) {
       const detectedAgents = report.agents
@@ -172,6 +172,11 @@ program
     }
 
     const finalReport = opts.fix ? getDoctorReport() : report;
+    const codexEntry = finalReport.agents.find((agent) => agent.agent === "codex" && agent.detected);
+    if (codexEntry) {
+      const { inspectCodexTrust } = await import("./doctor/codex-trust.js");
+      codexEntry.hook_trust = await inspectCodexTrust();
+    }
     if (opts.json) {
       console.log(JSON.stringify(finalReport, null, 2));
       return;
@@ -872,7 +877,7 @@ program
           query_text: opts.query,
           config: {
             ...(opts.threshold ? { confidence_threshold: parseFloat(opts.threshold) } : {}),
-            include_candidates: opts.includeCandidates ?? false,
+            ...(opts.includeCandidates ? { include_candidates: true } : {}),
           },
         })
       : compileContext(db, {
@@ -2429,6 +2434,16 @@ maintenanceCmd
       return;
     }
     console.log(formatDispatchReport(report));
+  });
+
+maintenanceCmd
+  .command("quarantine-generated")
+  .description("Preview memories supported only by generated messages; preserve them outside injection")
+  .option("--apply", "Quarantine matching memories with reversible audit snapshots")
+  .action(async (opts) => {
+    const { quarantineGeneratedMemories } = await import("./maintenance/provenance.js");
+    const ids = quarantineGeneratedMemories(initDb(), Boolean(opts.apply));
+    console.log(JSON.stringify({ applied: Boolean(opts.apply), count: ids.length, memory_ids: ids }, null, 2));
   });
 
 maintenanceCmd

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.2 - 2026-09-18
+
+### Fixed
+
+- Codex hooks observe all tool names and reload context after compaction.
+  Doctor checks each account profile's actual hook trust and distinguishes
+  configured hooks from recent invocations. It reports unknown outcome coverage
+  separately from the followed rate.
+- Relevant low-risk user correction candidates can appear as unconfirmed
+  preferences before repetition. Generated messages cannot capture, reinforce,
+  or supply user rules. `maintenance quarantine-generated` previews and
+  quarantines existing contaminated memories with audit snapshots.
+- Memory lookup recovers unambiguous short repository names. macOS repository
+  discovery tries Homebrew Git if the system Git fails.
+- MCP guidance requires a query when relevant hook context is absent.
+  Standalone runtime rollouts can pin setup with `RECALL_RUNTIME_DIR`.
+
 ## 1.4.1 - 2026-08-31
 
 ### Fixed

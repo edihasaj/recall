@@ -68,7 +68,7 @@ describe("doctor report", () => {
       },
     });
     expect(text).toMatch(/claude-code\s+mcp:ok hooks:MISSING/);
-    expect(text).toMatch(/codex\s+mcp:ok hooks:ok/);
+    expect(text).toMatch(/codex\s+mcp:ok hooks:configured/);
     expect(text).toContain("Upgrade available");
     expect(text).toContain("recall doctor --fix");
   });

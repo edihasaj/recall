@@ -6,6 +6,16 @@ import { queryMemories } from "../models/memory.js";
 import { scanAndStore } from "../scanner/repo.js";
 
 const repoPathCache = new Map<string, string | null>();
+
+function runGit(args: string[]): string {
+  const binaries = ["git", ...(process.platform === "darwin" && existsSync("/opt/homebrew/bin/git") ? ["/opt/homebrew/bin/git"] : [])];
+  let failure: unknown;
+  for (const binary of binaries) {
+    try { return execFileSync(binary, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); }
+    catch (error) { failure = error; }
+  }
+  throw failure;
+}
 const SKIP_DIRS = new Set([
   ".git",
   "node_modules",
@@ -139,11 +149,7 @@ export function inferRepoSlugFromPath(repoPath?: string | null): string | null {
   if (!root) return null;
 
   try {
-    const remote = execFileSync(
-      "git",
-      ["-C", root, "remote", "get-url", "origin"],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const remote = runGit(["-C", root, "remote", "get-url", "origin"]);
     return extractRepoSlugFromRemote(remote);
   } catch {
     const parts = root.split("/").filter(Boolean);
@@ -190,11 +196,7 @@ function normalizeRepoPathHint(repoPath?: string | null): string | null {
   if (!repoPath) return null;
   const expanded = repoPath.trim().replace(/^~(?=\/)/, process.env.HOME ?? "~");
   try {
-    const root = execFileSync(
-      "git",
-      ["-C", expanded, "rev-parse", "--show-toplevel"],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const root = runGit(["-C", expanded, "rev-parse", "--show-toplevel"]);
     return root || null;
   } catch {
     const resolved = resolve(expanded);
