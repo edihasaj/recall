@@ -813,8 +813,25 @@ pre code {
 .ask-ai-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  font-size: 14px;
+  align-items: center;
+  gap: 10px 22px;
+}
+
+.ask-ai-links a {
+  display: inline-flex;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  transition: opacity 140ms ease, color 140ms ease;
+}
+
+.ask-ai-links a:hover {
+  opacity: 1;
+  color: var(--copper);
+}
+
+.ask-ai-links svg {
+  width: 22px;
+  height: 22px;
 }
 
 footer {
