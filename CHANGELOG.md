@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.3 - 2026-09-18
+
+### Fixed
+
+- Dashboard files that disappear or fail to read return an unavailable response
+  instead of terminating the daemon with an unhandled stream error.
+- Dashboard start and stop operations run in order. Concurrent requests no
+  longer race to bind the port or leave an untracked listener running.
+- Closing the dashboard releases active HTTP and WebSocket connections.
+  Disconnected browsers release their file streams, and HEAD requests do not
+  open a file stream.
+
 ## 1.4.2 - 2026-09-18
 
 ### Fixed

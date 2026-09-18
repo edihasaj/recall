@@ -70,6 +70,23 @@ open ~/.recall/logs
 
 ## Crash Reports
 
+Distinguish process crashes from resource diagnostics and expected service
+restarts. A macOS `.diag` report saying `Action taken: none` is not a crash.
+Check the responsible application and executable path in `.ips` reports;
+another application's Node process is not necessarily Recall.
+
+Recall 1.4.3 contains dashboard file-read failures within the HTTP request and
+serializes dashboard start/stop operations. An unavailable bundle returns 503;
+the daemon stays running and can serve the repaired bundle without a restart.
+Stopping the dashboard also closes existing clients so an abandoned browser
+connection cannot hold the listener open.
+
+On Linux, inspect `systemctl --user show recall-daemon -p NRestarts
+-p ExecMainStatus` and the matching journal interval. After testing on a copy
+of real data, compare process IDs, request errors, latency, and memory across
+the observation window. A passing check is evidence for that window, not a
+guarantee against every future crash.
+
 Find Recall.app crash reports:
 
 ```bash

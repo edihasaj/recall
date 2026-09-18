@@ -164,6 +164,7 @@ export function shutdown(): void {
     try {
       writeFrame(c.socket, 0x8, Buffer.alloc(0));
       c.socket.end();
+      c.socket.destroySoon();
     } catch {
       // ignore
     }

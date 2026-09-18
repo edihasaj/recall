@@ -51,6 +51,13 @@ const MIME: Record<string, string> = {
 };
 
 let active: { server: Server; port: number; host: string; distDir: string; startedAt: string } | null = null;
+let lifecycle: Promise<unknown> = Promise.resolve();
+
+function serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+  const result = lifecycle.then(operation);
+  lifecycle = result.catch(() => undefined);
+  return result;
+}
 
 function defaultDistDir(): string {
   // src/webui/server.ts -> dist/webui at runtime (after tsup, the compiled
@@ -96,7 +103,11 @@ export function getStatus(): WebUIServerStatus {
   };
 }
 
-export async function start(options: WebUIServerOptions = {}): Promise<WebUIServerStatus> {
+export function start(options: WebUIServerOptions = {}): Promise<WebUIServerStatus> {
+  return serializeLifecycle(() => startListener(options));
+}
+
+async function startListener(options: WebUIServerOptions): Promise<WebUIServerStatus> {
   if (active) return getStatus();
   const port = options.port ?? parseInt(process.env.RECALL_WEBUI_PORT ?? "7891", 10);
   const host = options.host ?? "127.0.0.1";
@@ -123,13 +134,18 @@ export async function start(options: WebUIServerOptions = {}): Promise<WebUIServ
   return getStatus();
 }
 
-export async function stop(): Promise<WebUIServerStatus> {
+export function stop(): Promise<WebUIServerStatus> {
+  return serializeLifecycle(stopListener);
+}
+
+async function stopListener(): Promise<WebUIServerStatus> {
   if (!active) return getStatus();
   const a = active;
   active = null;
   shutdownWs();
   await new Promise<void>((resolve) => {
     a.server.close(() => resolve());
+    a.server.closeAllConnections();
   });
   return getStatus();
 }
@@ -180,11 +196,11 @@ function handleHttp(req: IncomingMessage, res: ServerResponse, distDir: string):
     return;
   }
 
-  if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
+  if (!isReadableFileCandidate(fullPath)) {
     // Fallback to index.html for client-side routing — but only if dist exists.
     const indexPath = join(distDir, "index.html");
-    if (existsSync(indexPath)) {
-      serveFile(res, indexPath);
+    if (isReadableFileCandidate(indexPath)) {
+      serveFile(res, indexPath, req.method === "HEAD");
     } else {
       res.statusCode = 503;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -193,7 +209,16 @@ function handleHttp(req: IncomingMessage, res: ServerResponse, distDir: string):
     return;
   }
 
-  serveFile(res, fullPath);
+  serveFile(res, fullPath, req.method === "HEAD");
+}
+
+function isReadableFileCandidate(file: string): boolean {
+  try {
+    return statSync(file).isFile();
+  } catch {
+    // A bundle can disappear between requests while the app is upgraded.
+    return false;
+  }
 }
 
 function safeDecode(p: string): string | null {
@@ -204,11 +229,29 @@ function safeDecode(p: string): string | null {
   }
 }
 
-function serveFile(res: ServerResponse, file: string): void {
+function serveFile(res: ServerResponse, file: string, head = false): void {
   const mime = MIME[extname(file).toLowerCase()] ?? "application/octet-stream";
   res.statusCode = 200;
   res.setHeader("Content-Type", mime);
-  createReadStream(file).pipe(res);
+  if (head) {
+    res.end();
+    return;
+  }
+  const stream = createReadStream(file);
+  const abort = () => stream.destroy();
+  res.once("close", abort);
+  stream.once("close", () => res.off("close", abort));
+  stream.once("error", () => {
+    if (res.destroyed) return;
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+    res.statusCode = 503;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.end("Dashboard asset unavailable. Retry after the update completes.");
+  });
+  stream.pipe(res);
 }
 
 function missingBundleHtml(distDir: string): string {
