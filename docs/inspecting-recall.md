@@ -81,6 +81,17 @@ the daemon stays running and can serve the repaired bundle without a restart.
 Stopping the dashboard also closes existing clients so an abandoned browser
 connection cannot hold the listener open.
 
+Recall 1.4.4 adds Windows tray recovery after an unexpected daemon exit, with
+one-to-thirty-second backoff. Intentional Stop or Quit disables recovery. The
+tray log records unexpected exits and retry delays; verify both the replacement
+process ID and `/health` after a controlled recovery test.
+
+On platforms without a packaged sqlite-vec extension, such as native ARM64
+Windows, retrieval falls back to lexical matching. `/health` reports
+`retrieval_mode: "lexical"` and the native-extension reason. This avoids
+repeated background failures; semantic vector search remains unavailable on
+that platform until a compatible extension is installed.
+
 On Linux, inspect `systemctl --user show recall-daemon -p NRestarts
 -p ExecMainStatus` and the matching journal interval. After testing on a copy
 of real data, compare process IDs, request errors, latency, and memory across

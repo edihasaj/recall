@@ -59,6 +59,10 @@ jobs:
           go-version: "1.22"
           cache-dependency-path: windows/tray/go.sum
 
+      - name: Test daemon supervision and tray helpers
+        working-directory: windows/tray
+        run: go test ./...
+
       - name: build tray
         working-directory: windows/tray
         run: |

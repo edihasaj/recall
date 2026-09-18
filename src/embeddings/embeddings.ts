@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
+import { getLoadablePath } from "sqlite-vec";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
 import { formatBytes, getDirectorySize, getEmbeddingCachePath } from "./cache.js";
@@ -68,7 +69,7 @@ const EMBEDDING_DEFAULTS = {
 // --- Config ---
 
 export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
-  if (process.env.RECALL_EMBEDDINGS_DISABLED === "true") return null;
+  if (getEmbeddingUnavailableReason()) return null;
   const requested = process.env.RECALL_EMBEDDING_PROVIDER;
   const provider: EmbeddingConfig["provider"] = requested === "multilingual-e5"
     ? "multilingual-e5"
@@ -85,6 +86,16 @@ export function loadEmbeddingConfigFromEnv(): EmbeddingConfig | null {
     version: process.env.RECALL_EMBEDDING_VERSION ?? "v1",
     similarity_threshold: parseFloat(process.env.RECALL_SIMILARITY_THRESHOLD ?? "0.8"),
   };
+}
+
+export function getEmbeddingUnavailableReason(): string | null {
+  if (process.env.RECALL_EMBEDDINGS_DISABLED === "true") return "Disabled by configuration";
+  try {
+    getLoadablePath();
+    return null;
+  } catch (error) {
+    return `Native vector extension unavailable; lexical retrieval remains enabled: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 export function getEmbeddingModelInfo(

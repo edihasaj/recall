@@ -24,7 +24,7 @@ import { getAuditTrail, getRecentAudit, recordAudit, rollbackMemory } from "./au
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "./repo/discovery.js";
-import { ensureEmbeddingProviderReady, getEmbeddingModelInfo, loadEmbeddingConfigFromEnv } from "./embeddings/embeddings.js";
+import { ensureEmbeddingProviderReady, getEmbeddingModelInfo, getEmbeddingUnavailableReason, loadEmbeddingConfigFromEnv } from "./embeddings/embeddings.js";
 import {
   endSessionLifecycle,
   recordSessionLifecycleEvent,
@@ -361,6 +361,8 @@ const server = createServer(async (req, res) => {
         status: "ok",
         version: pkg.version,
         embeddings: getEmbeddingModelInfo(),
+        retrieval_mode: loadEmbeddingConfigFromEnv() ? "hybrid" : "lexical",
+        embedding_unavailable_reason: getEmbeddingUnavailableReason(),
       });
     }
 

@@ -65,8 +65,8 @@ export function ensureHistoryVecIndex(db: RecallDb, dimensions: number) {
 }
 
 export function removeHistoryVecRow(db: RecallDb, snippetId: string) {
-  ensureLoaded(db);
   if (!hasHistoryVecIndex(db)) return;
+  ensureLoaded(db);
   getSqlite(db).prepare(`delete from ${VEC_HISTORY_INDEX} where snippet_id = ?`).run(snippetId);
 }
 

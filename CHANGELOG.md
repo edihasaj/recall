@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.4 - 2026-09-18
+
+### Fixed
+
+- The Windows tray restarts an unexpectedly terminated daemon with bounded
+  backoff. Intentional Stop, Quit, and shutdown do not restart it.
+- Daemon liveness no longer relies on `Signal(nil)`, which is unsupported on
+  Windows. Restart waits for the old child, and an old waiter cannot clear a
+  newer child. Failed starts close their log file.
+- Explicit Node and daemon-script overrides work together. Windows release
+  builds now run the supervisor and helper tests before publishing.
+- Native ARM64 Windows installations use lexical retrieval when sqlite-vec has
+  no compatible extension. Health reports explain the fallback instead of
+  allowing every embedding or maintenance attempt to fail.
+
 ## 1.4.3 - 2026-09-18
 
 ### Fixed

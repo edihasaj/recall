@@ -72,6 +72,7 @@ export function ensureMemoryVecIndex(
 }
 
 export function dropMemoryVecIndex(db: RecallDb) {
+  if (!hasMemoryVecIndex(db)) return;
   ensureSqliteVecLoaded(db);
   getSqlite(db).exec(`drop table if exists ${VEC_MEMORY_INDEX};`);
 }
@@ -108,8 +109,8 @@ export function removeMemoryVecRow(
   memoryId: string,
   config?: EmbeddingConfig,
 ) {
-  ensureSqliteVecLoaded(db);
   if (!hasMemoryVecIndex(db)) return;
+  ensureSqliteVecLoaded(db);
   getSqlite(db).prepare(`delete from ${VEC_MEMORY_INDEX} where memory_id = ?`).run(memoryId);
 }
 

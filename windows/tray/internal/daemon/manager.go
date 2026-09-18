@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,10 +28,14 @@ type Manager struct {
 	Port     int    // default: 7890
 	LogPath  string // where to tee stdout/stderr
 
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	healthy bool
-	lastErr error
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	healthy   bool
+	lastErr   error
+	done      chan struct{}
+	wanted    bool
+	failures  int
+	restartAt time.Time
 }
 
 // New returns a Manager with defaults filled in. Resolution order for the
@@ -48,12 +53,12 @@ func New() (*Manager, error) {
 		Port:     defaultPort,
 		LogPath:  filepath.Join(os.Getenv("LOCALAPPDATA"), "Recall", "daemon.log"),
 	}
+	if env := os.Getenv("RECALL_NODE_PATH"); env != "" {
+		m.NodePath = env
+	}
 	if env := os.Getenv("RECALL_DAEMON_SCRIPT"); env != "" {
 		m.DaemonJS = env
 		return m, nil
-	}
-	if env := os.Getenv("RECALL_NODE_PATH"); env != "" {
-		m.NodePath = env
 	}
 	js, err := resolveDaemonScript(m.NodePath)
 	if err != nil {
@@ -126,18 +131,29 @@ func stringTrim(s string) string {
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.cmd != nil && m.cmd.Process != nil {
-		// Check it's actually alive.
-		if err := m.cmd.Process.Signal(nil); err == nil {
-			return nil
-		}
-		m.cmd = nil
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.wanted = true
+	return m.startLocked(ctx)
+}
+
+// Wait owns process liveness. Signal(nil) is not a portable liveness probe
+// on Windows and allowed duplicate daemon children to be spawned.
+func (m *Manager) startLocked(ctx context.Context) error {
+	if m.cmd != nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(m.LogPath), 0o755); err != nil {
+		m.scheduleRetryLocked(err)
 		return err
 	}
 	logFile, err := os.OpenFile(m.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
+		m.scheduleRetryLocked(err)
 		return err
 	}
 	cmd := exec.CommandContext(ctx, m.NodePath, m.DaemonJS)
@@ -146,38 +162,73 @@ func (m *Manager) Start(ctx context.Context) error {
 	cmd.Stderr = logFile
 	hideConsoleWindow(cmd) // no flashing cmd.exe popup on Windows
 	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
+		m.scheduleRetryLocked(err)
 		return fmt.Errorf("spawn daemon: %w", err)
 	}
 	m.cmd = cmd
+	done := make(chan struct{})
+	m.done = done
 	go func() {
-		_ = cmd.Wait()
+		err := cmd.Wait()
 		m.mu.Lock()
-		m.cmd = nil
-		m.healthy = false
+		if m.cmd == cmd {
+			m.cmd = nil
+			m.healthy = false
+			if m.wanted && ctx.Err() == nil {
+				if err == nil {
+					err = errors.New("daemon exited unexpectedly")
+				}
+				m.scheduleRetryLocked(err)
+			}
+		}
+		close(done)
 		m.mu.Unlock()
 		_ = logFile.Close()
 	}()
 	return nil
 }
 
-// Stop sends a graceful kill; falls back to hard kill after a short grace.
+func (m *Manager) scheduleRetryLocked(err error) {
+	m.failures++
+	delay := time.Second
+	for attempt := 1; attempt < m.failures && delay < 30*time.Second; attempt++ {
+		delay *= 2
+	}
+	if delay > 30*time.Second {
+		delay = 30 * time.Second
+	}
+	m.restartAt = time.Now().Add(delay)
+	m.lastErr = err
+	log.Printf("daemon stopped unexpectedly; retry in %s: %v", delay, err)
+}
+
+// Stop is intentional: disable recovery and wait for the owned child to exit.
 func (m *Manager) Stop() error {
 	m.mu.Lock()
+	m.wanted = false
 	cmd := m.cmd
+	done := m.done
 	m.mu.Unlock()
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	_ = cmd.Process.Kill()
-	return nil
+	if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	select {
+	case <-done:
+		return nil
+	case <-time.After(3 * time.Second):
+		return errors.New("daemon did not exit after stop")
+	}
 }
 
-// Restart is Stop + Start with a small wait so the port releases.
+// Restart waits for the old child before spawning a replacement.
 func (m *Manager) Restart(ctx context.Context) error {
 	if err := m.Stop(); err != nil {
 		return err
 	}
-	time.Sleep(250 * time.Millisecond)
 	return m.Start(ctx)
 }
 
@@ -219,9 +270,20 @@ func (m *Manager) Watch(ctx context.Context, interval time.Duration, onChange fu
 			return
 		case <-tick.C:
 			ok, err := probeHealth(client, m.HealthURL())
+			if ctx.Err() != nil {
+				return
+			}
 			m.mu.Lock()
 			m.healthy = ok
 			m.lastErr = err
+			if ok {
+				m.failures = 0
+			}
+			if !ok && m.wanted && m.cmd == nil && !time.Now().Before(m.restartAt) {
+				if startErr := m.startLocked(ctx); startErr != nil {
+					m.lastErr = startErr
+				}
+			}
 			m.mu.Unlock()
 			if ok != prev && onChange != nil {
 				onChange(ok)
