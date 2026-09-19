@@ -52,3 +52,6 @@ foreach ($case in @('success', 'wrong-checksum', 'invalid-checksum', 'download-e
     if ($script:archive -and (Test-Path (Split-Path $script:archive))) { throw "Temporary files remain: $case" }
     Write-Host "PASS $case"
 }
+# GitHub's PowerShell wrapper forwards LASTEXITCODE. The final case deliberately
+# sets it to 1; clear that mock state after all assertions have succeeded.
+$global:LASTEXITCODE = 0
