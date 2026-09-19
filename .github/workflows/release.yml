@@ -61,6 +61,7 @@ jobs:
           set -euo pipefail
           test "$(node -p 'require("./package.json").version')" = "${RELEASE_TAG#v}"
           archive="$(npm pack --ignore-scripts --silent)"
+          node scripts/check-release-package.mjs "$archive"
           sha256sum "$archive" > "$archive.sha256"
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes \

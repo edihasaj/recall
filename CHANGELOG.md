@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.6 - 2026-09-19
+
+### Fixed
+
+- Published CLI packages pin direct runtime dependencies to their tested
+  versions. Global installs now use the same Transformers, ONNX, SQLite,
+  and vector-extension versions tested in CI.
+- Release packaging checks a real isolated global installation before upload,
+  rejecting a package whose native or embedding dependencies drift.
+
 ## 1.4.5 - 2026-09-19
 
 ### Fixed
