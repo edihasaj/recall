@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as sqliteVec from "sqlite-vec";
+import * as sqliteVec from "../src/vector/native-extension.js";
 import { initStandaloneDb, closeDb } from "../src/db/client.js";
 import { createMemory } from "../src/models/memory.js";
 import { compileContextHybrid } from "../src/compiler/context.js";
@@ -10,7 +10,7 @@ import { getEmbeddingUnavailableReason, loadEmbeddingConfigFromEnv } from "../sr
 import { removeMemoryVecRow } from "../src/vector/sqlite-vec.js";
 import { removeHistoryVecRow } from "../src/vector/sqlite-vec-history.js";
 
-vi.mock("sqlite-vec", () => ({
+vi.mock("../src/vector/native-extension.js", () => ({
   getLoadablePath: vi.fn(() => { throw new Error("Unsupported platform for sqlite-vec: win32-arm64"); }),
   load: vi.fn(() => { throw new Error("native extension must not be loaded"); }),
 }));

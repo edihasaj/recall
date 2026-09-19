@@ -40,6 +40,11 @@ npm run build
 
 The release workflows publish the npm package, build `Recall.app`, package it as `Recall.app.zip`, write `Recall.app.zip.sha256`, build both Windows tray architectures, create a GitHub Release if needed, and upload all platform assets.
 
+The package job uploads `edihasaj-recall-X.Y.Z.tgz` and its `.sha256` file before
+attempting npm publication. The Windows installer verifies that checksum and
+uses the same release tag for the CLI and tray. A registry authentication
+failure therefore does not prevent installation from the GitHub release.
+
 If `HOMEBREW_TAP_GITHUB_TOKEN` is configured, the workflow renders `Casks/recall.rb` with the real release SHA and pushes it to every tap listed in the workflow's `HOMEBREW_TAP_REPOS` env var (currently `edihasaj/homebrew-tap` and `edihasaj/homebrew-recall`). Inaccessible taps are skipped with a warning so a missing repo never fails the release. The cask source template lives in [packaging/homebrew/Casks/recall.rb.template](../packaging/homebrew/Casks/recall.rb.template), and the renderer is [scripts/render-homebrew-cask.mjs](../scripts/render-homebrew-cask.mjs).
 
 ## Website

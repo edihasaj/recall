@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.5 - 2026-09-19
+
+### Fixed
+
+- Native Windows ARM64 now supports local vector retrieval through a pinned
+  ARM64 SQLite extension. Windows x64, macOS, and Linux keep their existing
+  vector loader. Existing databases are preserved.
+- Windows ARM64 validates the DLL in a temporary SQLite connection before
+  enabling vectors. Missing or unloadable extensions retain lexical retrieval
+  and report the reason without retrying on every request.
+- Windows CI checks native memory and history queries, lexical fallback, and
+  real embedding generation, persistence, retrieval, and database reopening
+  on both x64 and ARM64.
+- The Windows installer verifies and installs the CLI package from the same
+  GitHub release as the tray, so a delayed npm publication cannot install an
+  older daemon. Releases now attach the package and its SHA-256 checksum.
+
 ## 1.4.4 - 2026-09-18
 
 ### Fixed

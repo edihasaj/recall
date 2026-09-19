@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { getLoadablePath } from "sqlite-vec";
+import { getLoadablePath } from "../vector/native-extension.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { CONFIDENCE, type EmbeddingConfig, type EvidenceEntry, type MemoryItem } from "../types.js";
 import { formatBytes, getDirectorySize, getEmbeddingCachePath } from "./cache.js";

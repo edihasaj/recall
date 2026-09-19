@@ -261,11 +261,11 @@ RECALL_EMBEDDING_DIMS=384
 RECALL_EMBEDDINGS_DISABLED=true
 ```
 
-Upgrade note:
-
-- First launch after the local-embeddings upgrade resets Recall's local DB.
-- Recall rescans discovered repos and rebuilds embeddings/indexes in the background.
-- Recall.app now surfaces that setup progress while the daemon comes up.
+Windows x64 and ARM64 support local vector retrieval. Native ARM64 uses a
+bundled ARM64 extension; other platforms keep the existing sqlite-vec loader.
+This update preserves existing databases. If the native extension is missing
+or cannot load, Recall keeps lexical retrieval available and reports the
+reason in `/health`. See [storage strategy](docs/storage-strategy.md).
 
 Daemon maintenance runs in-process on a timer.
 

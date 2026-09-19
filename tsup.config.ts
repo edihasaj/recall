@@ -12,7 +12,7 @@ export default defineConfig({
   splitting: true,
   sourcemap: true,
   clean: true,
-  external: ["sqlite-vec"],
+  external: ["sqlite-vec", "@photostructure/sqlite-vec"],
   // drizzle-orm's subpaths (e.g. `drizzle-orm/sqlite-core`) hit
   // ERR_UNSUPPORTED_DIR_IMPORT under pnpm + ESM on Windows when the
   // daemon child is spawned from a non-elevated user session. Bundling

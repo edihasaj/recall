@@ -1,5 +1,7 @@
 ---
 summary: How recall ships native SQLite bindings across every platform without forcing users to install Python + MSVC.
+read_when:
+  - Changing native SQLite dependencies or Windows vector support
 ---
 
 # Storage strategy
@@ -7,10 +9,10 @@ summary: How recall ships native SQLite bindings across every platform without f
 Recall's storage and vector search depend on two native modules:
 
 - `better-sqlite3` — synchronous SQLite, used by the daemon and CLI.
-- `sqlite-vec` — vector index extension; load via `sqliteVec.load(sqlite)`.
+- `sqlite-vec` — vector index extension, selected through `src/vector/native-extension.ts`.
 
-Both ship prebuilt binaries via `prebuild-install` for the common platforms,
-but **`better-sqlite3` does not publish `win32-arm64` prebuilds** as of v11.10.
+`better-sqlite3` uses `prebuild-install` for common platforms,
+but **does not publish `win32-arm64` prebuilds** as of v11.10.
 A normal `npm install -g @edihasaj/recall` on Windows ARM hits the
 node-gyp fallback, which needs Python + Visual Studio Build Tools the user
 doesn't have. Result: install fails on a fresh Windows-ARM box.
@@ -60,5 +62,26 @@ matching what `prebuild-install` expects.
 
 ## Quality preservation
 
-No code change to the storage or retrieval layer. The benchmark stays
-green by construction — we're moving the binary, not the algorithm.
+The better-sqlite3 mirror changes binary delivery without changing the storage API.
+
+## Windows ARM64 vector extension
+
+Recall 1.4.5 uses the pinned optional package `@photostructure/sqlite-vec@2.0.1`
+only when Node reports `win32` and `arm64`. Windows x64, macOS, and Linux keep
+the upstream `sqlite-vec` loader. The fork bundles an ARM64 DLL; the native
+prebuild workflow still builds only better-sqlite3.
+
+The loader first opens an in-memory SQLite connection, loads the DLL, and
+queries `vec_version()`. A missing package, missing DLL, or failed load keeps
+the daemon in lexical mode with the reason in `/health`. That result is cached
+until restart so repeated requests do not keep attempting a broken load.
+Installing with `--omit=optional` therefore leaves Windows ARM64 in lexical mode.
+
+No database reset or schema migration is required. Compatibility tests cover
+both memory and history indexes, repository filtering, writes, reopening, and
+old-library rollback. Windows CI runs native queries on x64 and ARM64, plus an
+opt-in real Nomic embedding test that persists and reopens its synthetic data.
+Run that model test locally with `RECALL_TEST_REAL_EMBEDDINGS=true` and
+`npx vitest run test/native-embedding-e2e.test.ts`; it downloads about 140 MB
+on the first run. Its ranking assertion uses an explicit score threshold so
+the test checks native retrieval independently of product relevance policy.

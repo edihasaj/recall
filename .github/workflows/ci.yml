@@ -45,6 +45,40 @@ jobs:
           node dist/cli.js --version
           node dist/cli.js doctor || true
 
+  windows-vectors:
+    name: Windows vectors (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    env:
+      npm_config_better_sqlite3_binary_host_mirror: https://github.com/edihasaj/recall-prebuilds/releases/download
+      ONNXRUNTIME_NODE_INSTALL: skip
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - run: npm ci
+      - name: Verify installer checksum and failure handling
+        run: ./test/windows-installer.test.ps1
+      - name: Verify native vector queries and lexical fallback
+        run: npx vitest run test/native-extension.test.ts test/sqlite-vec-phase2.test.ts test/history-phase6.test.ts test/vector-unavailable.test.ts
+      - name: Generate, persist, and search real embeddings
+        env:
+          RECALL_TEST_REAL_EMBEDDINGS: "true"
+        run: npx vitest run test/native-embedding-e2e.test.ts
+
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'

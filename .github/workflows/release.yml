@@ -19,6 +19,8 @@ jobs:
     name: Publish to npm
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
@@ -51,6 +53,20 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Publish checksummed CLI package to GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(node -p 'require("./package.json").version')" = "${RELEASE_TAG#v}"
+          archive="$(npm pack --ignore-scripts --silent)"
+          sha256sum "$archive" > "$archive.sha256"
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes \
+              || gh release view "$RELEASE_TAG" >/dev/null
+          fi
+          gh release upload "$RELEASE_TAG" "$archive" "$archive.sha256" --clobber
 
       - name: Publish
         env:

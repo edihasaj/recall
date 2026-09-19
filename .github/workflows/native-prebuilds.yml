@@ -1,6 +1,6 @@
 name: native-prebuilds
 
-# Build prebuilt better-sqlite3 + sqlite-vec binaries for every (os, arch,
+# Build prebuilt better-sqlite3 binaries for every (os, arch,
 # node-abi) combo recall targets, then upload to a GitHub release so
 # `prebuild-install` (which better-sqlite3's postinstall runs by default)
 # can fetch them. Without this, win32-arm64 users fall through to a gyp

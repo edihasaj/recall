@@ -5,8 +5,8 @@
 #
 # What it does:
 #   1. Verifies Node.js >=22 is on PATH (offers a winget hint if not).
-#   2. Installs the @edihasaj/recall CLI globally via npm (provides the
-#      daemon.js the tray supervises).
+#   2. Installs the checksummed GitHub release package globally via npm
+#      (provides the daemon.js the tray supervises).
 #   3. Downloads recall-tray-<arch>.exe into %LOCALAPPDATA%\Programs\Recall.
 #   4. Registers the per-user Run-key entry so the tray launches at login.
 #   5. Launches the tray right away.
@@ -49,21 +49,36 @@ function Test-Node {
   Write-Ok "Node $ver detected"
 }
 
-function Install-Cli {
+function Install-Cli($releaseTag) {
   Write-Step 'Installing @edihasaj/recall CLI (provides the daemon)'
   # Point prebuild-install at edihasaj/recall-prebuilds, where native-prebuilds.yml
   # publishes our better-sqlite3 binaries. Without this, win32-arm64 falls through
   # to node-gyp + needs Python + MSVC Build Tools that users don't have.
   # prebuild-install appends "/v<bsq3-version>/<filename>" to this host.
   $env:npm_config_better_sqlite3_binary_host_mirror = 'https://github.com/edihasaj/recall-prebuilds/releases/download'
-  & npm install -g '@edihasaj/recall' | Out-Host
-  if ($LASTEXITCODE -ne 0) { Fail 'npm install failed' }
+  $version = $releaseTag -replace '^v',''
+  $work = Join-Path ([IO.Path]::GetTempPath()) ('recall-install-' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $work | Out-Null
+  $archive = Join-Path $work "edihasaj-recall-$version.tgz"
+  $url = "https://github.com/$RecallRepo/releases/download/$releaseTag/edihasaj-recall-$version.tgz"
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
+    Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256" -OutFile "$archive.sha256"
+    $expected = ((Get-Content "$archive.sha256" -Raw).Trim() -split '\s+')[0]
+    if ($expected -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) {
+      throw 'CLI package checksum mismatch.'
+    }
+    & npm install -g $archive | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
+  } finally {
+    Remove-Item -Recurse -Force $work
+  }
   Write-Ok 'CLI installed'
 }
 
-function Download-Tray($arch) {
+function Download-Tray($arch, $releaseTag) {
   Write-Step "Downloading recall-tray-$arch.exe"
-  $url = "https://github.com/$RecallRepo/releases/latest/download/recall-tray-$arch.exe"
+  $url = "https://github.com/$RecallRepo/releases/download/$releaseTag/recall-tray-$arch.exe"
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   $dest = Join-Path $InstallDir $TrayExeName
   try {
@@ -98,8 +113,11 @@ Write-Host '----------------' -ForegroundColor Magenta
 $arch = Get-Arch
 Write-Ok "Architecture: win32-$arch"
 Test-Node
-Install-Cli
-$tray = Download-Tray $arch
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$RecallRepo/releases/latest"
+$releaseTag = $release.tag_name
+if ($releaseTag -notmatch '^v\d+\.\d+\.\d+$') { Fail 'Latest release has an invalid version tag.' }
+Install-Cli $releaseTag
+$tray = Download-Tray $arch $releaseTag
 Register-Autostart $tray
 Launch-Tray $tray
 

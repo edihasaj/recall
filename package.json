@@ -1,6 +1,6 @@
 {
   "name": "@edihasaj/recall",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
   "homepage": "https://recallmemory.dev/",
@@ -100,5 +100,8 @@
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.7"
+  },
+  "optionalDependencies": {
+    "@photostructure/sqlite-vec": "2.0.1"
   }
 }

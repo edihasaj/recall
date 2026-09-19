@@ -1,4 +1,4 @@
-import * as sqliteVec from "sqlite-vec";
+import * as sqliteVec from "./native-extension.js";
 import type { RecallDb } from "../db/client.js";
 import { memories, memoryEmbeddings } from "../db/schema.js";
 import { eq } from "drizzle-orm";
