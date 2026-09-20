@@ -4,10 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
 import { closeDb, initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
 import {
   executeToolHook,
+  executeSessionStartHook,
+  hookDaemonTimeoutMs,
   handlePromptHook,
   handleSessionEndHook,
   handleSessionStartHook,
@@ -23,6 +26,7 @@ beforeEach(() => {
 
 afterEach(() => {
   closeDb();
+  delete process.env.RECALL_HOOK_DAEMON_TIMEOUT_MS;
 });
 
 function freshDb() {
@@ -199,6 +203,44 @@ describe("phase 2 hook handlers", () => {
     });
     expect(events).toHaveLength(1);
     expect(events[0].request.name).toBe("tool_invoked");
+  });
+
+  it("waits for a healthy daemon instead of racing a 25ms local fallback", async () => {
+    const db = freshDb();
+    const server = createServer((_req, res) => {
+      setTimeout(() => {
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({
+          event: "session_started",
+          session_id: "sess-delayed-daemon",
+          repo: "edihasaj/recall",
+          transport: "daemon",
+        }));
+      }, 100);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing test server address");
+      const result = await executeSessionStartHook({
+        session_id: "sess-delayed-daemon",
+        agent: "codex",
+        repo: "edihasaj/recall",
+      }, {
+        db,
+        daemonOrigin: `http://127.0.0.1:${address.port}`,
+      });
+      expect(result.transport).toBe("daemon");
+      expect(listActivityEvents(db, { session_id: "sess-delayed-daemon" })).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("supports an explicit daemon timeout without accepting invalid values", () => {
+    expect(hookDaemonTimeoutMs()).toBe(15_000);
+    expect(hookDaemonTimeoutMs("2500")).toBe(2_500);
+    expect(hookDaemonTimeoutMs("invalid")).toBe(15_000);
   });
 
   it("keeps hook handlers under the phase 2 warm-db latency budgets", async () => {

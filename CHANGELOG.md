@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.9 - 2026-09-20
+
+### Fixed
+
+- Lifecycle hooks wait up to 15 seconds for the local daemon instead of
+  abandoning it after 25 ms. Healthy embedding or startup work no longer races
+  a second direct-SQLite fallback, duplicate lifecycle events, or context built
+  without the daemon's deployment repository configuration.
+- `RECALL_HOOK_DAEMON_TIMEOUT_MS` can tune the bound. An unavailable daemon
+  still falls back immediately on connection refusal.
+
 ## 1.4.8 - 2026-09-20
 
 ### Fixed

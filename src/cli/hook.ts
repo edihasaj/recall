@@ -34,7 +34,7 @@ import {
 import { textMatches } from "../text/match.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
-const DEFAULT_DAEMON_TIMEOUT_MS = 25;
+const DEFAULT_DAEMON_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_TEXT_LENGTH = 8_192;
 const MAX_ASSISTANT_COMPLETION_LENGTH = 8_192;
 const MAX_PREV_ASSISTANT_LENGTH = 2_048;
@@ -1030,7 +1030,7 @@ async function postHookToDaemon<T>(
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    opts.daemonTimeoutMs ?? DEFAULT_DAEMON_TIMEOUT_MS,
+    opts.daemonTimeoutMs ?? hookDaemonTimeoutMs(),
   );
 
   try {
@@ -1063,6 +1063,12 @@ async function postHookToDaemon<T>(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function hookDaemonTimeoutMs(value = process.env.RECALL_HOOK_DAEMON_TIMEOUT_MS): number {
+  if (!value) return DEFAULT_DAEMON_TIMEOUT_MS;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DAEMON_TIMEOUT_MS;
 }
 
 async function withHookTelemetry<T>(
