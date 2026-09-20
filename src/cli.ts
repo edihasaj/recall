@@ -49,6 +49,7 @@ import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
 import { unregisterStrayApps } from "./doctor/app-registrations.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
+import { computeReliabilityReport, formatReliabilityReport } from "./reliability/report.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { runLocalSetup } from "./setup/local.js";
 import { runRecallSetup } from "./setup/local.js";
@@ -1830,6 +1831,21 @@ program
     console.log(`Repeat sessions needed: ${profile.repeat_sessions_required}`);
     console.log(`Compile threshold:      ${profile.compile_confidence_threshold.toFixed(2)}`);
     console.log(`Dedup similarity:       ${profile.dedup_similarity_threshold.toFixed(2)}`);
+  });
+
+program
+  .command("reliability")
+  .description("Report measured delivery, outcome, retrieval, and backlog coverage")
+  .option("-r, --repo <repo>", "Repository name")
+  .option("--since <iso>", "Window start as an ISO timestamp")
+  .option("--json", "Print machine-readable JSON")
+  .action((opts) => {
+    const db = initDb();
+    const report = computeReliabilityReport(db, {
+      repo: opts.repo,
+      since: opts.since,
+    });
+    console.log(opts.json ? JSON.stringify(report, null, 2) : formatReliabilityReport(report));
   });
 
 // --- Activity ---

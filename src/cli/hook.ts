@@ -379,6 +379,16 @@ export async function handlePromptHook(
         })
       : undefined;
 
+    if (repo && injection) {
+      recordInjectionEmission(db, {
+        session_id: sessionId,
+        repo,
+        path: input.path,
+        source,
+        injection,
+      });
+    }
+
     return {
       event: "prompt_submitted",
       session_id: sessionId,
@@ -553,6 +563,16 @@ export async function handleSessionStartHook(
         })
       : undefined;
 
+    if (result.repo && injection) {
+      recordInjectionEmission(db, {
+        session_id: result.session_id,
+        repo: result.repo,
+        path: input.path,
+        source: resolveHookSource(opts.source, input.agent),
+        injection,
+      });
+    }
+
     return {
       event: "session_started",
       session_id: result.session_id,
@@ -674,6 +694,34 @@ export function formatInjectionContext(surface: InjectionSurface): string {
     : surface.text;
   const lead = repoLabel ? `Recall (${repoLabel}):` : "Recall:";
   return `${lead}\n${body}`.trimEnd();
+}
+
+function recordInjectionEmission(
+  db: RecallDb,
+  input: {
+    session_id: string;
+    repo: string;
+    path?: string;
+    source: ActivitySource;
+    injection: InjectionSurface;
+  },
+): void {
+  createActivityEvent(db, {
+    session_id: input.session_id,
+    repo: input.repo,
+    path: input.path ?? null,
+    source: input.source,
+    event_type: "session_event",
+    memory_ids: [...input.injection.memories_included],
+    request: { name: "memory_emitted" },
+    result: {
+      memory_count: input.injection.memories_included.length,
+      history_count: input.injection.history_included.length,
+      token_estimate: input.injection.token_estimate,
+      emitted_at: new Date().toISOString(),
+      delivery_verified: false,
+    },
+  });
 }
 
 async function collectInjectionSurface(
