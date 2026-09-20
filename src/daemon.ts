@@ -84,6 +84,7 @@ import {
 } from "./cli/hook.js";
 import { authorizeLocalRequest } from "./daemon/http-security.js";
 import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
+import { recallBuildInfo } from "./runtime/build.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -360,6 +361,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, {
         status: "ok",
         version: pkg.version,
+        build: recallBuildInfo,
         embeddings: getEmbeddingModelInfo(),
         retrieval_mode: loadEmbeddingConfigFromEnv() ? "hybrid" : "lexical",
         embedding_unavailable_reason: getEmbeddingUnavailableReason(),

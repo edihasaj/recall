@@ -50,6 +50,7 @@ import { unregisterStrayApps } from "./doctor/app-registrations.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { computeReliabilityReport, formatReliabilityReport } from "./reliability/report.js";
+import { runReliabilityCanary } from "./reliability/canary.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { runLocalSetup } from "./setup/local.js";
 import { runRecallSetup } from "./setup/local.js";
@@ -1839,7 +1840,15 @@ program
   .option("-r, --repo <repo>", "Repository name")
   .option("--since <iso>", "Window start as an ISO timestamp")
   .option("--json", "Print machine-readable JSON")
-  .action((opts) => {
+  .option("--canary", "Run a disposable capture-to-outcome canary")
+  .option("--real-embeddings", "Use the configured local embedding model in the canary")
+  .action(async (opts) => {
+    if (opts.canary) {
+      const result = await runReliabilityCanary({ real_embeddings: opts.realEmbeddings });
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
     const db = initDb();
     const report = computeReliabilityReport(db, {
       repo: opts.repo,
