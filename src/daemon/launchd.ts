@@ -18,6 +18,7 @@ export interface LaunchdOptions {
   daemonScript?: string;
   maintenanceIntervalSeconds?: number;
   repoRoots?: string;
+  repoOverride?: string;
   embeddingProvider?: string;
   embeddingDims?: string;
   embeddingsDisabled?: string;
@@ -119,6 +120,9 @@ export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
   if (installed?.repoRoots ?? cfg.repoRoots) {
     lines.push(`Repos:      ${installed?.repoRoots ?? cfg.repoRoots}`);
   }
+  if (installed?.repoOverride ?? cfg.repoOverride) {
+    lines.push(`Repo:       ${installed?.repoOverride ?? cfg.repoOverride}`);
+  }
   if (installed?.embeddingProvider ?? cfg.embeddingProvider) {
     lines.push(`EmbedProv:  ${installed?.embeddingProvider ?? cfg.embeddingProvider}`);
   }
@@ -168,6 +172,7 @@ function resolveConfig(opts: LaunchdOptions) {
     stdoutPath: join(logDir, "daemon.stdout.log"),
     stderrPath: join(logDir, "daemon.stderr.log"),
     repoRoots: opts.repoRoots ?? process.env.RECALL_REPO_ROOTS,
+    repoOverride: opts.repoOverride ?? process.env.RECALL_REPO_OVERRIDE ?? installed?.repoOverride,
     embeddingProvider: opts.embeddingProvider ?? process.env.RECALL_EMBEDDING_PROVIDER,
     embeddingDims: opts.embeddingDims ?? process.env.RECALL_EMBEDDING_DIMS,
     embeddingsDisabled: opts.embeddingsDisabled ?? process.env.RECALL_EMBEDDINGS_DISABLED,
@@ -185,6 +190,7 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
     RECALL_DATA_DIR: cfg.dataDir,
     PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
     ...(cfg.repoRoots ? { RECALL_REPO_ROOTS: cfg.repoRoots } : {}),
+    ...(cfg.repoOverride ? { RECALL_REPO_OVERRIDE: cfg.repoOverride } : {}),
     ...(cfg.embeddingProvider ? { RECALL_EMBEDDING_PROVIDER: cfg.embeddingProvider } : {}),
     ...(cfg.embeddingDims ? { RECALL_EMBEDDING_DIMS: cfg.embeddingDims } : {}),
     ...(cfg.embeddingsDisabled ? { RECALL_EMBEDDINGS_DISABLED: cfg.embeddingsDisabled } : {}),
@@ -269,6 +275,7 @@ function readInstalledConfig(plistPath: string): {
       maintenanceIntervalSeconds?: string;
       dataDir?: string;
       repoRoots?: string;
+      repoOverride?: string;
       embeddingProvider?: string;
       embeddingDims?: string;
       embeddingsDisabled?: string;
@@ -291,6 +298,7 @@ function readInstalledConfig(plistPath: string): {
       maintenanceIntervalSeconds: parsed?.EnvironmentVariables?.RECALL_MAINTENANCE_INTERVAL_SECONDS,
       dataDir: parsed?.EnvironmentVariables?.RECALL_DATA_DIR,
       repoRoots: parsed?.EnvironmentVariables?.RECALL_REPO_ROOTS,
+      repoOverride: parsed?.EnvironmentVariables?.RECALL_REPO_OVERRIDE,
       embeddingProvider: parsed?.EnvironmentVariables?.RECALL_EMBEDDING_PROVIDER,
       embeddingDims: parsed?.EnvironmentVariables?.RECALL_EMBEDDING_DIMS,
       embeddingsDisabled: parsed?.EnvironmentVariables?.RECALL_EMBEDDINGS_DISABLED,

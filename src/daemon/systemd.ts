@@ -20,6 +20,7 @@ export interface SystemdOptions {
   daemonScript?: string;
   maintenanceIntervalSeconds?: number;
   repoRoots?: string;
+  repoOverride?: string;
   embeddingProvider?: string;
   embeddingDims?: string;
   embeddingsDisabled?: string;
@@ -125,6 +126,9 @@ export function getSystemdInfo(label = DEFAULT_LABEL): string {
   if (installed?.repoRoots ?? cfg.repoRoots) {
     lines.push(`Repos:      ${installed?.repoRoots ?? cfg.repoRoots}`);
   }
+  if (installed?.repoOverride ?? cfg.repoOverride) {
+    lines.push(`Repo:       ${installed?.repoOverride ?? cfg.repoOverride}`);
+  }
   if (installed?.embeddingProvider ?? cfg.embeddingProvider) {
     lines.push(`EmbedProv:  ${installed?.embeddingProvider ?? cfg.embeddingProvider}`);
   }
@@ -171,6 +175,7 @@ function resolveConfig(opts: SystemdOptions) {
     unitPath,
     logDir,
     repoRoots: opts.repoRoots ?? process.env.RECALL_REPO_ROOTS,
+    repoOverride: opts.repoOverride ?? process.env.RECALL_REPO_OVERRIDE ?? installed?.repoOverride,
     embeddingProvider: opts.embeddingProvider ?? process.env.RECALL_EMBEDDING_PROVIDER,
     embeddingDims: opts.embeddingDims ?? process.env.RECALL_EMBEDDING_DIMS,
     embeddingsDisabled: opts.embeddingsDisabled ?? process.env.RECALL_EMBEDDINGS_DISABLED,
@@ -195,6 +200,7 @@ function renderUnit(cfg: ReturnType<typeof resolveConfig>): string {
     `Environment=RECALL_DATA_DIR=${cfg.dataDir}`,
   ];
   if (cfg.repoRoots) envLines.push(`Environment=RECALL_REPO_ROOTS=${cfg.repoRoots}`);
+  if (cfg.repoOverride) envLines.push(`Environment="RECALL_REPO_OVERRIDE=${escapeSystemdValue(cfg.repoOverride)}"`);
   if (cfg.embeddingProvider) envLines.push(`Environment=RECALL_EMBEDDING_PROVIDER=${cfg.embeddingProvider}`);
   if (cfg.embeddingDims) envLines.push(`Environment=RECALL_EMBEDDING_DIMS=${cfg.embeddingDims}`);
   if (cfg.embeddingsDisabled) envLines.push(`Environment=RECALL_EMBEDDINGS_DISABLED=${cfg.embeddingsDisabled}`);
@@ -225,6 +231,7 @@ function readInstalledConfig(unitPath: string): {
   maintenanceIntervalSeconds?: string;
   dataDir?: string;
   repoRoots?: string;
+  repoOverride?: string;
   embeddingProvider?: string;
   embeddingDims?: string;
   embeddingsDisabled?: string;
@@ -242,6 +249,7 @@ function readInstalledConfig(unitPath: string): {
       maintenanceIntervalSeconds: env.RECALL_MAINTENANCE_INTERVAL_SECONDS,
       dataDir: env.RECALL_DATA_DIR,
       repoRoots: env.RECALL_REPO_ROOTS,
+      repoOverride: env.RECALL_REPO_OVERRIDE,
       embeddingProvider: env.RECALL_EMBEDDING_PROVIDER,
       embeddingDims: env.RECALL_EMBEDDING_DIMS,
       embeddingsDisabled: env.RECALL_EMBEDDINGS_DISABLED,
