@@ -382,6 +382,25 @@ describe("contradiction detection", () => {
 // --- Pruning ---
 
 describe("pruning", () => {
+  it("archives old unconfirmed candidates and explicit confirmation restores injection", () => {
+    const db = freshDb();
+    const memId = makeMemory(db, { confidence: 0.5, source: "user_correction" });
+    const oldDate = new Date(Date.now() - 40 * 86_400_000).toISOString();
+    db.update(memories).set({ created_at: oldDate, updated_at: oldDate })
+      .where(eq(memories.id, memId)).run();
+
+    const preview = pruneMemories(db, { candidate_unconfirmed_days: 30, dry_run: true });
+    expect(preview.unconfirmed_archived).toEqual([memId]);
+    expect(getMemory(db, memId)?.auto_inject).toBe(true);
+
+    const applied = pruneMemories(db, { candidate_unconfirmed_days: 30 });
+    expect(applied.unconfirmed_archived).toEqual([memId]);
+    expect(getMemory(db, memId)?.status).toBe("candidate");
+    expect(getMemory(db, memId)?.auto_inject).toBe(false);
+    expect(confirmMemory(db, memId)).toBe(true);
+    expect(getMemory(db, memId)?.auto_inject).toBe(true);
+  });
+
   it("prunes stale memories (dry run)", () => {
     const db = freshDb();
     // Create a memory with old timestamps
@@ -473,6 +492,7 @@ describe("pruning", () => {
 
   it("formats prune report", () => {
     const result = {
+      unconfirmed_archived: [],
       stale_archived: ["abc"],
       rejected_pruned: [],
       transient_pruned: [],

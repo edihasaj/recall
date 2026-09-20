@@ -26,6 +26,7 @@ import { recordAudit } from "../audit/trail.js";
 import type { PruneConfig } from "../types.js";
 
 const DEFAULT_CONFIG: PruneConfig = {
+  candidate_unconfirmed_days: 30,
   stale_days: 90,
   rejected_retention_days: 30,
   transient_retention_days: 7,
@@ -34,6 +35,8 @@ const DEFAULT_CONFIG: PruneConfig = {
 };
 
 export interface PruneResult {
+  /** Unconfirmed, never-used candidates archived from automatic injection. */
+  unconfirmed_archived: string[];
   /** Stale memories archived out of auto-injection (still active + retrievable). */
   stale_archived: string[];
   rejected_pruned: string[];
@@ -57,6 +60,7 @@ export function pruneMemories(
   const dayMs = 86_400_000;
 
   const result: PruneResult = {
+    unconfirmed_archived: [],
     stale_archived: [],
     rejected_pruned: [],
     transient_pruned: [],
@@ -64,7 +68,40 @@ export function pruneMemories(
     total: 0,
   };
 
-  // 1. Archive stale active/candidate memories.
+  // 1. Archive candidates that never earned a second-session signal and were
+  // never selected. Keep the row searchable and confirmable; only remove it
+  // from automatic prompt injection. This bounds provisional memory growth
+  // without treating uncertainty as rejection.
+  const unconfirmedCutoff = new Date(
+    now - cfg.candidate_unconfirmed_days * dayMs,
+  ).toISOString();
+  const unconfirmed = queryMemories(db, {
+    repo: cfg.repo,
+    status: "candidate",
+    auto_inject: true,
+  }).filter((mem) =>
+    mem.created_at < unconfirmedCutoff &&
+    mem.repetition_count < 2 &&
+    mem.injection_count === 0
+  );
+  for (const mem of unconfirmed) {
+    if (!cfg.dry_run) {
+      db.update(memories)
+        .set({ auto_inject: false, updated_at: new Date().toISOString() })
+        .where(eq(memories.id, mem.id))
+        .run();
+      recordAudit(
+        db,
+        mem.id,
+        "demoted",
+        "auto-pruner",
+        `Archived unconfirmed candidate after ${cfg.candidate_unconfirmed_days}d without selection or repetition`,
+      );
+    }
+    result.unconfirmed_archived.push(mem.id);
+  }
+
+  // 2. Archive stale active/candidate memories.
   //
   // Staleness means "not used lately", not "wrong". Rejecting on disuse threw
   // away correct, user-taught rules — a security rule for a repo untouched
@@ -84,6 +121,7 @@ export function pruneMemories(
   }).filter((mem) => mem.status !== "rejected" && mem.status !== "transient");
 
   for (const mem of staleCandidates) {
+    if (result.unconfirmed_archived.includes(mem.id)) continue;
     const lastActivity =
       mem.last_validated_at ?? mem.last_injected_at ?? mem.updated_at;
 
@@ -105,7 +143,7 @@ export function pruneMemories(
     }
   }
 
-  // 2. Delete rejected memories past retention
+  // 3. Delete rejected memories past retention
   const rejectedCutoff = new Date(
     now - cfg.rejected_retention_days * dayMs,
   ).toISOString();
@@ -145,7 +183,7 @@ export function pruneMemories(
     }
   }
 
-  // 4. Demote unhealthy active memories
+  // 5. Demote unhealthy active memories
   const activeMemories = queryMemories(db, {
     repo: cfg.repo,
     status: "active",
@@ -172,6 +210,7 @@ export function pruneMemories(
   }
 
   result.total =
+    result.unconfirmed_archived.length +
     result.stale_archived.length +
     result.rejected_pruned.length +
     result.transient_pruned.length +
@@ -204,6 +243,7 @@ export function formatPruneReport(result: PruneResult, dryRun: boolean): string 
   const lines = [
     `${prefix}Prune Report`,
     ``,
+    `Unconfirmed archived:${String(result.unconfirmed_archived.length).padStart(5)}`,
     `Stale archived:    ${result.stale_archived.length}`,
     `Rejected pruned:   ${result.rejected_pruned.length}`,
     `Transient pruned:  ${result.transient_pruned.length}`,

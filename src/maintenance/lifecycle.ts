@@ -37,6 +37,7 @@ export interface MaintenanceConfig {
   enabled: boolean;
   interval_seconds: number;
   stale_days: number;
+  candidate_unconfirmed_days: number;
   min_health_score: number;
   activity_retention_days: number;
   hook_call_retention_days: number;
@@ -59,6 +60,7 @@ export interface MaintenanceConfig {
 export interface MaintenanceResult {
   prune_total: number;
   stale_archived: number;
+  unconfirmed_candidates_archived: number;
   rejected_pruned: number;
   transient_pruned: number;
   unhealthy_demoted: number;
@@ -102,6 +104,7 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     enabled: process.env.RECALL_MAINTENANCE_ENABLED !== "false",
     interval_seconds: parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "300", 10),
     stale_days: parseInt(process.env.RECALL_MAINTENANCE_STALE_DAYS ?? "90", 10),
+    candidate_unconfirmed_days: parseInt(process.env.RECALL_CANDIDATE_UNCONFIRMED_DAYS ?? "30", 10),
     min_health_score: parseFloat(process.env.RECALL_MAINTENANCE_MIN_HEALTH_SCORE ?? "0.2"),
     activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "90", 10),
     hook_call_retention_days: parseInt(process.env.RECALL_HOOK_CALL_RETENTION_DAYS ?? "30", 10),
@@ -145,6 +148,7 @@ export async function runMaintenanceCycle(
   config: MaintenanceConfig = loadMaintenanceConfigFromEnv(),
 ): Promise<MaintenanceResult> {
   const prune = pruneMemories(db, {
+    candidate_unconfirmed_days: config.candidate_unconfirmed_days,
     stale_days: config.stale_days,
     min_health_score: config.min_health_score,
     rejected_retention_days: config.rejected_retention_days,
@@ -216,6 +220,7 @@ export async function runMaintenanceCycle(
   return {
     prune_total: prune.total,
     stale_archived: prune.stale_archived.length,
+    unconfirmed_candidates_archived: prune.unconfirmed_archived.length,
     rejected_pruned: prune.rejected_pruned.length,
     transient_pruned: prune.transient_pruned.length,
     unhealthy_demoted: prune.unhealthy_demoted.length,

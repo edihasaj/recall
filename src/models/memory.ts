@@ -221,6 +221,7 @@ export function promoteMemory(
       confidence: newConfidence,
       status: newStatus,
       evidence: newEvidence as any,
+      auto_inject: true,
       updated_at: now,
       last_validated_at: now,
     })

@@ -38,7 +38,7 @@ export function shouldLogMaintenance(result: MaintenanceResult): boolean {
 export function formatMaintenanceSummary(result: MaintenanceResult): string {
   return (
     `[recall] maintenance ` +
-    `prune=${result.prune_total} ` +
+    `prune=${result.prune_total} unconfirmed=${result.unconfirmed_candidates_archived} ` +
     `scanned(normalized=${result.scanned_memories_normalized},demoted=${result.scanned_memories_demoted},rejected=${result.scanned_memories_rejected}) ` +
     `activity=${result.activity_pruned} ` +
     `hooks=${result.hook_calls_pruned} ` +

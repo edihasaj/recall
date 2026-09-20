@@ -557,6 +557,7 @@ export type Contradiction = z.infer<typeof Contradiction>;
 
 export const PruneConfig = z.object({
   repo: z.string().optional(),
+  candidate_unconfirmed_days: z.number().default(30),
   stale_days: z.number().default(90),
   rejected_retention_days: z.number().default(30),
   transient_retention_days: z.number().default(7),

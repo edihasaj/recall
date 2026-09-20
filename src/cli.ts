@@ -1742,6 +1742,7 @@ program
   .command("prune")
   .description("Auto-prune stale and unhealthy memories")
   .option("-r, --repo <repo>", "Limit pruning to one repo")
+  .option("--candidate-days <n>", "Days before archiving an unconfirmed, never-selected candidate", "30")
   .option("--stale-days <n>", "Days before rejecting stale memories", "90")
   .option("--rejected-days <n>", "Days before deleting rejected memories", "30")
   .option("--transient-days <n>", "Days before deleting transient memories", "7")
@@ -1751,6 +1752,7 @@ program
     const db = initDb();
     const result = pruneMemories(db, {
       repo: opts.repo,
+      candidate_unconfirmed_days: parseInt(opts.candidateDays),
       stale_days: parseInt(opts.staleDays),
       rejected_retention_days: parseInt(opts.rejectedDays),
       transient_retention_days: parseInt(opts.transientDays),
