@@ -18,7 +18,11 @@ export interface ReliabilityProbeResult {
 
 export async function runReliabilityProbe(
   db: RecallDb,
-  options: { real_embeddings?: boolean; record?: boolean } = {},
+  options: {
+    real_embeddings?: boolean;
+    record?: boolean;
+    run_canary?: () => Promise<{ ok: boolean }>;
+  } = {},
 ): Promise<ReliabilityProbeResult> {
   const started = performance.now();
   const checkedAt = new Date().toISOString();
@@ -27,7 +31,9 @@ export async function runReliabilityProbe(
     const databaseIntegrity = db.$client.pragma("quick_check", { simple: true }) === "ok";
     const backup = listBackups(db.$client.name)[0];
     const backupIntegrity = Boolean(backup && verifyBackupIntegrity(backup.path));
-    const canary = await runReliabilityCanary({ real_embeddings: options.real_embeddings });
+    const canary = options.run_canary
+      ? await options.run_canary()
+      : await runReliabilityCanary({ real_embeddings: options.real_embeddings });
     const reliability = computeReliabilityReport(db);
     result = {
       ok: databaseIntegrity && backupIntegrity && canary.ok,

@@ -58,7 +58,8 @@ import {
   start as startWebUi,
   stop as stopWebUi,
 } from "./webui/server.js";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { writeRepoContextArtifact } from "./artifacts/context.js";
 import { loadMaintenanceConfigFromEnv, runMaintenanceCycle } from "./maintenance/lifecycle.js";
 import { formatMaintenanceSummary, shouldLogMaintenance } from "./maintenance/logging.js";
@@ -353,6 +354,9 @@ function scheduleReliabilityProbeLoop() {
     try {
       lastReliabilityProbe = await runReliabilityProbe(db, {
         real_embeddings: reliabilityProbeConfig.realEmbeddings,
+        run_canary: () => runReliabilityCanarySubprocess(
+          reliabilityProbeConfig.realEmbeddings,
+        ),
       });
       console.log(
         `[recall] reliability probe ok=${lastReliabilityProbe.ok} db=${lastReliabilityProbe.database_integrity} backup=${lastReliabilityProbe.backup_integrity} canary=${lastReliabilityProbe.canary_ok} measured=${lastReliabilityProbe.reliability_overall} duration_ms=${lastReliabilityProbe.duration_ms}`,
@@ -369,6 +373,30 @@ function scheduleReliabilityProbeLoop() {
     Math.max(300, reliabilityProbeConfig.intervalSeconds) * 1000,
   );
   timer.unref?.();
+}
+
+function runReliabilityCanarySubprocess(realEmbeddings: boolean): Promise<{ ok: boolean }> {
+  const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
+  const args = [cliPath, "reliability", "--canary"];
+  if (realEmbeddings) args.push("--real-embeddings");
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, args, {
+      env: process.env,
+      timeout: 300_000,
+      maxBuffer: 2 * 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`Reliability canary process failed: ${stderr.trim() || error.message}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { ok?: boolean };
+        resolve({ ok: parsed.ok === true });
+      } catch {
+        reject(new Error("Reliability canary process returned invalid JSON"));
+      }
+    });
+  });
 }
 
 const server = createServer(async (req, res) => {

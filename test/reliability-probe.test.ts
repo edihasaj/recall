@@ -30,4 +30,22 @@ describe("reliability probe", () => {
     expect(events).toHaveLength(1);
     expect(events[0].request).toMatchObject({ name: "reliability_probe" });
   });
+
+  it("accepts an isolated canary runner", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recall-probe-runner-"));
+    const path = join(root, "recall.db");
+    const db = initStandaloneDb(path);
+    ensureDailyBackup({ dbPath: path });
+    let calls = 0;
+    const result = await runReliabilityProbe(db, {
+      record: false,
+      run_canary: async () => {
+        calls++;
+        return { ok: true };
+      },
+    });
+    expect(calls).toBe(1);
+    expect(result.canary_ok).toBe(true);
+    expect(result.ok).toBe(true);
+  });
 });
