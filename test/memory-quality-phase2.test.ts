@@ -125,10 +125,15 @@ describe("memory quality phase 2 rich context", () => {
     await handlePromptHook(input, { db, source: "cli" });
     await handlePromptHook(input, { db, source: "cli" });
 
-    expect(listActivityEvents(db, {
+    const sessionEvents = listActivityEvents(db, {
       session_id: "sess-dup",
       event_type: "session_event",
-    })).toHaveLength(1);
+    });
+    expect(sessionEvents).toHaveLength(2);
+    expect(sessionEvents.map((event) => event.request.name).sort()).toEqual([
+      "memory_emitted",
+      "prompt_submitted",
+    ]);
     expect(listActivityEvents(db, {
       session_id: "sess-dup",
       event_type: "correction",
