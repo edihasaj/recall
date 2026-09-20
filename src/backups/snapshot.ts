@@ -5,6 +5,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -14,6 +15,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { getDbPath } from "../db/client.js";
+import Database from "better-sqlite3";
 
 export const DEFAULT_BACKUP_RETENTION = 2;
 
@@ -80,7 +82,7 @@ export function ensureDailyBackup(
   const target = join(dir, `recall-${stamp}.db`);
 
   if (!existsSync(target)) {
-    atomicCopyFile(dbPath, target);
+    atomicSnapshotFile(dbPath, target);
     result.created = target;
   } else if (!isRegularFileWithoutSymlink(target)) {
     throw new Error(`Refusing unsafe backup path: ${target}`);
@@ -153,6 +155,16 @@ export function listBackups(dbPath: string = getDbPath()): BackupListing[] {
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
+export function verifyBackupIntegrity(path: string): boolean {
+  if (!isRegularFileWithoutSymlink(path) || !isSqliteDatabase(path)) return false;
+  const sqlite = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    return sqlite.pragma("quick_check", { simple: true }) === "ok";
+  } finally {
+    sqlite.close();
+  }
+}
+
 export function restoreBackup(
   date: string,
   options: { dbPath?: string } = {},
@@ -219,5 +231,46 @@ function atomicCopyFile(source: string, target: string): void {
       }
     }
     throw error;
+  }
+}
+
+function atomicSnapshotFile(source: string, target: string): void {
+  if (!isSqliteDatabase(source)) {
+    atomicCopyFile(source, target);
+    return;
+  }
+  if (!isRegularFileWithoutSymlink(source)) {
+    throw new Error(`Refusing unsafe backup source: ${source}`);
+  }
+  const temp = join(
+    dirname(target),
+    `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  const sqlite = new Database(source, { readonly: true, fileMustExist: true });
+  try {
+    sqlite.prepare("VACUUM INTO ?").run(temp);
+    const snapshot = new Database(temp, { readonly: true, fileMustExist: true });
+    try {
+      if (snapshot.pragma("quick_check", { simple: true }) !== "ok") {
+        throw new Error(`SQLite backup integrity check failed: ${target}`);
+      }
+    } finally {
+      snapshot.close();
+    }
+    chmodSync(temp, 0o600);
+    renameSync(temp, target);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  } finally {
+    sqlite.close();
+  }
+}
+
+function isSqliteDatabase(path: string): boolean {
+  try {
+    return readFileSync(path).subarray(0, 16).toString("utf8") === "SQLite format 3\u0000";
+  } catch {
+    return false;
   }
 }

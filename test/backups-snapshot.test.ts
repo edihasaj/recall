@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import {
   DEFAULT_BACKUP_RETENTION,
   ensureDailyBackup,
@@ -52,6 +53,29 @@ describe("daily database snapshot", () => {
 
     expect(second.created).toBeNull();
     expect(readFileSync(first.created!, "utf8")).toBe("original-db-bytes");
+  });
+
+  it("includes committed WAL rows in a consistent SQLite snapshot", () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-backup-wal-"));
+    const dbPath = join(dir, "recall.db");
+    const live = new Database(dbPath);
+    try {
+      live.pragma("journal_mode = WAL");
+      live.pragma("wal_autocheckpoint = 0");
+      live.exec("create table proof(value text); insert into proof values ('committed-in-wal')");
+      expect(existsSync(`${dbPath}-wal`)).toBe(true);
+
+      const result = ensureDailyBackup({ dbPath, now: new Date("2026-04-18T12:00:00Z") });
+      const backup = new Database(result.created!, { readonly: true });
+      try {
+        expect(backup.prepare("select value from proof").pluck().get()).toBe("committed-in-wal");
+        expect(backup.pragma("quick_check", { simple: true })).toBe("ok");
+      } finally {
+        backup.close();
+      }
+    } finally {
+      live.close();
+    }
   });
 
   it("retains only the most recent N snapshots (default 2)", () => {

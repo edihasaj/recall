@@ -34,7 +34,6 @@ export async function runReliabilityCanary(
   const root = mkdtempSync(join(tmpdir(), "recall-reliability-canary-"));
   const db = initStandaloneDb(join(root, "recall.db"));
   const priorDisabled = process.env.RECALL_EMBEDDINGS_DISABLED;
-  const priorSimilarityThreshold = process.env.RECALL_SIMILARITY_THRESHOLD;
   const realEmbeddings = options.real_embeddings === true;
   const checks: Record<string, boolean> = {};
   let reliability = computeReliabilityReport(db, { since: "2000-01-01T00:00:00.000Z" });
@@ -53,11 +52,11 @@ export async function runReliabilityCanary(
     });
 
     if (realEmbeddings) {
+      const configured = loadEmbeddingConfigFromEnv();
+      if (!configured) throw new Error("Real embeddings requested but unavailable");
       // The canary checks native ranking and persistence. Product relevance
       // thresholds are measured separately and must not make this probe flaky.
-      process.env.RECALL_SIMILARITY_THRESHOLD = "0";
-      const config = loadEmbeddingConfigFromEnv();
-      if (!config) throw new Error("Real embeddings requested but unavailable");
+      const config = { ...configured, similarity_threshold: 0 };
       checks.embeddings_bootstrapped = await bootstrapEmbeddings(db, config) === 1;
       const coverage = verifyEmbeddings(db, config, { repo });
       checks.embedding_index_integrity = coverage.stored === 1 && coverage.indexed === 1 && coverage.index_drift === 0;
@@ -109,8 +108,6 @@ export async function runReliabilityCanary(
     db.$client.close();
     if (priorDisabled == null) delete process.env.RECALL_EMBEDDINGS_DISABLED;
     else process.env.RECALL_EMBEDDINGS_DISABLED = priorDisabled;
-    if (priorSimilarityThreshold == null) delete process.env.RECALL_SIMILARITY_THRESHOLD;
-    else process.env.RECALL_SIMILARITY_THRESHOLD = priorSimilarityThreshold;
     rmSync(root, { recursive: true, force: true });
   }
 }

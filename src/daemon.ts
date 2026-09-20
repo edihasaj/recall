@@ -85,6 +85,7 @@ import {
 import { authorizeLocalRequest } from "./daemon/http-security.js";
 import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
 import { recallBuildInfo } from "./runtime/build.js";
+import { runReliabilityProbe, type ReliabilityProbeResult } from "./reliability/probe.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -111,6 +112,14 @@ const qualitySnapshotConfig = {
   intervalSeconds: parseInt(process.env.RECALL_QUALITY_SNAPSHOT_INTERVAL_SECONDS ?? "604800", 10),
 };
 let qualitySnapshotRunning = false;
+
+const reliabilityProbeConfig = {
+  enabled: process.env.RECALL_RELIABILITY_PROBE_ENABLED !== "false",
+  intervalSeconds: parseInt(process.env.RECALL_RELIABILITY_PROBE_INTERVAL_SECONDS ?? "86400", 10),
+  realEmbeddings: process.env.RECALL_RELIABILITY_PROBE_REAL_EMBEDDINGS !== "false",
+};
+let reliabilityProbeRunning = false;
+let lastReliabilityProbe: ReliabilityProbeResult | null = null;
 
 const parsedBackgroundContradictionLimit = parseInt(
   process.env.RECALL_BACKGROUND_CONTRADICTION_LIMIT ?? "2000",
@@ -336,6 +345,32 @@ function scheduleQualitySnapshotLoop() {
   timer.unref?.();
 }
 
+function scheduleReliabilityProbeLoop() {
+  if (!reliabilityProbeConfig.enabled) return;
+  const run = async () => {
+    if (reliabilityProbeRunning) return;
+    reliabilityProbeRunning = true;
+    try {
+      lastReliabilityProbe = await runReliabilityProbe(db, {
+        real_embeddings: reliabilityProbeConfig.realEmbeddings,
+      });
+      console.log(
+        `[recall] reliability probe ok=${lastReliabilityProbe.ok} db=${lastReliabilityProbe.database_integrity} backup=${lastReliabilityProbe.backup_integrity} canary=${lastReliabilityProbe.canary_ok} measured=${lastReliabilityProbe.reliability_overall} duration_ms=${lastReliabilityProbe.duration_ms}`,
+      );
+    } catch (error) {
+      console.error(`[recall] reliability probe failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      reliabilityProbeRunning = false;
+    }
+  };
+  setTimeout(() => void run(), 120_000).unref?.();
+  const timer = setInterval(
+    () => void run(),
+    Math.max(300, reliabilityProbeConfig.intervalSeconds) * 1000,
+  );
+  timer.unref?.();
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
   const path = url.pathname;
@@ -362,6 +397,7 @@ const server = createServer(async (req, res) => {
         status: "ok",
         version: pkg.version,
         build: recallBuildInfo,
+        reliability_probe: lastReliabilityProbe,
         embeddings: getEmbeddingModelInfo(),
         retrieval_mode: loadEmbeddingConfigFromEnv() ? "hybrid" : "lexical",
         embedding_unavailable_reason: getEmbeddingUnavailableReason(),
@@ -1209,6 +1245,7 @@ async function startDaemon() {
     scheduleDispatcherLoop();
     scheduleCleanupLoop();
     scheduleQualitySnapshotLoop();
+    scheduleReliabilityProbeLoop();
 
     setTimeout(() => {
       const embeddingConfig = loadEmbeddingConfigFromEnv();
