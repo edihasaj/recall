@@ -51,6 +51,7 @@ import { getAuditTrail, getRecentAudit, formatAuditTrail, recordAudit, rollbackM
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { computeReliabilityReport, formatReliabilityReport } from "./reliability/report.js";
 import { runReliabilityCanary } from "./reliability/canary.js";
+import { runReliabilityProbe } from "./reliability/probe.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
 import { runLocalSetup } from "./setup/local.js";
 import { runRecallSetup } from "./setup/local.js";
@@ -1843,6 +1844,7 @@ program
   .option("--since <iso>", "Window start as an ISO timestamp")
   .option("--json", "Print machine-readable JSON")
   .option("--canary", "Run a disposable capture-to-outcome canary")
+  .option("--probe", "Check the live database, newest backup, and disposable canary")
   .option("--real-embeddings", "Use the configured local embedding model in the canary")
   .action(async (opts) => {
     if (opts.canary) {
@@ -1852,6 +1854,14 @@ program
       return;
     }
     const db = initDb();
+    if (opts.probe) {
+      const result = await runReliabilityProbe(db, {
+        real_embeddings: opts.realEmbeddings,
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
     const report = computeReliabilityReport(db, {
       repo: opts.repo,
       since: opts.since,

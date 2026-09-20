@@ -86,7 +86,7 @@ import {
 import { authorizeLocalRequest } from "./daemon/http-security.js";
 import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
 import { recallBuildInfo } from "./runtime/build.js";
-import { runReliabilityProbe, type ReliabilityProbeResult } from "./reliability/probe.js";
+import type { ReliabilityProbeResult } from "./reliability/probe.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -352,12 +352,9 @@ function scheduleReliabilityProbeLoop() {
     if (reliabilityProbeRunning) return;
     reliabilityProbeRunning = true;
     try {
-      lastReliabilityProbe = await runReliabilityProbe(db, {
-        real_embeddings: reliabilityProbeConfig.realEmbeddings,
-        run_canary: () => runReliabilityCanarySubprocess(
-          reliabilityProbeConfig.realEmbeddings,
-        ),
-      });
+      lastReliabilityProbe = await runReliabilityProbeSubprocess(
+        reliabilityProbeConfig.realEmbeddings,
+      );
       console.log(
         `[recall] reliability probe ok=${lastReliabilityProbe.ok} db=${lastReliabilityProbe.database_integrity} backup=${lastReliabilityProbe.backup_integrity} canary=${lastReliabilityProbe.canary_ok} measured=${lastReliabilityProbe.reliability_overall} duration_ms=${lastReliabilityProbe.duration_ms}`,
       );
@@ -375,9 +372,9 @@ function scheduleReliabilityProbeLoop() {
   timer.unref?.();
 }
 
-function runReliabilityCanarySubprocess(realEmbeddings: boolean): Promise<{ ok: boolean }> {
+function runReliabilityProbeSubprocess(realEmbeddings: boolean): Promise<ReliabilityProbeResult> {
   const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
-  const args = [cliPath, "reliability", "--canary"];
+  const args = [cliPath, "reliability", "--probe"];
   if (realEmbeddings) args.push("--real-embeddings");
   return new Promise((resolve, reject) => {
     execFile(process.execPath, args, {
@@ -386,14 +383,17 @@ function runReliabilityCanarySubprocess(realEmbeddings: boolean): Promise<{ ok: 
       maxBuffer: 2 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`Reliability canary process failed: ${stderr.trim() || error.message}`));
+        reject(new Error(`Reliability probe process failed: ${stderr.trim() || error.message}`));
         return;
       }
       try {
-        const parsed = JSON.parse(stdout) as { ok?: boolean };
-        resolve({ ok: parsed.ok === true });
+        const parsed = JSON.parse(stdout) as ReliabilityProbeResult;
+        if (typeof parsed.ok !== "boolean" || typeof parsed.database_integrity !== "boolean") {
+          throw new Error("missing reliability probe fields");
+        }
+        resolve(parsed);
       } catch {
-        reject(new Error("Reliability canary process returned invalid JSON"));
+        reject(new Error("Reliability probe process returned invalid JSON"));
       }
     });
   });

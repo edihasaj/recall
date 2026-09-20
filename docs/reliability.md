@@ -56,6 +56,7 @@ afterward.
 ```bash
 recall reliability --canary
 recall reliability --canary --real-embeddings
+recall reliability --probe --real-embeddings
 ```
 
 The real-embedding form also generates the configured local embedding, verifies
@@ -63,7 +64,9 @@ the derived vector index, and performs native semantic retrieval. It lowers the
 score cutoff only inside the disposable test because ranking and the product's
 relevance policy are separate checks.
 
-The daemon runs the real-embedding canary once per day. The same probe checks
+The daemon runs the complete real-embedding probe in a child process once per
+day, so SQLite page cache, model memory, and native-extension failures leave
+with that process instead of accumulating in the daemon. The probe checks
 the live database and the newest backup with SQLite `quick_check`. `/health`
 returns the latest probe and exact build information: commit SHA, build time,
 and native/embedding dependency versions.
