@@ -6,6 +6,7 @@ export interface ReliabilityReport {
   window_start: string;
   window_end: string;
   sessions: number;
+  sessions_requiring_repo: number;
   sessions_with_repo: number;
   repo_attribution_rate: number;
   selected_injections: number;
@@ -17,6 +18,7 @@ export interface ReliabilityReport {
   retrieval_misses: number;
   retrieval_observations: number;
   candidate_backlog: number;
+  candidate_total: number;
   active_memories: number;
   checks: Array<{
     name: string;
@@ -57,6 +59,13 @@ export function computeReliabilityReport(
   const attributedSessionIds = new Set(
     lifecycle.filter((event) => Boolean(event.repo)).map((event) => event.session_id!),
   );
+  const scopedSessionIds = new Set(attributedSessionIds);
+  for (const event of lifecycle) {
+    if (!event.session_id) continue;
+    const request = typeof event.request === "string" ? JSON.parse(event.request) : event.request;
+    const repoPath = typeof request?.repo_path === "string" ? request.repo_path : "";
+    if (repoPath && repoAttributionExpected(repoPath)) scopedSessionIds.add(event.session_id);
+  }
 
   const emittedPairs = new Set<string>();
   for (const event of activity) {
@@ -77,17 +86,18 @@ export function computeReliabilityReport(
   const resolvedOutcomes = injections.filter((injection) => injection.outcome != null).length;
   const retrievalMisses = valueEvents.filter((event) => event.event_type === "retrieval_miss").length;
   const retrievalUses = valueEvents.filter((event) => event.event_type === "used").length;
-  const candidateBacklog = db.select({ id: memories.id }).from(memories)
-    .where(eq(memories.status, "candidate")).all().length;
+  const candidates = db.select({ id: memories.id, auto_inject: memories.auto_inject }).from(memories)
+    .where(eq(memories.status, "candidate")).all();
+  const candidateBacklog = candidates.filter((memory) => memory.auto_inject).length;
   const activeMemories = db.select({ id: memories.id }).from(memories)
     .where(eq(memories.status, "active")).all().length;
 
-  const repoAttribution = ratio(attributedSessionIds.size, sessionIds.size);
+  const repoAttribution = ratio(attributedSessionIds.size, scopedSessionIds.size);
   const emissionCoverage = ratio(emittedSelected, selectedPairs.size);
   const outcomeCoverage = ratio(resolvedOutcomes, emittedSelected);
   const retrievalObservations = retrievalMisses + retrievalUses;
   const checks: ReliabilityReport["checks"] = [
-    { name: "repo_attribution", status: sessionIds.size === 0 ? "warn" : repoAttribution >= 0.95 ? "pass" : repoAttribution >= 0.8 ? "warn" : "fail", value: repoAttribution, target: ">=95%" },
+    { name: "repo_attribution", status: scopedSessionIds.size === 0 ? "warn" : repoAttribution >= 0.95 ? "pass" : repoAttribution >= 0.8 ? "warn" : "fail", value: repoAttribution, target: ">=95%" },
     { name: "emission_coverage", status: selectedPairs.size === 0 ? "warn" : emissionCoverage >= 0.99 ? "pass" : emissionCoverage >= 0.95 ? "warn" : "fail", value: emissionCoverage, target: ">=99%" },
     { name: "outcome_coverage", status: emittedSelected === 0 ? "warn" : outcomeCoverage >= 0.8 ? "pass" : outcomeCoverage >= 0.5 ? "warn" : "fail", value: outcomeCoverage, target: ">=80%" },
     { name: "retrieval_observations", status: retrievalObservations >= 20 ? "pass" : retrievalObservations >= 5 ? "warn" : "fail", value: retrievalObservations, target: ">=20" },
@@ -101,6 +111,7 @@ export function computeReliabilityReport(
     window_start: start,
     window_end: end,
     sessions: sessionIds.size,
+    sessions_requiring_repo: scopedSessionIds.size,
     sessions_with_repo: attributedSessionIds.size,
     repo_attribution_rate: repoAttribution,
     selected_injections: selectedPairs.size,
@@ -112,6 +123,7 @@ export function computeReliabilityReport(
     retrieval_misses: retrievalMisses,
     retrieval_observations: retrievalObservations,
     candidate_backlog: candidateBacklog,
+    candidate_total: candidates.length,
     active_memories: activeMemories,
     checks,
     overall,
@@ -126,11 +138,11 @@ export function formatReliabilityReport(report: ReliabilityReport): string {
     `Window: ${report.window_start} to ${report.window_end}`,
     `Overall: ${report.overall.toUpperCase()}`,
     "",
-    `Sessions: ${report.sessions} (${report.sessions_with_repo} with repo, ${percent(report.repo_attribution_rate)})`,
+    `Sessions: ${report.sessions} (${report.sessions_requiring_repo} required repo, ${report.sessions_with_repo} attributed, ${percent(report.repo_attribution_rate)})`,
     `Injections: ${report.selected_injections} selected, ${report.emitted_injections} emitted (${percent(report.emission_coverage)})`,
     `Evidence: ${report.observed_uses} observed uses, ${report.resolved_outcomes} resolved outcomes (${percent(report.outcome_coverage)})`,
     `Retrieval: ${report.retrieval_observations} observations, ${report.retrieval_misses} misses`,
-    `Memory: ${report.active_memories} active, ${report.candidate_backlog} candidates`,
+    `Memory: ${report.active_memories} active, ${report.candidate_backlog} injectable candidates, ${report.candidate_total} total candidates`,
     "",
     "## Checks",
   ];
@@ -141,4 +153,11 @@ export function formatReliabilityReport(report: ReliabilityReport): string {
     lines.push(`${check.status.toUpperCase().padEnd(4)} ${check.name}: ${value} (target ${check.target})`);
   }
   return lines.join("\n");
+}
+
+function repoAttributionExpected(repoPath: string): boolean {
+  const normalized = repoPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (/\/(?:private\/)?(?:var\/folders\/[^/]+\/[^/]+\/T|tmp)(?:\/|$)/.test(normalized)) return false;
+  if (/\/Projects$/i.test(normalized)) return false;
+  return true;
 }

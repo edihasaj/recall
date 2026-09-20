@@ -75,6 +75,7 @@ describe("reliability report", () => {
       repo: null,
       source: "hook:codex",
       event_type: "session_start",
+      request: { repo_path: "/Users/test/Projects/unresolved-repo" },
     });
     const report = computeReliabilityReport(db, { since: "2000-01-01T00:00:00.000Z" });
     expect(report.repo_attribution_rate).toBe(0);
