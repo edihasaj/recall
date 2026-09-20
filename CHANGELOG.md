@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.4.7 - 2026-09-20
+
+### Added
+
+- `recall reliability` reports repository attribution, compiler selection,
+  hook emission, observed completion use, resolved outcomes, retrieval evidence,
+  and the injectable candidate backlog without treating unknowns as success.
+- `recall reliability --canary` exercises a disposable capture-to-outcome flow.
+  `--real-embeddings` also verifies local model generation, native vector
+  ranking, index persistence, and SQLite integrity.
+- `/health` identifies the exact build SHA, build time, native dependency
+  versions, and latest daily reliability probe.
+
+### Fixed
+
+- Daily backups now use a SQLite-consistent snapshot that includes committed
+  WAL rows. Recall checks snapshot integrity before rotating it into backups.
+- The daemon checks its live database, newest backup, and a disposable
+  real-vector canary every day.
+- Never-selected candidates without repeat-session evidence leave automatic
+  injection after 30 days while remaining searchable and confirmable. Explicit
+  confirmation restores injection.
+- Reliability targets exclude intentionally unscoped workspace-root and
+  temporary sessions from repository-attribution failures.
+
 ## 1.4.6 - 2026-09-19
 
 ### Fixed

@@ -237,6 +237,8 @@ recall health -r owner/repo
 recall maintenance quality
 recall eval value-retrieval --snapshot
 recall maintenance quality --history
+recall reliability
+recall reliability --canary --real-embeddings
 recall compile -r owner/repo
 recall compile -r owner/repo --query "pytest -q" --include-candidates
 ```
@@ -279,7 +281,15 @@ RECALL_SIGNAL_RETENTION_DAYS=180
 RECALL_SQLITE_VACUUM_ENABLED=true
 RECALL_SQLITE_VACUUM_MIN_FREE_PAGES=100
 RECALL_SQLITE_VACUUM_MIN_FREE_RATIO=0.1
+RECALL_CANDIDATE_UNCONFIRMED_DAYS=30
+RECALL_RELIABILITY_PROBE_ENABLED=true
+RECALL_RELIABILITY_PROBE_INTERVAL_SECONDS=86400
+RECALL_RELIABILITY_PROBE_REAL_EMBEDDINGS=true
 ```
+
+`recall reliability` separates compiler selection, hook emission, observed use,
+and resolved outcomes. The daily probe checks the live database, newest backup,
+and a disposable real-vector canary. See [Reliability and uncertainty](docs/reliability.md).
 
 Inspect rolled-up session history:
 
