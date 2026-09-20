@@ -18,6 +18,7 @@ export interface ReliabilityReport {
   retrieval_misses: number;
   retrieval_observations: number;
   candidate_backlog: number;
+  candidate_injectable_total: number;
   candidate_total: number;
   active_memories: number;
   checks: Array<{
@@ -86,9 +87,17 @@ export function computeReliabilityReport(
   const resolvedOutcomes = injections.filter((injection) => injection.outcome != null).length;
   const retrievalMisses = valueEvents.filter((event) => event.event_type === "retrieval_miss").length;
   const retrievalUses = valueEvents.filter((event) => event.event_type === "used").length;
-  const candidates = db.select({ id: memories.id, auto_inject: memories.auto_inject }).from(memories)
+  const candidates = db.select({ id: memories.id, auto_inject: memories.auto_inject, repo: memories.repo }).from(memories)
     .where(eq(memories.status, "candidate")).all();
-  const candidateBacklog = candidates.filter((memory) => memory.auto_inject).length;
+  const injectableCandidates = candidates.filter((memory) => memory.auto_inject);
+  const candidatesByRepo = new Map<string, number>();
+  for (const memory of injectableCandidates) {
+    const key = memory.repo ?? "global";
+    candidatesByRepo.set(key, (candidatesByRepo.get(key) ?? 0) + 1);
+  }
+  const candidateBacklog = options.repo
+    ? injectableCandidates.length
+    : Math.max(0, ...candidatesByRepo.values());
   const activeMemories = db.select({ id: memories.id }).from(memories)
     .where(eq(memories.status, "active")).all().length;
 
@@ -123,6 +132,7 @@ export function computeReliabilityReport(
     retrieval_misses: retrievalMisses,
     retrieval_observations: retrievalObservations,
     candidate_backlog: candidateBacklog,
+    candidate_injectable_total: injectableCandidates.length,
     candidate_total: candidates.length,
     active_memories: activeMemories,
     checks,
@@ -142,7 +152,7 @@ export function formatReliabilityReport(report: ReliabilityReport): string {
     `Injections: ${report.selected_injections} selected, ${report.emitted_injections} emitted (${percent(report.emission_coverage)})`,
     `Evidence: ${report.observed_uses} observed uses, ${report.resolved_outcomes} resolved outcomes (${percent(report.outcome_coverage)})`,
     `Retrieval: ${report.retrieval_observations} observations, ${report.retrieval_misses} misses`,
-    `Memory: ${report.active_memories} active, ${report.candidate_backlog} injectable candidates, ${report.candidate_total} total candidates`,
+    `Memory: ${report.active_memories} active, ${report.candidate_injectable_total} injectable candidates total, ${report.candidate_backlog} max in one repo, ${report.candidate_total} total candidates`,
     "",
     "## Checks",
   ];

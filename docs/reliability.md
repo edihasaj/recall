@@ -41,7 +41,7 @@ The report starts with these operating targets:
 | Selected memories emitted by the hook | at least 99% |
 | Emitted memories with a resolved outcome | at least 80% |
 | Used or missed retrieval observations per 14 days | at least 20 |
-| Candidates still eligible for automatic injection | at most 50 |
+| Candidates still eligible for automatic injection | at most 50 in one repo |
 
 An empty denominator is `warn`, not `pass`. Missing evidence never becomes a
 successful outcome.
