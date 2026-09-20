@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.8 - 2026-09-20
+
+### Fixed
+
+- Dedicated deployments can set `RECALL_REPO_OVERRIDE=owner/repo` when their
+  runtime directory has no Git metadata. Hook, daemon, and session lifecycle
+  events then use the canonical repository identity, restoring scoped memory
+  retrieval and attribution metrics.
+
 ## 1.4.7 - 2026-09-20
 
 ### Added

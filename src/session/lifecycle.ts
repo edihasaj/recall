@@ -37,7 +37,8 @@ export function startSessionLifecycle(
   db: RecallDb,
   input: SessionLifecycleInput,
 ): SessionLifecycleResult {
-  const repo = input.repo ?? inferRepoSlugFromPath(input.repo_path) ?? null;
+  const repo = input.repo ?? process.env.RECALL_REPO_OVERRIDE?.trim() ??
+    inferRepoSlugFromPath(input.repo_path) ?? null;
   const bootstrap = ensureRepoBootstrapped(db, {
     repo,
     repoPathHint: input.repo_path,
@@ -103,7 +104,8 @@ export function recordSessionLifecycleEvent(
     payload?: Record<string, unknown>;
   },
 ): SessionLifecycleResult {
-  const repo = input.repo ?? inferRepoSlugFromPath(input.repo_path) ?? null;
+  const repo = input.repo ?? process.env.RECALL_REPO_OVERRIDE?.trim() ??
+    inferRepoSlugFromPath(input.repo_path) ?? null;
 
   createActivityEvent(db, {
     session_id: input.session_id,
@@ -135,7 +137,8 @@ export function endSessionLifecycle(
     payload?: Record<string, unknown>;
   },
 ): SessionLifecycleResult {
-  const repo = input.repo ?? inferRepoSlugFromPath(input.repo_path) ?? null;
+  const repo = input.repo ?? process.env.RECALL_REPO_OVERRIDE?.trim() ??
+    inferRepoSlugFromPath(input.repo_path) ?? null;
 
   createActivityEvent(db, {
     session_id: input.session_id,

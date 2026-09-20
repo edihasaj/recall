@@ -370,6 +370,7 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `RECALL_RELIABILITY_PROBE_ENABLED` | `true` | Run the daily database, backup, and disposable canary probe. |
 | `RECALL_RELIABILITY_PROBE_INTERVAL_SECONDS` | `86400` | Interval between reliability probes. The daemon enforces a five-minute minimum. |
 | `RECALL_RELIABILITY_PROBE_REAL_EMBEDDINGS` | `true` | Include real local embedding generation and native vector retrieval in the probe. |
+| `RECALL_REPO_OVERRIDE` | unset | Canonical `owner/repo` identity for a dedicated deployment directory that has no `.git` metadata. Explicit request repository values still take precedence. |
 | `RECALL_SQLITE_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | WAL size at which the maintenance loop escalates `wal_checkpoint(PASSIVE)` to `TRUNCATE` to keep `recall.db-wal` from growing unbounded under concurrent writers. Set `0` to never truncate. |
 | `RECALL_SQLITE_STARTUP_WAL_TRUNCATE_BYTES` | `33554432` (32 MiB) | If the WAL file exceeds this size when the DB is opened, run `wal_checkpoint(TRUNCATE)` once during startup. Heals existing installs after upgrade. Set `0` to disable. |
 | `SENTRY_DSN` | _(empty — disabled)_ | **Opt-in, off by default.** When set to a Sentry DSN, the CLI, daemon, MCP server, and sync server report **errors and crashes only** (no tracing, no profiling, no replay, no PII). Empty/unset is a hard no-op — Sentry never initializes and nothing is sent off-box. See below. |

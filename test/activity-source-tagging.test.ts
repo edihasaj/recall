@@ -14,6 +14,7 @@ import { tagActivitySource } from "../src/types.js";
 afterEach(() => {
   closeDb();
   delete process.env.RECALL_EMBEDDINGS_DISABLED;
+  delete process.env.RECALL_REPO_OVERRIDE;
 });
 
 function freshDb() {
@@ -86,6 +87,20 @@ describe("activity source tagging", () => {
     const events = listActivityEvents(db, { session_id: "sess-tag-3" });
     const start = events.find((e) => e.event_type === "session_start");
     expect(start?.source).toBe("hook:claude-code");
+  });
+
+  it("uses an explicit deployment repo for a non-git runtime directory", async () => {
+    const db = freshDb();
+    const deployedDir = mkdtempSync(join(tmpdir(), "recall-deployed-repo-"));
+    process.env.RECALL_REPO_OVERRIDE = "edihasaj/autoreview";
+    await handleSessionStartHook({
+      session_id: "sess-deployed-repo",
+      agent: "claude-code",
+      repo_path: deployedDir,
+    }, { db });
+    const start = listActivityEvents(db, { session_id: "sess-deployed-repo" })
+      .find((event) => event.event_type === "session_start");
+    expect(start?.repo).toBe("edihasaj/autoreview");
   });
 
   it("handlePromptHook falls back to bare 'cli' when agent is not set", async () => {

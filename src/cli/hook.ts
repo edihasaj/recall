@@ -1338,7 +1338,8 @@ function extractClaudeToolPath(toolInput?: Record<string, unknown>): string | un
 }
 
 function resolveRepo(repo?: string, repoPath?: string): string | null {
-  const resolved = repo?.trim() || inferRepoSlugFromPath(repoPath) || null;
+  const resolved = repo?.trim() || process.env.RECALL_REPO_OVERRIDE?.trim() ||
+    inferRepoSlugFromPath(repoPath) || null;
   // "Projects" is the workspace root, not a repo: adapters send the cwd
   // basename when a session runs above any git checkout. Recording it as a
   // repo fed an enqueue → invalid_task abandon → re-enqueue churn loop

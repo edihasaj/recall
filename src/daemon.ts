@@ -133,7 +133,8 @@ const backgroundContradictionLimit = Number.isFinite(parsedBackgroundContradicti
 const parseBody = parseJsonBody;
 
 function resolveRepo(body: Record<string, any>): string | undefined {
-  return body.repo ?? inferRepoSlugFromPath(body.repo_path) ?? undefined;
+  return body.repo ?? process.env.RECALL_REPO_OVERRIDE?.trim() ??
+    inferRepoSlugFromPath(body.repo_path) ?? undefined;
 }
 
 function scheduleMaintenanceLoop() {
