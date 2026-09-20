@@ -32,6 +32,8 @@ npm run docs:check
 npm run typecheck
 npm test
 npm run build
+node dist/cli.js reliability --canary
+node dist/cli.js reliability --canary --real-embeddings
 ```
 
 4. Push to `main`; the auto-release workflow creates the tag and dispatches `.github/workflows/release.yml`.

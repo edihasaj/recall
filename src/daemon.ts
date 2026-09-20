@@ -1218,12 +1218,21 @@ function openInBrowser(url: string): void {
 export { webUiIsRunning };
 
 async function startDaemon() {
-  const backup = ensureDailyBackup();
+  let backup = ensureDailyBackup();
   if (backup.created) {
     console.log(`[recall] backup created ${backup.created} (retained ${backup.retained.length})`);
   }
 
   db = initDb();
+  // A first install has no database before init, so the pre-migration backup
+  // is a no-op. Create its first verified snapshot immediately after schema
+  // initialization so the daily reliability probe has a restore point.
+  if (!backup.created && backup.retained.length === 0) {
+    backup = ensureDailyBackup();
+    if (backup.created) {
+      console.log(`[recall] initial backup created ${backup.created}`);
+    }
+  }
 
   // Auto-clean the knowledge graph when the extractor rules have changed since
   // this install last rebuilt it (one-time per version bump, all users).
