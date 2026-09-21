@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.11 - 2026-09-21
+
+### Fixed
+
+- Activity and hook dedupe indexes now store fixed-size SHA-256 keys instead
+  of complete event payloads. Existing databases migrate those keys in place.
+- Operational activity retention now defaults to 30 days instead of 90 days.
+- Recall keeps only the newest versioned published-install backup alongside
+  the two daily snapshots. Older nested install backups no longer accumulate
+  outside the normal rotation.
+
 ## 1.4.10 - 2026-09-21
 
 ### Fixed
