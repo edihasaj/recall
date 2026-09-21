@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { createHash } from "node:crypto";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.js";
@@ -8,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { getEmbeddingCacheRoot } from "../embeddings/cache.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const RECALL_DB_USER_VERSION = 11;
+export const RECALL_DB_USER_VERSION = 12;
 
 export function getDbPath(): string {
   const dataDir =
@@ -52,6 +53,9 @@ const STARTUP_WAL_TRUNCATE_BYTES = (() => {
 function applyPragmas(sqlite: Database.Database) {
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
+  sqlite.function("recall_sha256", { deterministic: true }, (value: string) =>
+    createHash("sha256").update(value).digest("hex")
+  );
   truncateWalIfLarge(sqlite);
 }
 

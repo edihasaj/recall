@@ -364,6 +364,7 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `RECALL_DATA_DIR` | `~/.recall` | Where the SQLite DB, models cache, and logs live. |
 | `RECALL_MAINTENANCE_ENABLED` | `true` | Set to `false` to stop the non-LLM maintenance loop (prune, compact, promote-candidates, SQLite housekeeping). |
 | `RECALL_MAINTENANCE_INTERVAL_SECONDS` | `3600` | Interval for the non-LLM maintenance loop. |
+| `RECALL_ACTIVITY_RETENTION_DAYS` | `30` | Keep operational activity events for this many days. |
 | `RECALL_MAINTENANCE_LLM_DISABLED` | `false` | Set to `true` to stop enqueuing LLM-needing tasks. |
 | `RECALL_EMBEDDINGS_DISABLED` | `false` | Set to `true` to skip embedding generation entirely (hybrid retrieval still works with FTS-only ranking). |
 | `RECALL_CANDIDATE_UNCONFIRMED_DAYS` | `30` | Archive never-selected candidates from automatic injection after this many days. The memory stays searchable and confirmable. |

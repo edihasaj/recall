@@ -106,7 +106,7 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     stale_days: parseInt(process.env.RECALL_MAINTENANCE_STALE_DAYS ?? "90", 10),
     candidate_unconfirmed_days: parseInt(process.env.RECALL_CANDIDATE_UNCONFIRMED_DAYS ?? "30", 10),
     min_health_score: parseFloat(process.env.RECALL_MAINTENANCE_MIN_HEALTH_SCORE ?? "0.2"),
-    activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "90", 10),
+    activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "30", 10),
     hook_call_retention_days: parseInt(process.env.RECALL_HOOK_CALL_RETENTION_DAYS ?? "30", 10),
     feedback_retention_days: parseInt(process.env.RECALL_FEEDBACK_RETENTION_DAYS ?? "180", 10),
     signal_retention_days: parseInt(process.env.RECALL_SIGNAL_RETENTION_DAYS ?? "180", 10),

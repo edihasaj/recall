@@ -244,7 +244,7 @@ dbCmd
     for (const b of backups) {
       const mb = (b.size_bytes / 1024 / 1024).toFixed(2);
       total += b.size_bytes;
-      const tag = b.kind === "one_off" ? " [one-off]" : "";
+      const tag = b.kind === "one_off" ? " [one-off]" : b.kind === "install" ? " [install]" : "";
       console.log(`${b.date}  ${mb} MB  ${b.path}${tag}`);
     }
     console.log(`\nTotal: ${(total / 1024 / 1024 / 1024).toFixed(2)} GB across ${backups.length} snapshot(s)`);

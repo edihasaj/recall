@@ -98,6 +98,7 @@ Set `RECALL_CANDIDATE_UNCONFIRMED_DAYS` to change the daemon maintenance limit.
 Daily backups use SQLite `VACUUM INTO`, which includes committed WAL data in a
 consistent snapshot. Recall runs `quick_check` before placing the snapshot into
 rotation. A failed snapshot is deleted and the existing backups remain intact.
+Recall keeps two daily snapshots and the newest versioned install snapshot.
 The daily reliability probe rechecks the newest retained backup.
 
 ## Release evidence

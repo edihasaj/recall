@@ -18,6 +18,7 @@ import { getDbPath } from "../db/client.js";
 import Database from "better-sqlite3";
 
 export const DEFAULT_BACKUP_RETENTION = 2;
+export const DEFAULT_INSTALL_BACKUP_RETENTION = 1;
 
 // One-off snapshots (`recall-pre-migration.db`, `before-cloud-convergence.db`,
 // anything a human or script named itself) sit in the same directory but do
@@ -38,6 +39,7 @@ const DAILY_BACKUP_RE = /^recall-(\d{4}-\d{2}-\d{2})\.db$/;
 // lived forever. The backups directory is Recall-owned, so treat any name
 // carrying a `.db` segment as a snapshot.
 const BACKUP_FILE_RE = /\.db(\.|$)/;
+const INSTALL_BACKUP_DIR_RE = /^published-\d+\.\d+\.\d+-/;
 
 export interface BackupResult {
   created: string | null;
@@ -64,6 +66,8 @@ export function ensureDailyBackup(
     retention?: number;
     /** Days to keep non-daily snapshots. 0 disables the sweep entirely. */
     one_off_max_age_days?: number;
+    /** Number of versioned published-install snapshots to retain. */
+    install_retention?: number;
     now?: Date;
   } = {},
 ): BackupResult {
@@ -72,6 +76,10 @@ export function ensureDailyBackup(
   const oneOffMaxAgeDays = Math.max(
     0,
     options.one_off_max_age_days ?? DEFAULT_ONE_OFF_BACKUP_MAX_AGE_DAYS,
+  );
+  const installRetention = Math.max(
+    1,
+    options.install_retention ?? DEFAULT_INSTALL_BACKUP_RETENTION,
   );
   const result: BackupResult = { created: null, retained: [], removed: [] };
 
@@ -103,6 +111,19 @@ export function ensureDailyBackup(
     result.removed.push(drop.path);
   }
 
+  // Published installers keep a complete pre-upgrade database inside a
+  // versioned directory. The flat-file sweep above never saw those folders,
+  // so a burst of releases accumulated one full database per install. Keep
+  // only the newest verified rollback point alongside the daily rotation.
+  const installEntries = listInstallBackupDirectories(dir);
+  for (const keep of installEntries.slice(0, installRetention)) {
+    result.retained.push(keep.path);
+  }
+  for (const drop of installEntries.slice(installRetention)) {
+    rmSync(drop.directory, { recursive: true, force: true });
+    result.removed.push(drop.directory);
+  }
+
   // Age-based sweep for one-off snapshots. Never touches the snapshot taken
   // in this run, and never touches anything when the sweep is disabled.
   if (oneOffMaxAgeDays > 0) {
@@ -127,8 +148,8 @@ export interface BackupListing {
   date: string;
   path: string;
   size_bytes: number;
-  /** "daily" rotates on a count; "one_off" ages out. */
-  kind: "daily" | "one_off";
+  /** Daily and install backups rotate on counts; one-offs age out. */
+  kind: "daily" | "one_off" | "install";
 }
 
 // Lists every snapshot, not just the daily rotation. One-off snapshots were
@@ -137,7 +158,7 @@ export interface BackupListing {
 export function listBackups(dbPath: string = getDbPath()): BackupListing[] {
   const dir = getBackupsDir(dbPath);
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
+  const flat = readdirSync(dir)
     .map((name) => {
       if (!BACKUP_FILE_RE.test(name)) return null;
       const path = join(dir, name);
@@ -151,8 +172,37 @@ export function listBackups(dbPath: string = getDbPath()): BackupListing[] {
         kind: match ? ("daily" as const) : ("one_off" as const),
       };
     })
-    .filter((v): v is BackupListing => v !== null)
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .filter((v) => v !== null);
+  const installs = listInstallBackupDirectories(dir).map((entry) => ({
+    date: new Date(entry.mtime).toISOString().slice(0, 10),
+    path: entry.path,
+    size_bytes: statSync(entry.path).size,
+    kind: "install" as const,
+  }));
+  return [...flat, ...installs].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function listInstallBackupDirectories(dir: string): Array<{
+  directory: string;
+  path: string;
+  mtime: number;
+}> {
+  return readdirSync(dir)
+    .filter((name) => INSTALL_BACKUP_DIR_RE.test(name))
+    .map((name) => {
+      const directory = join(dir, name);
+      const path = join(directory, "recall.db");
+      if (
+        !isDirectoryWithoutSymlink(directory) ||
+        !isRegularFileWithoutSymlink(path) ||
+        !isSqliteDatabase(path)
+      ) {
+        return null;
+      }
+      return { directory, path, mtime: statSync(path).mtimeMs };
+    })
+    .filter((entry): entry is { directory: string; path: string; mtime: number } => entry !== null)
+    .sort((a, b) => b.mtime - a.mtime);
 }
 
 export function verifyBackupIntegrity(path: string): boolean {
@@ -201,6 +251,15 @@ function isRegularFileWithoutSymlink(path: string): boolean {
   try {
     const stat = lstatSync(path);
     return stat.isFile() && !stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function isDirectoryWithoutSymlink(path: string): boolean {
+  try {
+    const stat = lstatSync(path);
+    return stat.isDirectory() && !stat.isSymbolicLink();
   } catch {
     return false;
   }

@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { closeDb, initStandaloneDb } from "../src/db/client.js";
 import { createActivityEvent, listActivityEvents } from "../src/models/activity.js";
-import { activityEventDedupeKey } from "../src/models/dedupe.js";
+import {
+  ACTIVITY_DEDUPE_PREFIX,
+  HOOK_DEDUPE_PREFIX,
+  activityEventDedupeKey,
+  hookCallDedupeKey,
+} from "../src/models/dedupe.js";
 import { activityEvents } from "../src/db/schema.js";
 
 afterEach(() => {
@@ -27,6 +32,25 @@ describe("createActivityEvent dedupe race", () => {
     request: { name: "Edit" },
     result: { ok: true },
   };
+
+  it("stores fixed-size hashes instead of request and result payloads", () => {
+    const activity = activityEventDedupeKey({
+      ...input,
+      request: { prompt: "x".repeat(10_000) },
+    });
+    const hook = hookCallDedupeKey({
+      session_id: input.session_id,
+      agent: "codex",
+      event: "prompt_submitted",
+      ok: true,
+      payload: { prompt: "x".repeat(10_000) },
+    });
+
+    expect(activity).toMatch(new RegExp(`^${ACTIVITY_DEDUPE_PREFIX}[a-f0-9]{64}$`));
+    expect(hook).toMatch(new RegExp(`^${HOOK_DEDUPE_PREFIX}[a-f0-9]{64}$`));
+    expect(activity).toHaveLength(ACTIVITY_DEDUPE_PREFIX.length + 64);
+    expect(hook).toHaveLength(HOOK_DEDUPE_PREFIX.length + 64);
+  });
 
   it("returns the same id for repeated calls with the same dedupe key", () => {
     const db = freshDb();

@@ -179,6 +179,15 @@ describe("phase 5 maintenance lifecycle", () => {
 });
 
 describe("self-maintenance defaults", () => {
+  it("keeps operational activity for 30 days by default", () => {
+    const previous = process.env.RECALL_ACTIVITY_RETENTION_DAYS;
+    delete process.env.RECALL_ACTIVITY_RETENTION_DAYS;
+    expect(loadMaintenanceConfigFromEnv().activity_retention_days).toBe(30);
+
+    if (previous === undefined) delete process.env.RECALL_ACTIVITY_RETENTION_DAYS;
+    else process.env.RECALL_ACTIVITY_RETENTION_DAYS = previous;
+  });
+
   it("prunes hook_calls past retention", () => {
     const db = freshDb();
     const old = new Date(Date.now() - 60 * 86_400_000).toISOString();

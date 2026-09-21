@@ -78,6 +78,13 @@
       "when": 1784658920000,
       "tag": "0010_value_retrieval_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789989957000,
+      "tag": "0011_compact_telemetry_dedupe_keys",
+      "breakpoints": true
     }
   ]
 }

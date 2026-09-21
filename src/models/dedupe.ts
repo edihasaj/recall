@@ -1,4 +1,18 @@
+import { createHash } from "node:crypto";
 import { defineOwn } from "../security/object.js";
+
+export const ACTIVITY_DEDUPE_PREFIX = "activity\u001fsha256:";
+export const HOOK_DEDUPE_PREFIX = "hook\u001fsha256:";
+
+export function compactDedupeKey(
+  namespace: "activity" | "hook",
+  legacyKey: string,
+): string {
+  const prefix = namespace === "activity"
+    ? ACTIVITY_DEDUPE_PREFIX
+    : HOOK_DEDUPE_PREFIX;
+  return `${prefix}${createHash("sha256").update(legacyKey).digest("hex")}`;
+}
 
 export function normalizeDedupeText(text: string): string {
   return text
@@ -50,7 +64,7 @@ export function activityEventDedupeKey(input: {
   result?: Record<string, unknown>;
 }): string | null {
   if (!input.session_id) return null;
-  return [
+  const legacyKey = [
     "activity",
     input.session_id,
     input.repo ?? "",
@@ -60,6 +74,7 @@ export function activityEventDedupeKey(input: {
     stableDedupeJson(stripVolatileFields(input.request ?? {})),
     stableDedupeJson(stripVolatileFields(input.result ?? {})),
   ].join("\u001f");
+  return compactDedupeKey("activity", legacyKey);
 }
 
 export function hookCallDedupeKey(input: {
@@ -70,7 +85,7 @@ export function hookCallDedupeKey(input: {
   payload?: Record<string, unknown>;
 }): string | null {
   if (!input.session_id) return null;
-  return [
+  const legacyKey = [
     "hook",
     input.session_id,
     input.agent,
@@ -78,6 +93,7 @@ export function hookCallDedupeKey(input: {
     input.ok ? "ok" : "error",
     stableDedupeJson(stripVolatileFields(input.payload ?? {})),
   ].join("\u001f");
+  return compactDedupeKey("hook", legacyKey);
 }
 
 export function stripVolatileFields(value: unknown): unknown {

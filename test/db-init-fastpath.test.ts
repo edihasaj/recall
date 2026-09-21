@@ -63,4 +63,40 @@ describe("initDb fast path", () => {
     ).toBe(RECALL_DB_USER_VERSION + 1);
     reopened.$client.close();
   });
+
+  it("compacts legacy telemetry dedupe keys during migration", () => {
+    process.env.RECALL_EMBEDDINGS_DISABLED = "true";
+    const dir = mkdtempSync(join(tmpdir(), "recall-dedupe-migration-"));
+    const path = join(dir, "test.db");
+    const first = initStandaloneDb(path);
+    first.$client.prepare(`
+      insert into activity_events (
+        id, source, event_type, memory_ids, dedupe_key, request, result, created_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("activity-1", "cli", "query", "[]", "activity\u001flegacy-payload", "{}", "{}", new Date().toISOString());
+    first.$client.prepare(`
+      insert into hook_calls (
+        id, event, agent, dedupe_key, duration_ms, ok, created_at
+      ) values (?, ?, ?, ?, ?, ?, ?)
+    `).run("hook-1", "prompt_submitted", "codex", "hook\u001flegacy-payload", 1, 1, new Date().toISOString());
+    first.$client.prepare(`
+      delete from __drizzle_migrations
+      where created_at = (select max(created_at) from __drizzle_migrations)
+    `).run();
+    first.$client.pragma(`user_version = ${RECALL_DB_USER_VERSION - 1}`);
+    first.$client.close();
+
+    const migrated = initStandaloneDb(path);
+    const activityKey = migrated.$client.prepare(
+      "select dedupe_key from activity_events where id = ?",
+    ).pluck().get("activity-1") as string;
+    const hookKey = migrated.$client.prepare(
+      "select dedupe_key from hook_calls where id = ?",
+    ).pluck().get("hook-1") as string;
+
+    expect(activityKey).toMatch(/^activity\u001fsha256:[a-f0-9]{64}$/);
+    expect(hookKey).toMatch(/^hook\u001fsha256:[a-f0-9]{64}$/);
+    expect(Number(migrated.$client.pragma("user_version", { simple: true }))).toBe(RECALL_DB_USER_VERSION);
+    migrated.$client.close();
+  });
 });

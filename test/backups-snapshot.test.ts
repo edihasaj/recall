@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import {
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_INSTALL_BACKUP_RETENTION,
   ensureDailyBackup,
   getBackupsDir,
   listBackups,
@@ -213,5 +214,39 @@ describe("one-off snapshot retention", () => {
     const listed = listBackups(dbPath);
     const kinds = listed.map((b) => b.kind).sort();
     expect(kinds).toEqual(["daily", "one_off"]);
+  });
+});
+
+describe("install snapshot retention", () => {
+  function seedInstallBackup(dbPath: string, name: string, ageDays: number): string {
+    const directory = join(getBackupsDir(dbPath), name);
+    mkdirSync(directory, { recursive: true });
+    const path = join(directory, "recall.db");
+    const db = new Database(path);
+    db.exec("create table proof(value text)");
+    db.close();
+    const when = new Date(Date.now() - ageDays * 86_400_000);
+    utimesSync(path, when, when);
+    return path;
+  }
+
+  it("keeps only the newest versioned install rollback", () => {
+    const dbPath = freshDbPath();
+    const oldest = seedInstallBackup(dbPath, "published-1.4.8-20260919T120000Z", 3);
+    const previous = seedInstallBackup(dbPath, "published-1.4.9-20260920T120000Z", 2);
+    const newest = seedInstallBackup(dbPath, "published-1.4.10-20260921T120000Z", 1);
+
+    const result = ensureDailyBackup({ dbPath });
+
+    expect(DEFAULT_INSTALL_BACKUP_RETENTION).toBe(1);
+    expect(existsSync(oldest)).toBe(false);
+    expect(existsSync(previous)).toBe(false);
+    expect(existsSync(newest)).toBe(true);
+    expect(result.retained).toContain(newest);
+    expect(result.removed).toContain(dirname(oldest));
+    expect(result.removed).toContain(dirname(previous));
+    expect(listBackups(dbPath).some((backup) => (
+      backup.kind === "install" && backup.path === newest
+    ))).toBe(true);
   });
 });
