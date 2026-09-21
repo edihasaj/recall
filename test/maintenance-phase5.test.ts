@@ -125,7 +125,7 @@ describe("phase 5 maintenance lifecycle", () => {
     expect(after.lexical_drift).toBe(0);
   });
 
-  it("runs sqlite analyze/checkpoint/optimize and guarded vacuum", () => {
+  it("uses bounded sqlite optimize instead of a full analyze", () => {
     const db = freshDb();
     const sqlite = db.$client;
 
@@ -144,6 +144,8 @@ describe("phase 5 maintenance lifecycle", () => {
     });
     insertMany();
     sqlite.exec("delete from maintenance_junk;");
+    const execSpy = vi.spyOn(sqlite, "exec");
+    const pragmaSpy = vi.spyOn(sqlite, "pragma");
 
     const result = runSqliteMaintenance(db, {
       sqlite_analyze_enabled: true,
@@ -155,12 +157,24 @@ describe("phase 5 maintenance lifecycle", () => {
       sqlite_vacuum_min_free_ratio: 0,
     });
 
-    expect(result.analyze_ran).toBe(true);
+    expect(result.analyze_ran).toBe(false);
     expect(result.optimize_ran).toBe(true);
+    expect(execSpy).not.toHaveBeenCalledWith(expect.stringMatching(/ANALYZE/i));
+    expect(pragmaSpy).toHaveBeenCalledWith("optimize");
     expect(result.checkpoint_ran).toBe(true);
     expect(result.vacuum_ran).toBe(true);
     expect(result.page_count).toBeGreaterThan(0);
     expect(result.freelist_count).toBeGreaterThan(0);
+  });
+
+  it("defaults background maintenance to hourly", () => {
+    const previous = process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS;
+    delete process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS;
+
+    expect(loadMaintenanceConfigFromEnv().interval_seconds).toBe(3600);
+
+    if (previous === undefined) delete process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS;
+    else process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS = previous;
   });
 });
 

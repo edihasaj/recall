@@ -102,7 +102,7 @@ const DAY_MS = 86_400_000;
 export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
   return {
     enabled: process.env.RECALL_MAINTENANCE_ENABLED !== "false",
-    interval_seconds: parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "300", 10),
+    interval_seconds: parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "3600", 10),
     stale_days: parseInt(process.env.RECALL_MAINTENANCE_STALE_DAYS ?? "90", 10),
     candidate_unconfirmed_days: parseInt(process.env.RECALL_CANDIDATE_UNCONFIRMED_DAYS ?? "30", 10),
     min_health_score: parseFloat(process.env.RECALL_MAINTENANCE_MIN_HEALTH_SCORE ?? "0.2"),
@@ -368,15 +368,10 @@ export function runSqliteMaintenance(
   const freelistCount = Number((sqlite.pragma("freelist_count", { simple: true }) as number | bigint) ?? 0);
   const freeRatio = pageCount > 0 ? freelistCount / pageCount : 0;
 
-  let analyzeRan = false;
+  const analyzeRan = false;
   let optimizeRan = false;
   let checkpointRan = false;
   let vacuumRan = false;
-
-  if (config.sqlite_analyze_enabled) {
-    sqlite.exec("ANALYZE;");
-    analyzeRan = true;
-  }
 
   if (config.sqlite_wal_checkpoint_enabled) {
     const mode = shouldTruncateWal(sqlite, config.sqlite_wal_truncate_bytes)
@@ -386,7 +381,12 @@ export function runSqliteMaintenance(
     checkpointRan = true;
   }
 
-  if (config.sqlite_optimize_enabled) {
+  // A bare ANALYZE scans every index. On large stores that can take longer
+  // than the maintenance interval and keep the daemon CPU-bound indefinitely.
+  // PRAGMA optimize applies a temporary analysis limit and only updates the
+  // tables whose planner statistics need work. Treat the legacy ANALYZE flag
+  // as an opt-in to the safe optimizer so existing configuration keeps working.
+  if (config.sqlite_analyze_enabled || config.sqlite_optimize_enabled) {
     sqlite.pragma("optimize");
     optimizeRan = true;
   }

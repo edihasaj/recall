@@ -152,7 +152,7 @@ function resolveConfig(opts: SystemdOptions) {
   const port = opts.port ?? parseInt(process.env.RECALL_PORT ?? "7890", 10);
   const maintenanceIntervalSeconds =
     opts.maintenanceIntervalSeconds ??
-    parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "300", 10);
+    parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "3600", 10);
   const dataDir = resolve(
     opts.dataDir ?? process.env.RECALL_DATA_DIR ?? join(home, ".recall"),
   );

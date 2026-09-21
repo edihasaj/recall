@@ -194,7 +194,9 @@ function deserializeEmbedding(buffer: Buffer): Float32Array {
 
 function rowNeedsEmbeddingRefresh(
   row: Pick<MemoryRow, "text">,
-  existing: MemoryEmbeddingRow | undefined,
+  existing: Pick<MemoryEmbeddingRow,
+    "model" | "embedding_dimensions" | "index_dimensions" | "version" | "content_hash"
+  > | undefined,
   config: EmbeddingConfig,
 ): boolean {
   const metadata = resolveProvider(config).metadata();
@@ -453,8 +455,22 @@ export function verifyEmbeddings(
   config: EmbeddingConfig,
   options: { repo?: string } = {},
 ) {
-  const rows = db.select().from(memories).all();
-  const embeddingRows = db.select().from(memoryEmbeddings).all();
+  const rows = db.select({
+    id: memories.id,
+    repo: memories.repo,
+    text: memories.text,
+    status: memories.status,
+    confidence: memories.confidence,
+    source: memories.source,
+  }).from(memories).all();
+  const embeddingRows = db.select({
+    memory_id: memoryEmbeddings.memory_id,
+    model: memoryEmbeddings.model,
+    embedding_dimensions: memoryEmbeddings.embedding_dimensions,
+    index_dimensions: memoryEmbeddings.index_dimensions,
+    version: memoryEmbeddings.version,
+    content_hash: memoryEmbeddings.content_hash,
+  }).from(memoryEmbeddings).all();
   const embeddingById = new Map(embeddingRows.map((row) => [row.memory_id, row]));
 
   let eligible = 0;

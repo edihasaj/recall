@@ -33,7 +33,9 @@ function version(config: EmbeddingConfig) {
 
 function rowNeedsRefresh(
   row: Pick<HistorySnippetRow, "text">,
-  existing: HistorySnippetEmbeddingRow | undefined,
+  existing: Pick<HistorySnippetEmbeddingRow,
+    "model" | "embedding_dimensions" | "index_dimensions" | "version" | "content_hash"
+  > | undefined,
   config: EmbeddingConfig,
 ) {
   const metadata = resolveProvider(config).metadata();
@@ -202,9 +204,20 @@ export function verifyHistoryEmbeddings(
   config: EmbeddingConfig,
   options: { repo?: string } = {},
 ) {
-  const rows = db.select().from(historySnippets).all()
+  const rows = db.select({
+    id: historySnippets.id,
+    repo: historySnippets.repo,
+    text: historySnippets.text,
+  }).from(historySnippets).all()
     .filter((row) => !options.repo || row.repo === options.repo);
-  const embeddings = db.select().from(historySnippetEmbeddings).all();
+  const embeddings = db.select({
+    snippet_id: historySnippetEmbeddings.snippet_id,
+    model: historySnippetEmbeddings.model,
+    embedding_dimensions: historySnippetEmbeddings.embedding_dimensions,
+    index_dimensions: historySnippetEmbeddings.index_dimensions,
+    version: historySnippetEmbeddings.version,
+    content_hash: historySnippetEmbeddings.content_hash,
+  }).from(historySnippetEmbeddings).all();
   const byId = new Map(embeddings.map((row) => [row.snippet_id, row]));
 
   let eligible = 0;
