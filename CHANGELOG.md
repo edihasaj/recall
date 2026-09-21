@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.12 - 2026-09-21
+
+### Fixed
+
+- The telemetry-key migration now collapses a legacy row when its compact key
+  already exists, so partially compacted databases upgrade without a unique
+  constraint failure.
+- Database connections wait briefly for an active migration instead of making
+  concurrent setup commands fail immediately with `SQLITE_BUSY`.
+
 ## 1.4.11 - 2026-09-21
 
 ### Fixed
