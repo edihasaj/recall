@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { initStandaloneDb, RECALL_DB_USER_VERSION } from "../src/db/client.js";
+import { compactDedupeKey } from "../src/models/dedupe.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -69,16 +70,45 @@ describe("initDb fast path", () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-dedupe-migration-"));
     const path = join(dir, "test.db");
     const first = initStandaloneDb(path);
+    const legacyActivityKey = "activity\u001flegacy-payload";
+    const legacyHookKey = "hook\u001flegacy-payload";
     first.$client.prepare(`
       insert into activity_events (
         id, source, event_type, memory_ids, dedupe_key, request, result, created_at
       ) values (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run("activity-1", "cli", "query", "[]", "activity\u001flegacy-payload", "{}", "{}", new Date().toISOString());
+    `).run("activity-1", "cli", "query", "[]", legacyActivityKey, "{}", "{}", new Date().toISOString());
+    first.$client.prepare(`
+      insert into activity_events (
+        id, source, event_type, memory_ids, dedupe_key, request, result, created_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "activity-compacted",
+      "cli",
+      "query",
+      "[]",
+      compactDedupeKey("activity", legacyActivityKey),
+      "{}",
+      "{}",
+      new Date().toISOString(),
+    );
     first.$client.prepare(`
       insert into hook_calls (
         id, event, agent, dedupe_key, duration_ms, ok, created_at
       ) values (?, ?, ?, ?, ?, ?, ?)
-    `).run("hook-1", "prompt_submitted", "codex", "hook\u001flegacy-payload", 1, 1, new Date().toISOString());
+    `).run("hook-1", "prompt_submitted", "codex", legacyHookKey, 1, 1, new Date().toISOString());
+    first.$client.prepare(`
+      insert into hook_calls (
+        id, event, agent, dedupe_key, duration_ms, ok, created_at
+      ) values (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "hook-compacted",
+      "prompt_submitted",
+      "codex",
+      compactDedupeKey("hook", legacyHookKey),
+      1,
+      1,
+      new Date().toISOString(),
+    );
     first.$client.prepare(`
       delete from __drizzle_migrations
       where created_at = (select max(created_at) from __drizzle_migrations)
@@ -88,14 +118,16 @@ describe("initDb fast path", () => {
 
     const migrated = initStandaloneDb(path);
     const activityKey = migrated.$client.prepare(
-      "select dedupe_key from activity_events where id = ?",
-    ).pluck().get("activity-1") as string;
+      "select dedupe_key from activity_events limit 1",
+    ).pluck().get() as string;
     const hookKey = migrated.$client.prepare(
-      "select dedupe_key from hook_calls where id = ?",
-    ).pluck().get("hook-1") as string;
+      "select dedupe_key from hook_calls limit 1",
+    ).pluck().get() as string;
 
     expect(activityKey).toMatch(/^activity\u001fsha256:[a-f0-9]{64}$/);
     expect(hookKey).toMatch(/^hook\u001fsha256:[a-f0-9]{64}$/);
+    expect(migrated.$client.prepare("select count(*) from activity_events").pluck().get()).toBe(1);
+    expect(migrated.$client.prepare("select count(*) from hook_calls").pluck().get()).toBe(1);
     expect(Number(migrated.$client.pragma("user_version", { simple: true }))).toBe(RECALL_DB_USER_VERSION);
     migrated.$client.close();
   });

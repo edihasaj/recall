@@ -51,6 +51,7 @@ const STARTUP_WAL_TRUNCATE_BYTES = (() => {
 })();
 
 function applyPragmas(sqlite: Database.Database) {
+  sqlite.pragma("busy_timeout = 15000");
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
   sqlite.function("recall_sha256", { deterministic: true }, (value: string) =>
