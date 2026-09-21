@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.10 - 2026-09-21
+
+### Fixed
+
+- Background maintenance no longer runs a full SQLite `ANALYZE` every five
+  minutes. Recall now uses bounded `PRAGMA optimize` and runs maintenance once
+  per hour by default.
+- The daemon no longer loads the local embedding model only to warm its cache.
+  It loads the model when a query or write needs embeddings.
+- Embedding health checks read metadata without loading every stored vector
+  into daemon memory.
+
 ## 1.4.9 - 2026-09-20
 
 ### Fixed
