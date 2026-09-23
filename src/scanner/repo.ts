@@ -244,6 +244,8 @@ export function retractUnsupportedScanFacts(
     supported.add(evaluated.text);
   }
   const packageJsonBroken = isUnparseableJson(join(repoPath, "package.json"));
+  const producedManager = candidates.some((candidate) =>
+    /^Use (?:npm|pnpm|yarn|bun) as the package manager/.test(candidate.text));
 
   const retracted: string[] = [];
   for (const mem of queryMemories(db, { repo })) {
@@ -251,6 +253,11 @@ export function retractUnsupportedScanFacts(
     if (!SCAN_SOURCES.has(mem.source) || mem.scope !== "repo") continue;
     if (supported.has(mem.text)) continue;
     if (!SCAN_TEMPLATES.some((template) => template.test(mem.text))) continue;
+    // Ambiguous lockfiles produce no package-manager fact. Keep the old one
+    // while its lockfile is still there rather than leave the repo with none.
+    const named = mem.text.match(/^Use (npm|pnpm|yarn|bun) as the package manager/)?.[1];
+    if (named && !producedManager && LOCKFILES.some(([manager, file]) =>
+      manager === named && existsSync(join(repoPath, file)))) continue;
     if (mem.evidence.length === 0 || mem.evidence.some((e) => e.type !== "repo_scan")) continue;
     const files = new Set(mem.evidence.map((e) => ("file" in e ? String(e.file ?? "") : "")));
     // A half-written package.json should not wipe every fact derived from it.
@@ -271,6 +278,39 @@ export function retractUnsupportedScanFacts(
     retracted.push(mem.id);
   }
   return retracted;
+}
+
+const LOCKFILES: [string, string][] = [
+  ["pnpm", "pnpm-lock.yaml"],
+  ["yarn", "yarn.lock"],
+  ["bun", "bun.lockb"],
+  ["bun", "bun.lock"],
+  ["npm", "package-lock.json"],
+];
+
+/**
+ * The package manager a repo's lockfiles point to, or null when they
+ * disagree. Several lockfiles are common: a stray `pnpm-lock.yaml` that
+ * .gitignore hides next to the real `bun.lock`. Only git-tracked lockfiles
+ * count then, and a repo that still tracks two gets no fact rather than a
+ * guess.
+ */
+export function lockfileManager(repoPath: string): string | null {
+  const present = LOCKFILES.filter(([, file]) => existsSync(join(repoPath, file)));
+  const managers = (files: [string, string][]) => [...new Set(files.map(([manager]) => manager))];
+  if (managers(present).length <= 1) return managers(present)[0] ?? null;
+  let tracked: Set<string>;
+  try {
+    tracked = new Set(execFileSync("git", ["ls-files", "--", ...present.map(([, file]) => file)], {
+      cwd: repoPath,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split("\n").filter(Boolean));
+  } catch {
+    return null;
+  }
+  const trackedManagers = managers(present.filter(([, file]) => tracked.has(file)));
+  return trackedManagers.length === 1 ? trackedManagers[0] : null;
 }
 
 function isUnparseableJson(path: string): boolean {
@@ -306,16 +346,9 @@ function scanPackageJson(
         repo,
         "package.json",
       ));
-    } else if (existsSync(join(repoPath, "pnpm-lock.yaml"))) {
-      results.push(makeCommand("Use pnpm as the package manager", repo, "package.json"));
-    } else if (existsSync(join(repoPath, "yarn.lock"))) {
-      results.push(makeCommand("Use yarn as the package manager", repo, "package.json"));
-    } else if (existsSync(join(repoPath, "bun.lockb")) || existsSync(join(repoPath, "bun.lock"))) {
-      results.push(makeCommand("Use bun as the package manager", repo, "package.json"));
-    } else if (existsSync(join(repoPath, "package-lock.json"))) {
-      // Without this, a repo that moves to npm keeps its old "Use pnpm" fact:
-      // nothing new is produced to replace it.
-      results.push(makeCommand("Use npm as the package manager", repo, "package.json"));
+    } else {
+      const manager = lockfileManager(repoPath);
+      if (manager) results.push(makeCommand(`Use ${manager} as the package manager`, repo, "package.json"));
     }
 
     // Key scripts

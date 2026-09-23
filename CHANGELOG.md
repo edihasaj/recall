@@ -7,6 +7,11 @@
 - A repo that switched package managers kept its old "Use pnpm" fact forever.
   Scans only added facts. A scan now retracts derived facts the files no
   longer support, and it detects npm from `package-lock.json`.
+- A repo with several lockfiles got whichever came first in a fixed order.
+  spendwatch is a Bun project with a gitignored `pnpm-lock.yaml` and was told
+  to use pnpm. Only git-tracked lockfiles count now. When tracked lockfiles
+  still disagree, the scan writes no package-manager fact and keeps the old
+  one.
 - Re-scanning re-created facts that had already been rejected. A scan now
   respects the rejection, unless the scan itself retracted the fact and the
   files support it again.

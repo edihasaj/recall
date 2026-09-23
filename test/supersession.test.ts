@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { confirmMemory, createMemory, getMemory, queryMemories, rejectMemory } from "../src/models/memory.js";
 import { applySupersession, familyStance, supersessionVerdict, TOOL_FAMILIES } from "../src/contradictions/supersession.js";
-import { scanAndStore } from "../src/scanner/repo.js";
+import { lockfileManager, scanAndStore } from "../src/scanner/repo.js";
+import { execFileSync } from "node:child_process";
 import { getAuditTrail, rollbackMemory } from "../src/audit/trail.js";
 
 beforeEach(() => {
@@ -213,6 +214,26 @@ describe("scanAndStore", () => {
     writeFileSync(join(dir, "pnpm-lock.yaml"), "");
     scanAndStore(db, dir);
     expect(live(db, repo)).toContain("Use pnpm as the package manager");
+  });
+
+  it("trusts the tracked lockfile and keeps the old fact when tracked lockfiles disagree", () => {
+    const db = freshDb();
+    const dir = repoDir({ "package.json": "{}", "bun.lock": "", ".gitignore": "pnpm-lock.yaml\n" });
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["add", "bun.lock", "package.json", ".gitignore"], { cwd: dir });
+    writeFileSync(join(dir, "pnpm-lock.yaml"), "");
+    expect(lockfileManager(dir)).toBe("bun");
+
+    scanAndStore(db, dir);
+    const repo = queryMemories(db, {})[0].repo!;
+    expect(live(db, repo)).toContain("Use bun as the package manager");
+
+    writeFileSync(join(dir, "package-lock.json"), "{}");
+    execFileSync("git", ["add", "package-lock.json"], { cwd: dir });
+    expect(lockfileManager(dir)).toBeNull();
+    scanAndStore(db, dir);
+    expect(live(db, repo)).toContain("Use bun as the package manager");
+    expect(live(db, repo)).not.toContain("Use npm as the package manager");
   });
 
   it("never retracts rules read from instruction files", () => {
