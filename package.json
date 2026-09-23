@@ -6,7 +6,7 @@
   "homepage": "https://recallmemory.dev/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/edihasaj/recall.git"
+    "url": "git+https://github.com/edihasaj/recall.git"
   },
   "bugs": {
     "url": "https://github.com/edihasaj/recall/issues"
@@ -16,7 +16,7 @@
     "access": "public"
   },
   "bin": {
-    "recall": "./dist/cli.js"
+    "recall": "dist/cli.js"
   },
   "files": [
     "dist",
