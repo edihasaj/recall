@@ -7,7 +7,7 @@ Release artifacts are produced from tags named `vX.Y.Z`.
 - GitHub Pages enabled for the repository.
 - `edihasaj/homebrew-tap` and `edihasaj/homebrew-recall` taps created before the first Homebrew publish (the workflow keeps both in sync).
 - `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to both taps if Homebrew publishing should run.
-- npm trusted publishing configured for `@edihasaj/recall`, trusting the `edihasaj/recall` repository and the `release.yml` workflow with no environment. The npm job authenticates through GitHub OIDC, so it needs no `NPM_TOKEN` secret. To set it up from a logged-in npm CLI (11.5.1 or later), run `npm trust github @edihasaj/recall --repo edihasaj/recall --file release.yml`, or use the package's Settings page on npmjs.com.
+- npm trusted publishing configured for `@edihasaj/recall`, trusting the `edihasaj/recall` repository and the `release.yml` workflow with no environment. The npm job authenticates through GitHub OIDC, so it needs no `NPM_TOKEN` secret. To set it up from a logged-in npm CLI (11.20.0 or later; older CLIs get an unexplained 400 because the registry now requires an allowed action), run `npm trust github @edihasaj/recall --repo edihasaj/recall --file release.yml --allow-publish`, or use the package's Settings page on npmjs.com.
 - XcodeGen available in CI through `brew install xcodegen` (handled by the release workflow).
 
 ## Automatic Release

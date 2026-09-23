@@ -73,7 +73,7 @@ jobs:
           gh release upload "$RELEASE_TAG" "$archive" "$archive.sha256" --clobber
 
       - name: Install npm with trusted publishing support
-        run: npm install -g npm@11.13.0
+        run: npm install -g npm@11.20.0
 
       - name: Publish
         run: |
