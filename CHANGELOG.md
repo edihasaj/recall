@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The Homebrew cask now strips the quarantine attribute in a
+  `postflight_steps` block instead of `postflight`, so `brew` no longer warns
+  that the cask uses a deprecated stanza.
+
 ## 1.4.12 - 2026-09-21
 
 ### Fixed

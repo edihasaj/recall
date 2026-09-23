@@ -13,13 +13,11 @@ cask "recall" do
   binary "#{appdir}/Recall.app/Contents/Resources/Runtime/bin/recall",
          target: "recall"
 
-  postflight do
+  postflight_steps do
     # The bundle is ad-hoc signed (no Developer ID), so Gatekeeper would
     # otherwise refuse to launch it and macOS may relocate it. Strip the
     # quarantine xattr that Homebrew sets after copying the app into place.
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Recall.app"],
-                   sudo: false
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Recall.app"]
   end
 
   zap trash: [

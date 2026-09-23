@@ -24,6 +24,11 @@ describe("Homebrew cask renderer", () => {
     expect(output).toContain('binary "#{appdir}/Recall.app/Contents/Resources/Runtime/bin/recall"');
     expect(output).toContain('target: "recall"');
     expect(output).not.toContain("target_name:");
+    expect(output).toContain("postflight_steps do");
+    expect(output).toContain(
+      'run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Recall.app"]',
+    );
+    expect(output).not.toMatch(/^\s*postflight do/m);
     expect(output).not.toContain("REPLACE_WITH_RELEASE_SHA256");
   });
 });
