@@ -21,6 +21,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      # npm trusted publishing: the job exchanges a GitHub OIDC token for a
+      # short-lived publish credential, so no long-lived NPM_TOKEN is needed.
+      id-token: write
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
@@ -69,15 +72,12 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" "$archive" "$archive.sha256" --clobber
 
+      - name: Install npm with trusted publishing support
+        run: npm install -g npm@11.13.0
+
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::warning::NPM_TOKEN missing; skipping npm publish"
-            exit 0
-          fi
           pkg_version="$(node -p "require('./package.json').version")"
           tag_version="${RELEASE_TAG#v}"
           if [ "$pkg_version" != "$tag_version" ]; then
