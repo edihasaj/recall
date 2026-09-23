@@ -184,6 +184,44 @@ Trusted scan facts now bootstrap better than before:
 - softer scan facts stay candidate or get dropped if they look generic
 - repeated scans dedupe and upgrade stale scan-created memories
 - maintenance re-checks older scan-created memories and self-heals noisy rows
+- a scan retracts derived facts the files no longer support, such as
+  "Use pnpm as the package manager" after `pnpm-lock.yaml` is gone
+- a scan does not re-create a fact someone rejected, unless the scan itself
+  had retracted it and the files support it again
+
+Retraction only touches text still in the scanner's own template form. It
+skips facts a person confirmed, edited, or rolled back, facts with any user
+evidence, and rules read from `AGENTS.md` or `CLAUDE.md`.
+
+Session start re-scans a repo that Recall already knows, using the session's
+checkout. It applies only config-derived facts (lockfiles, scripts, CI,
+linters). It first compares the scan with the stored text and writes nothing
+when they match, so an unchanged repo costs about 30 ms. Instruction-file rules
+still need an explicit `recall scan`.
+
+## Supersession
+
+A newer statement replaces the older statements it contradicts. Today this
+covers tool families where a repo has one answer: JavaScript package managers
+(npm, pnpm, yarn, bun) and Python package managers (pip, uv, poetry, pipenv).
+
+When a user says "use pnpm instead of npm":
+
+- an older "Use npm as the package manager" is rejected, and the new memory's
+  `supersedes` field points at it
+- an older memory that only works with npm, such as "Run `npm run build`
+  before committing", drops to candidate so it stops being injected
+- a memory that mentions both tools ("pnpm for web, npm for the API") is left
+  alone
+
+Scope limits apply. A repo rule never replaces a global rule, and a rule in one
+repo never touches another. A repo scan may replace only another derived scan
+fact, never what a person said or wrote in an instruction file. A command such
+as "use `npm run migrate`" counts as a mention, not a choice. A narrow choice
+such as "use pnpm for e2e verification" never replaces anything.
+
+Every change is written to the audit trail with a snapshot, so
+`recall rollback` can undo it.
 
 ```mermaid
 flowchart LR

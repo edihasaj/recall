@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import { inferScope } from "./scope.js";
 import type { RecentToolCall } from "../agents/types.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
+import { applySupersession } from "../contradictions/supersession.js";
 import { qualityReasons } from "../maintenance/cleanup.js";
 import { normalizeDedupeText } from "../models/dedupe.js";
 import { redactSensitiveText } from "../security/redaction.js";
@@ -509,6 +510,8 @@ export async function processCorrection(
         );
       }
 
+      // Restating a choice makes it the newest statement again.
+      applySupersession(db, duplicate.id);
       ids.push(duplicate.id);
       continue;
     }
@@ -547,6 +550,7 @@ export async function processCorrection(
     };
 
     const id = createMemory(db, input);
+    applySupersession(db, id);
     // Phase E1: enqueue an LLM verify pass. No-op when no provider credentials
     // are configured — the task accumulates and surfaces via SessionStart for
     // the live agent to claim, or runs from the daemon dispatcher.

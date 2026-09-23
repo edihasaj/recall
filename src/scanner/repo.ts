@@ -1,16 +1,18 @@
 import { existsSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
-import { memories } from "../db/schema.js";
+import { auditTrail, memories } from "../db/schema.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
-import { createMemory, queryMemories, statusFromConfidence, type CreateMemoryInput } from "../models/memory.js";
+import { createMemory, queryMemories, rejectMemory, statusFromConfidence, type CreateMemoryInput } from "../models/memory.js";
+import { recordAudit } from "../audit/trail.js";
+import { applySupersession } from "../contradictions/supersession.js";
 import { getRepoQualityProfile, seedScannedConfidence } from "../repo/quality.js";
 import { evaluateScannedMemory } from "./signal.js";
 import { readUtf8FileIfExists } from "../security/atomic-file.js";
 
-interface ScanResult {
+export interface ScanResult {
   candidates: CreateMemoryInput[];
   repo: string;
 }
@@ -43,11 +45,16 @@ export function scanRepo(repoPath: string): ScanResult {
   return { candidates, repo: repoName };
 }
 
-export function scanAndStore(db: RecallDb, repoPath: string): string[] {
-  const { candidates, repo } = scanRepo(repoPath);
+export function scanAndStore(
+  db: RecallDb,
+  repoPath: string,
+  scan: ScanResult = scanRepo(repoPath),
+): string[] {
+  const { candidates, repo } = scan;
   const profile = getRepoQualityProfile(db, repo);
   const existing = queryMemories(db, { repo })
     .filter((mem) => mem.status !== "rejected");
+  const declined = declinedScanTexts(db, repo);
   const ids: string[] = [];
 
   for (const candidate of candidates) {
@@ -63,6 +70,10 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
     if (evaluated.action === "reject") {
       continue;
     }
+
+    // Someone already turned this fact down. Re-creating it on every scan
+    // brought rejected rules back until cleanup rejected them again.
+    if (declined.has(evaluated.text)) continue;
 
     const seededConfidence = evaluated.confidence;
     const normalizedCandidate = {
@@ -94,6 +105,7 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
     normalizedCandidate.confidence = seededConfidence;
     const id = createMemory(db, normalizedCandidate);
     ids.push(id);
+    applySupersession(db, id);
     existing.push({
       ...queryMemories(db, { repo }).find((mem) => mem.id === id)!,
       confidence: seededConfidence,
@@ -101,7 +113,175 @@ export function scanAndStore(db: RecallDb, repoPath: string): string[] {
     });
   }
 
+  retractUnsupportedScanFacts(db, repoPath, repo, candidates);
   return ids;
+}
+
+/**
+ * The part of a scan derived from config (lockfiles, scripts, CI, linters),
+ * without rules read from instruction files. Instruction lines are extracted
+ * heuristically and often come out as fragments; importing them on every
+ * session start would turn each AGENTS.md edit into a batch of noisy
+ * candidates.
+ */
+export function derivedScan(scan: ScanResult): ScanResult {
+  return {
+    ...scan,
+    candidates: scan.candidates.filter((candidate) =>
+      !(candidate.evidence ?? []).some((entry) =>
+        "file" in entry && INSTRUCTION_FILES.includes(String(entry.file)))),
+  };
+}
+
+/**
+ * Texts of scan facts that were rejected for a reason other than the files
+ * stopping to support them. A fact the scan itself retracted may come back
+ * when the files support it again (a repo switching back to pnpm).
+ */
+function declinedScanTexts(db: RecallDb, repo: string): Set<string> {
+  const rejected = db.select({ id: memories.id, text: memories.text })
+    .from(memories)
+    .where(and(
+      eq(memories.repo, repo),
+      eq(memories.status, "rejected"),
+      inArray(memories.source, ["repo_scan", "config_parse"]),
+    ))
+    .all();
+  if (rejected.length === 0) return new Set();
+  const retracted = new Set(
+    db.select({ id: auditTrail.memory_id })
+      .from(auditTrail)
+      .where(and(
+        inArray(auditTrail.memory_id, rejected.map((row) => row.id)),
+        eq(auditTrail.actor, "scan_retraction"),
+      ))
+      .all()
+      .map((row) => row.id),
+  );
+  return new Set(rejected.filter((row) => !retracted.has(row.id)).map((row) => row.text));
+}
+
+/**
+ * Cheap check for the session-start refresh: does applying this scan change
+ * anything? Reads only live scan-fact texts, so an unchanged repo costs a file
+ * scan and one small query instead of a full store pass.
+ */
+export function scanDiffersFromStore(db: RecallDb, scan: ScanResult): boolean {
+  const live = new Set(
+    db.select({ text: memories.text })
+      .from(memories)
+      .where(and(
+        eq(memories.repo, scan.repo),
+        inArray(memories.status, ["active", "candidate"]),
+        inArray(memories.source, ["repo_scan", "config_parse"]),
+      ))
+      .all()
+      .map((row) => row.text),
+  );
+  const declined = declinedScanTexts(db, scan.repo);
+  const produced = new Set<string>();
+  for (const candidate of scan.candidates) {
+    produced.add(candidate.text);
+    const evaluated = evaluateScannedMemory({
+      text: candidate.text,
+      type: candidate.type,
+      source: candidate.source,
+      confidence: candidate.confidence ?? 0.5,
+    });
+    if (evaluated.action === "reject") continue;
+    produced.add(evaluated.text);
+    if (declined.has(evaluated.text)) continue;
+    if (!live.has(evaluated.text) && !live.has(candidate.text)) return true;
+  }
+  for (const text of live) {
+    if (!produced.has(text) && SCAN_TEMPLATES.some((template) => template.test(text))) return true;
+  }
+  return false;
+}
+
+const SCAN_SOURCES = new Set(["repo_scan", "config_parse"]);
+// Text exactly as the scanner writes it. A reworded fact was curated by a
+// person or a refine pass, so a scan no longer producing the template proves
+// nothing about it.
+const SCAN_TEMPLATES = [
+  /^Use (?:npm|pnpm|yarn|bun) as the package manager(?: \(lockfile: [\w.-]+\))?$/,
+  /^(?:test|build|lint|dev|start|typecheck|check): `[^`]*`$/,
+  /^Makefile targets: /,
+  /^CI: /,
+  /^(?:Next\.js|Vue\.js|Svelte) project$/,
+  /^React project \(no Next\.js\)$/,
+  /^Server framework: \w+$/,
+  /^Linting\/formatting: /,
+  /^Setup commands from README:/,
+  /^Use `(?:uv|poetry)` for Python dependency management$/,
+  /^Uses Alembic for database migrations$/,
+];
+const HUMAN_TOUCH_ACTIONS = ["confirmed", "edited", "reactivated", "rolled_back"] as const;
+
+/**
+ * Retire scan-derived facts the files no longer support. A scan only ever
+ * added facts, so a repo that switched package managers kept telling agents to
+ * use the old one indefinitely. A fact is retired only when nothing but the
+ * scan vouches for it: no user evidence, no confirm/edit/rollback in its
+ * history, and it was derived from config rather than read from an
+ * instruction file.
+ */
+export function retractUnsupportedScanFacts(
+  db: RecallDb,
+  repoPath: string,
+  repo: string,
+  candidates: CreateMemoryInput[],
+): string[] {
+  const supported = new Set<string>();
+  for (const candidate of candidates) {
+    supported.add(candidate.text);
+    const evaluated = evaluateScannedMemory({
+      text: candidate.text,
+      type: candidate.type,
+      source: candidate.source,
+      confidence: candidate.confidence ?? 0.5,
+    });
+    supported.add(evaluated.text);
+  }
+  const packageJsonBroken = isUnparseableJson(join(repoPath, "package.json"));
+
+  const retracted: string[] = [];
+  for (const mem of queryMemories(db, { repo })) {
+    if (mem.status !== "active" && mem.status !== "candidate") continue;
+    if (!SCAN_SOURCES.has(mem.source) || mem.scope !== "repo") continue;
+    if (supported.has(mem.text)) continue;
+    if (!SCAN_TEMPLATES.some((template) => template.test(mem.text))) continue;
+    if (mem.evidence.length === 0 || mem.evidence.some((e) => e.type !== "repo_scan")) continue;
+    const files = new Set(mem.evidence.map((e) => ("file" in e ? String(e.file ?? "") : "")));
+    // A half-written package.json should not wipe every fact derived from it.
+    if (packageJsonBroken && files.has("package.json")) continue;
+    // Rules read from AGENTS.md/CLAUDE.md are a person's words, and older
+    // scans stored paraphrases, so a missing line proves nothing. Only facts
+    // the scanner derives from config are retracted.
+    if ([...files].some((file) => INSTRUCTION_FILES.includes(file))) continue;
+    const touched = db.select({ id: auditTrail.id })
+      .from(auditTrail)
+      .where(and(eq(auditTrail.memory_id, mem.id), inArray(auditTrail.action, [...HUMAN_TOUCH_ACTIONS])))
+      .get();
+    if (touched) continue;
+
+    rejectMemory(db, mem.id, "scan_retraction");
+    recordAudit(db, mem.id, "pruned", "scan_retraction",
+      `no longer found by repo scan in ${[...files].filter(Boolean).join(", ") || "repo files"}`);
+    retracted.push(mem.id);
+  }
+  return retracted;
+}
+
+function isUnparseableJson(path: string): boolean {
+  try {
+    const raw = readUtf8FileIfExists(path);
+    if (raw === null) return false;
+    JSON.parse(raw);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 // --- Scanners ---
@@ -132,6 +312,10 @@ function scanPackageJson(
       results.push(makeCommand("Use yarn as the package manager", repo, "package.json"));
     } else if (existsSync(join(repoPath, "bun.lockb")) || existsSync(join(repoPath, "bun.lock"))) {
       results.push(makeCommand("Use bun as the package manager", repo, "package.json"));
+    } else if (existsSync(join(repoPath, "package-lock.json"))) {
+      // Without this, a repo that moves to npm keeps its old "Use pnpm" fact:
+      // nothing new is produced to replace it.
+      results.push(makeCommand("Use npm as the package manager", repo, "package.json"));
     }
 
     // Key scripts
@@ -234,19 +418,19 @@ function scanCIConfig(
   return results;
 }
 
+const INSTRUCTION_FILES = [
+  "CLAUDE.md",
+  "AGENTS.md",
+  ".github/copilot-instructions.md",
+  ".cursorrules",
+];
+
 function scanInstructionFiles(
   repoPath: string,
   repo: string,
 ): CreateMemoryInput[] {
   const results: CreateMemoryInput[] = [];
-  const instructionFiles = [
-    "CLAUDE.md",
-    "AGENTS.md",
-    ".github/copilot-instructions.md",
-    ".cursorrules",
-  ];
-
-  for (const file of instructionFiles) {
+  for (const file of INSTRUCTION_FILES) {
     const fPath = join(repoPath, file);
 
     try {

@@ -5,6 +5,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
+import { queryMemories } from "../src/models/memory.js";
 import {
   endSessionLifecycle,
   recordSessionLifecycleEvent,
@@ -94,7 +95,7 @@ describe("session lifecycle", () => {
     expect(events[0].result.exit_code).toBe(0);
   }, 10_000);
 
-  it("does not rescan known repos on later session starts", () => {
+  it("does not re-bootstrap known repos on later session starts", () => {
     const db = freshDb();
     const repoRoot = mkdtempSync(join(tmpdir(), "recall-session-repeat-"));
     makeRepo(repoRoot, "https://github.com/edihasaj/session-repeat.git");
@@ -117,5 +118,36 @@ describe("session lifecycle", () => {
       event_type: "scan",
     });
     expect(scanEvents).toHaveLength(1);
+  });
+
+  it("refreshes derived facts when a known repo changes package manager", () => {
+    const db = freshDb();
+    const repoRoot = mkdtempSync(join(tmpdir(), "recall-session-switch-"));
+    makeRepo(repoRoot, "https://github.com/edihasaj/session-switch.git");
+    const liveTexts = () => queryMemories(db, { repo: "edihasaj/session-switch" })
+      .filter((m) => m.status !== "rejected")
+      .map((m) => m.text);
+
+    startSessionLifecycle(db, { session_id: "sess-1", client: "claude", repo_path: repoRoot });
+    expect(liveTexts().some((t) => t.startsWith("Use pnpm as the package manager"))).toBe(true);
+
+    writeFileSync(join(repoRoot, "package.json"), JSON.stringify({ name: "fixture", packageManager: "npm@11.0.0" }));
+    startSessionLifecycle(db, { session_id: "sess-2", client: "claude", repo_path: join(repoRoot) });
+
+    expect(liveTexts().some((t) => t.startsWith("Use pnpm as the package manager"))).toBe(false);
+    expect(liveTexts()).toContain("Use npm as the package manager (lockfile: package-lock.json)");
+  });
+
+  it("leaves instruction-file rules to an explicit scan on refresh", () => {
+    const db = freshDb();
+    const repoRoot = mkdtempSync(join(tmpdir(), "recall-session-agents-"));
+    makeRepo(repoRoot, "https://github.com/edihasaj/session-agents.git");
+    startSessionLifecycle(db, { session_id: "sess-1", client: "claude", repo_path: repoRoot });
+
+    writeFileSync(join(repoRoot, "AGENTS.md"), "- Always run the full gate before handing off work.\n");
+    startSessionLifecycle(db, { session_id: "sess-2", client: "claude", repo_path: repoRoot });
+
+    const texts = queryMemories(db, { repo: "edihasaj/session-agents" }).map((m) => m.text);
+    expect(texts).not.toContain("Always run the full gate before handing off work.");
   });
 });

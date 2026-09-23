@@ -14,6 +14,7 @@ import {
   updateMemoryCaptureContext,
 } from "../models/memory.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
+import { applySupersession } from "../contradictions/supersession.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import type { CaptureContext, EvidenceEntry, MaintenanceTask, MemoryType } from "../types.js";
 import type { RecentToolCall } from "../agents/types.js";
@@ -515,6 +516,7 @@ export function applyExtractRulesFromPrompt(
           after ?? null,
         );
       }
+      applySupersession(db, duplicate.id);
       reinforcedIds.push(duplicate.id);
       continue;
     }
@@ -532,6 +534,7 @@ export function applyExtractRulesFromPrompt(
       capture_context: captureContext,
     });
     createdIds.push(id);
+    applySupersession(db, id);
 
     const after = getMemory(db, id);
     recordAuditWithSnapshot(

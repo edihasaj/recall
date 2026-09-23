@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A repo that switched package managers kept its old "Use pnpm" fact forever.
+  Scans only added facts. A scan now retracts derived facts the files no
+  longer support, and it detects npm from `package-lock.json`.
+- Re-scanning re-created facts that had already been rejected. A scan now
+  respects the rejection, unless the scan itself retracted the fact and the
+  files support it again.
+
+### Added
+
+- A newer user statement replaces older conflicting package-manager choices.
+  Memories written around the replaced tool drop to candidate. Every change is
+  audited and can be rolled back. See Supersession in `ARCHITECTURE.md`.
+- Session start re-scans a known repo's config-derived facts from the local
+  checkout. It writes nothing when the files have not changed.
+
 ## 1.4.14 - 2026-09-23
 
 ### Fixed

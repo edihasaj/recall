@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import type { RecallDb } from "../db/client.js";
 import { queryMemories } from "../models/memory.js";
-import { scanAndStore } from "../scanner/repo.js";
+import { derivedScan, scanAndStore, scanDiffersFromStore, scanRepo } from "../scanner/repo.js";
 
 const repoPathCache = new Map<string, string | null>();
 
@@ -142,6 +142,26 @@ export function resolveLocalRepoPath(
   const fallback = basenameMatches.length === 1 ? basenameMatches[0] : null;
   repoPathCache.set(normalizedRepo, fallback);
   return fallback;
+}
+
+/**
+ * Re-scan an already-known repo from the session's own checkout, so facts
+ * derived from lockfiles and scripts follow the files instead of the day the
+ * repo was first seen. Uses only the hint; never walks search roots, because
+ * this runs on every session start. Instruction-file rules are left to an
+ * explicit `recall scan`.
+ */
+export function refreshKnownRepoScan(
+  db: RecallDb,
+  repo: string,
+  repoPathHint?: string | null,
+): { repo_path: string; ids: string[] } | null {
+  const normalizedRepo = normalizeRepoSlug(repo);
+  const root = normalizeRepoPathHint(repoPathHint);
+  if (!normalizedRepo || !root || !pathMatchesRepo(root, normalizedRepo)) return null;
+  const scan = derivedScan(scanRepo(root));
+  if (!scanDiffersFromStore(db, scan)) return { repo_path: root, ids: [] };
+  return { repo_path: root, ids: scanAndStore(db, root, scan) };
 }
 
 export function inferRepoSlugFromPath(repoPath?: string | null): string | null {

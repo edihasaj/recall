@@ -1,6 +1,6 @@
 import type { RecallDb } from "../db/client.js";
 import { createActivityEvent } from "../models/activity.js";
-import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "../repo/discovery.js";
+import { ensureRepoBootstrapped, inferRepoSlugFromPath, refreshKnownRepoScan } from "../repo/discovery.js";
 import { writeRepoContextArtifact } from "../artifacts/context.js";
 import type { ActivitySource } from "../types.js";
 import { tagActivitySource } from "../types.js";
@@ -62,6 +62,14 @@ export function startSessionLifecycle(
         status: bootstrap.status,
       },
     });
+  }
+
+  if (bootstrap.status === "already_known" && bootstrap.repo && input.repo_path) {
+    try {
+      refreshKnownRepoScan(db, bootstrap.repo, input.repo_path);
+    } catch {
+      // A failed refresh must never block a session from starting.
+    }
   }
 
   const artifact = writeRepoContextArtifact(db, {
