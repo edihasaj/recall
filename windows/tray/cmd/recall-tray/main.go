@@ -20,6 +20,7 @@ import (
 	"github.com/edihasaj/recall/windows/tray/internal/autostart"
 	"github.com/edihasaj/recall/windows/tray/internal/daemon"
 	"github.com/edihasaj/recall/windows/tray/internal/dashboard"
+	traystatus "github.com/edihasaj/recall/windows/tray/internal/status"
 	"github.com/edihasaj/recall/windows/tray/internal/webui"
 )
 
@@ -63,7 +64,12 @@ func main() {
 type state struct {
 	mgr          *daemon.Manager
 	webui        *webui.Manager
+	status       *traystatus.Manager
+	mVersion     *systray.MenuItem
 	mStatus      *systray.MenuItem
+	mSetup       *systray.MenuItem
+	mAgents      *systray.MenuItem
+	mData        *systray.MenuItem
 	mWebUI       *systray.MenuItem // disabled status row
 	mWebUIToggle *systray.MenuItem // start/stop click target
 	mAuto        *systray.MenuItem
@@ -77,12 +83,23 @@ func onReady() {
 	systray.SetTitle("Recall")
 	systray.SetTooltip("Recall — starting…")
 
-	mOpen := systray.AddMenuItem("Open Dashboard", "Open the Recall web UI in your browser")
-	s.mStatus = systray.AddMenuItem("Status: starting…", "Daemon health")
+	s.mVersion = systray.AddMenuItem("Recall "+version, "Installed Recall tray version")
+	s.mVersion.Disable()
+	s.mStatus = systray.AddMenuItem("Daemon: starting…", "Daemon health")
 	s.mStatus.Disable()
+	s.mSetup = systray.AddMenuItem("Setup: checking…", "Agent integration status")
+	s.mSetup.Disable()
+	s.mAgents = systray.AddMenuItem("Agents: checking…", "Detected agent integrations")
+	s.mAgents.Disable()
+	s.mData = systray.AddMenuItem("Data: checking…", "Recall data directory")
+	s.mData.Disable()
 	s.mWebUI = systray.AddMenuItem("WebUI: …", "Web UI server state")
 	s.mWebUI.Disable()
+	systray.AddSeparator()
+	mOpen := systray.AddMenuItem("Open Dashboard", "Open the Recall web UI in your browser")
+	mCloud := systray.AddMenuItem("Recall Cloud…", "Open Recall Cloud in your browser")
 	s.mWebUIToggle = systray.AddMenuItem("Start Dashboard", "Start the local web UI server")
+	mRefresh := systray.AddMenuItem("Refresh Status", "Refresh daemon, setup, and WebUI status")
 	systray.AddSeparator()
 	mRestart := systray.AddMenuItem("Restart Daemon", "Stop and start the recall daemon child process")
 	s.mAuto = systray.AddMenuItemCheckbox("Start at login", "Toggle the per-user Run-key entry", currentAutostart())
@@ -107,9 +124,12 @@ func onReady() {
 			log.Printf("daemon start failed: %v", err)
 		}
 		go s.mgr.Watch(ctx, 3*time.Second, repaintHealth)
-		// Webui state tracks the same daemon process on the same port.
-		s.webui = webui.New(fmt.Sprintf("http://localhost:%d", s.mgr.Port))
+		baseURL := fmt.Sprintf("http://localhost:%d", s.mgr.Port)
+		// Webui and setup state track the same local daemon.
+		s.webui = webui.New(baseURL)
 		go s.webui.Watch(ctx, 3*time.Second, repaintWebUI)
+		s.status = traystatus.New(baseURL)
+		go s.status.Watch(ctx, 10*time.Second, repaintDoctor)
 	}
 
 	mOpen.Click(func() {
@@ -135,13 +155,21 @@ func onReady() {
 			log.Printf("dashboard open failed: %v", err)
 		}
 	})
+	mCloud.Click(func() {
+		if err := dashboard.Open("https://app.recallmemory.dev"); err != nil {
+			log.Printf("recall cloud open failed: %v", err)
+		}
+	})
+	mRefresh.Click(func() { refreshStatus(ctx) })
 	mRestart.Click(func() {
 		if s.mgr == nil {
 			return
 		}
 		if err := s.mgr.Restart(ctx); err != nil {
 			log.Printf("daemon restart failed: %v", err)
+			return
 		}
+		refreshStatus(ctx)
 	})
 	s.mWebUIToggle.Click(func() { toggleWebUI(ctx) })
 	s.mAuto.Click(toggleAutostart)
@@ -164,10 +192,49 @@ func onExit() {
 func repaintHealth(healthy bool) {
 	if healthy {
 		systray.SetTooltip("Recall — running on localhost:7890")
-		s.mStatus.SetTitle("Status: healthy")
+		s.mStatus.SetTitle("Daemon: ● healthy")
 	} else {
 		systray.SetTooltip("Recall — daemon down")
-		s.mStatus.SetTitle("Status: not responding")
+		s.mStatus.SetTitle("Daemon: ○ not responding")
+	}
+}
+
+func repaintDoctor(report traystatus.Report, ok bool) {
+	if !ok {
+		s.mSetup.SetTitle("Setup: ?")
+		s.mAgents.SetTitle("Agents: ?")
+		s.mData.SetTitle("Data: ?")
+		return
+	}
+	if report.Version != "" {
+		s.mVersion.SetTitle("Recall v" + report.Version)
+	}
+	s.mSetup.SetTitle("Setup: " + report.SetupLabel())
+	s.mAgents.SetTitle("Agents: " + report.AgentsLabel())
+	if report.DBPath == "" {
+		s.mData.SetTitle("Data: unknown")
+	} else {
+		s.mData.SetTitle("Data: " + filepath.Dir(report.DBPath))
+	}
+}
+
+func refreshStatus(ctx context.Context) {
+	if s.status != nil {
+		report, err := s.status.Refresh(ctx)
+		repaintDoctor(report, err == nil)
+		if err != nil {
+			log.Printf("doctor status refresh failed: %v", err)
+		}
+	}
+	if s.webui != nil {
+		st, err := s.webui.Refresh(ctx)
+		repaintWebUI(st, err == nil)
+		if err != nil {
+			log.Printf("webui status refresh failed: %v", err)
+		}
+	}
+	if s.mgr != nil {
+		repaintHealth(s.mgr.Healthy())
 	}
 }
 
