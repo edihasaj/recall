@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.16 - 2026-09-24
+
+### Fixed
+
+- Tool events recorded `exit_code: 0` for every call, so Recall never saw a
+  failed command. Claude Code failures now arrive through a
+  `PostToolUseFailure` hook, and Codex exit codes are read from
+  `tool_response`. Run `recall setup` to install the new Claude Code hook.
+
+### Added
+
+- Recall learns commands that do not exist in a repo. After the same command
+  fails with a "missing script" or "command not found" error in two sessions,
+  Recall stores a repo gotcha telling agents not to run it, and retires it
+  once the command succeeds.
+
 ## 1.4.15 - 2026-09-24
 
 ### Fixed

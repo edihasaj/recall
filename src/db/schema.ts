@@ -21,6 +21,7 @@ export const memories = sqliteTable("memories", {
       "user_reported_review",
       "repo_scan",
       "config_parse",
+      "tool_outcome",
     ],
   }).notNull(),
   evidence: text("evidence", { mode: "json" }).notNull().default("[]"),

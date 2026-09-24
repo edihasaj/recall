@@ -250,6 +250,14 @@ function buildManagedGroups(
         hooks: [commandHook(`${commandPrefix} hook tool --agent claude-code --claude-code-stdin`, "tool")],
       },
     ];
+    // PostToolUse fires only for successful calls. Without this group Recall
+    // never saw a failed command, so every stored exit code was 0.
+    groups.PostToolUseFailure = [
+      {
+        matcher: "Bash",
+        hooks: [commandHook(`${commandPrefix} hook tool --agent claude-code --claude-code-stdin`, "tool")],
+      },
+    ];
   }
 
   if (installedEvents.size === 0 || installedEvents.has("session_ended")) {

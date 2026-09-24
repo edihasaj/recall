@@ -223,6 +223,26 @@ such as "use pnpm for e2e verification" never replaces anything.
 Every change is written to the audit trail with a snapshot, so
 `recall rollback` can undo it.
 
+## Tool Outcomes
+
+The tool hook records each call's real exit code. Claude Code reports failed
+calls through a separate `PostToolUseFailure` event, whose error text starts
+with `Exit code N`; Recall registers it for Bash. Codex sends one
+`PostToolUse` event, and Recall reads the exit code from its `tool_response`.
+Before this, both hooks stored `exit_code: 0` for every call.
+
+Recall learns one thing from failures: a command that does not exist in a
+repo. When the same command (`pnpm docs:list`, `npm run lint`, `make deploy`)
+fails with a "missing script", "command not found" or "no rule to make
+target" error in two sessions, with no success in between, Recall writes an
+active repo gotcha telling agents not to run it. A failing test teaches
+nothing and is ignored. When the command later succeeds, the gotcha is
+rejected. These memories use the `tool_outcome` source.
+
+A backtest over the local Codex and Claude transcripts found few such cases
+(3 memories, 9 repeat failures). Most wasted `docs:list` probes were chained
+with `|| true` and exited 0, so no exit-code learner can see them.
+
 ```mermaid
 flowchart LR
     Repo[Repository Files]

@@ -26,6 +26,7 @@ import { peekTasks } from "../maintenance/tasks.js";
 import { isWorkspaceRootAlias } from "../maintenance/cleanup.js";
 import { compileContext, compileContextHybrid } from "../compiler/context.js";
 import { hookCallDedupeKey } from "../models/dedupe.js";
+import { isShellTool, learnFromToolOutcome, toolOutcomeFromPayload } from "../feedback/tool-outcomes.js";
 import { redactSensitiveText } from "../security/redaction.js";
 import {
   detectAndRecordRetrievalMissesSemantic,
@@ -62,6 +63,8 @@ export interface PromptHookInput {
 export interface ToolHookInput {
   name: string;
   exit_code: number;
+  /** Error text for a failed call; feeds tool-outcome learning. */
+  error?: string;
   repo?: string;
   repo_path?: string;
   session_id?: string;
@@ -152,6 +155,8 @@ interface ClaudeCodeHookPayload {
   source?: string;
   tool_input?: Record<string, unknown>;
   tool_name?: string;
+  tool_response?: unknown;
+  error?: unknown;
   transcript_path?: string;
 }
 
@@ -433,6 +438,9 @@ export async function handleToolHook(
       exit_code: input.exit_code,
     } satisfies RecentToolCall;
 
+    const toolError = input.exit_code !== 0 && input.error
+      ? truncateText(redactSensitiveText(input.error), 600)
+      : undefined;
     createActivityEvent(db, {
       session_id: sessionId,
       repo,
@@ -446,9 +454,24 @@ export async function handleToolHook(
       },
       result: {
         tool_call: toolCall,
+        ...(toolError ? { tool_error: toolError } : {}),
         invoked_at: new Date().toISOString(),
       },
     });
+
+    if (isShellTool(name)) {
+      try {
+        learnFromToolOutcome(db, {
+          repo,
+          session_id: sessionId,
+          command: toolCall.input_summary,
+          exit_code: input.exit_code,
+          error: toolError,
+        });
+      } catch {
+        // Learning is best effort; the tool event is already stored.
+      }
+    }
 
     await resolvePendingInjectionOutcomesOnTool(
       db,
@@ -925,9 +948,12 @@ async function readPromptInputFromStdin(agent: "claude-code" | "codex"): Promise
 
 async function readToolInputFromStdin(agent: "claude-code" | "codex"): Promise<ToolHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
+  // Hardcoding 0 here recorded every failed command as a success.
+  const outcome = toolOutcomeFromPayload(payload);
   return {
     agent,
-    exit_code: 0,
+    exit_code: outcome.exit_code,
+    error: outcome.error,
     input_summary: summarizeClaudeToolInput(payload.tool_name, payload.tool_input),
     name: requireNonEmpty(payload.tool_name ?? "", "tool_name"),
     path: extractClaudeToolPath(payload.tool_input),

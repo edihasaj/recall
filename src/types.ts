@@ -27,6 +27,7 @@ export const MemorySource = z.enum([
   "user_reported_review",
   "repo_scan",
   "config_parse",
+  "tool_outcome",
 ]);
 export type MemorySource = z.infer<typeof MemorySource>;
 
@@ -57,6 +58,14 @@ export const EvidenceEntry = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("repo_scan"),
     file: z.string(),
+    timestamp: z.string(),
+  }),
+  z.object({
+    type: z.literal("tool_outcome"),
+    session: z.string(),
+    command: z.string(),
+    exit_code: z.number(),
+    error: z.string().optional(),
     timestamp: z.string(),
   }),
   z.object({
