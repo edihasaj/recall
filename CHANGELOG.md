@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The Windows tray now shows daemon health, setup state, detected agents, and
+  the data directory, with Recall Cloud and Refresh Status actions. Thanks to
+  Francisco Cedermaz (@francedermaz) for contributing this feature.
+
 ## 1.4.16 - 2026-09-24
 
 ### Fixed
