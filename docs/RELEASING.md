@@ -51,11 +51,12 @@ node dist/cli.js reliability --canary --real-embeddings
 
 The release workflows publish the npm package, build `Recall.app`, package it as `Recall.app.zip`, write `Recall.app.zip.sha256`, build both Windows tray architectures, create a GitHub Release if needed, and upload all platform assets.
 
-The daemon's `/update` endpoint waits until these six release assets are all
+The daemon's `/update` endpoint waits until these seven release assets are all
 uploaded before either desktop app offers an update: the npm package and
-checksum, the macOS app and checksum, and both Windows tray architectures.
-The published npm package includes the PowerShell installer used by the tray's
-in-app update action.
+checksum, the macOS app and checksum, both Windows tray architectures, and a
+checksummed `Recall-Install.ps1` asset. The Windows tray verifies that script
+before launching it. The published npm package also includes the same
+PowerShell installer for manual use.
 
 The `X.Y.Z` in the tag must match the npm package, macOS app short version,
 bundled runtime, and both Windows tray binaries. Release jobs check these values

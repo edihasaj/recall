@@ -412,8 +412,8 @@ curl -s -X POST http://localhost:7890/correct \
 and upgrade signal as JSON. The Windows tray uses this local status report;
 `recall doctor` performs the full audit.
 `GET /update` compares the installed runtime with GitHub's latest complete
-release. It offers an update only after the package, macOS app, and both Windows
-tray assets have finished uploading.
+release. It offers an update only after the package, macOS app, both Windows
+tray binaries, and the checksummed updater have finished uploading.
 
 Session collector endpoints:
 

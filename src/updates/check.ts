@@ -4,6 +4,7 @@ const READY_FOR_INSTALL = [
   "Recall.app.zip.sha256",
   "recall-tray-amd64.exe",
   "recall-tray-arm64.exe",
+  "Recall-Install.ps1",
 ] as const;
 const READY_TTL_MS = 30 * 60 * 1000;
 const RETRY_TTL_MS = 5 * 60 * 1000;
@@ -15,6 +16,7 @@ export interface UpdateReport {
   available: boolean;
   ready: boolean;
   release_url: string | null;
+  installer_sha256: string | null;
   checked_at: string | null;
   error?: string;
 }
@@ -22,6 +24,7 @@ export interface UpdateReport {
 interface ReleaseInfo {
   version: string;
   ready: boolean;
+  installerSha256: string | null;
   checkedAt: string;
 }
 
@@ -83,6 +86,7 @@ export class ReleaseChecker {
       available: Boolean(latest?.ready && newer),
       ready: latest?.ready ?? false,
       release_url: latest ? `https://github.com/edihasaj/recall/releases/tag/v${latest.version}` : null,
+      installer_sha256: latest?.installerSha256 ?? null,
       checked_at: latest?.checkedAt ?? null,
       ...(error ? { error } : {}),
     };
@@ -103,18 +107,24 @@ export class ReleaseChecker {
       throw new Error("latest release has no stable version");
     }
     const version = tag.slice(1);
-    const assets = new Set(
+    const uploaded =
       (Array.isArray(raw.assets) ? raw.assets : [])
-        .filter((asset): asset is { name: string; state: string } =>
+        .filter((asset): asset is { name: string; state: string; digest?: string } =>
           typeof asset === "object" && asset !== null &&
-          typeof asset.name === "string" && asset.state === "uploaded")
-        .map((asset) => asset.name),
-    );
+          typeof asset.name === "string" && asset.state === "uploaded");
+    const assets = new Set(uploaded.map((asset) => asset.name));
+    const installer = uploaded.find((asset) => asset.name === "Recall-Install.ps1");
+    const installerDigest = /^sha256:([a-fA-F0-9]{64})$/.exec(installer?.digest ?? "");
     const ready = [...READY_FOR_INSTALL,
       `edihasaj-recall-${version}.tgz`,
       `edihasaj-recall-${version}.tgz.sha256`,
-    ].every((name) => assets.has(name));
-    return { version, ready, checkedAt: new Date(this.now()).toISOString() };
+    ].every((name) => assets.has(name)) && installerDigest !== null;
+    return {
+      version,
+      ready,
+      installerSha256: installerDigest?.[1]?.toLowerCase() ?? null,
+      checkedAt: new Date(this.now()).toISOString(),
+    };
   }
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,12 +13,13 @@ import (
 
 // Report is the daemon's cached release check.
 type Report struct {
-	CurrentVersion string `json:"current_version"`
-	LatestVersion  string `json:"latest_version"`
-	Available      bool   `json:"available"`
-	Ready          bool   `json:"ready"`
-	ReleaseURL     string `json:"release_url"`
-	Error          string `json:"error"`
+	CurrentVersion  string `json:"current_version"`
+	LatestVersion   string `json:"latest_version"`
+	Available       bool   `json:"available"`
+	Ready           bool   `json:"ready"`
+	ReleaseURL      string `json:"release_url"`
+	InstallerSHA256 string `json:"installer_sha256"`
+	Error           string `json:"error"`
 }
 
 type Manager struct {
@@ -123,8 +123,4 @@ func IsNewer(latest, current string) bool {
 		}
 	}
 	return false
-}
-
-func InstallerPath(daemonScript string) string {
-	return filepath.Join(filepath.Dir(filepath.Dir(daemonScript)), "scripts", "install.ps1")
 }

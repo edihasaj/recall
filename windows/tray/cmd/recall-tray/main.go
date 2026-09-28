@@ -180,20 +180,23 @@ func onReady() {
 		if !ok || !report.Ready || !trayupdate.IsNewer(report.LatestVersion, version) {
 			return
 		}
-		installer := trayupdate.InstallerPath(s.mgr.DaemonJS)
-		if _, err := os.Stat(installer); err != nil {
+		if report.InstallerSHA256 == "" {
 			if report.ReleaseURL != "" {
 				_ = dashboard.Open(report.ReleaseURL)
 			}
 			return
 		}
-		s.mUpdate.SetTitle("Starting Recall v" + report.LatestVersion + " update…")
-		if err := trayupdate.StartInstaller(s.mgr.DaemonJS, report.LatestVersion, os.Getpid()); err != nil {
-			log.Printf("update launch failed: %v", err)
-			s.mUpdate.SetTitle("Update failed to start · try again")
-			return
-		}
-		systray.Quit()
+		s.mUpdate.SetTitle("Downloading verified updater…")
+		s.mUpdate.Disable()
+		go func() {
+			if err := trayupdate.StartInstaller(report.LatestVersion, report.InstallerSHA256, os.Getpid()); err != nil {
+				log.Printf("update launch failed: %v", err)
+				s.mUpdate.SetTitle("Update failed to start · try again")
+				s.mUpdate.Enable()
+				return
+			}
+			systray.Quit()
+		}()
 	})
 	mRestart.Click(func() {
 		if s.mgr == nil {

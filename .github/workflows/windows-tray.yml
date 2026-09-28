@@ -104,3 +104,12 @@ jobs:
             }
           }
           gh release upload "$env:RELEASE_TAG" "recall-tray-${{ matrix.arch }}.exe" --clobber
+
+      - name: Attach in-app updater
+        if: matrix.arch == 'amd64' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Copy-Item scripts/install.ps1 Recall-Install.ps1
+          gh release upload "$env:RELEASE_TAG" Recall-Install.ps1 --clobber

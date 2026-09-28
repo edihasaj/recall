@@ -4,14 +4,16 @@ import { compareVersions, ReleaseChecker } from "../src/updates/check.js";
 function release(version: string, complete = true) {
   const names = [
     "Recall.app.zip", "Recall.app.zip.sha256",
-    "recall-tray-amd64.exe", "recall-tray-arm64.exe",
+    "recall-tray-amd64.exe", "recall-tray-arm64.exe", "Recall-Install.ps1",
     `edihasaj-recall-${version}.tgz`, `edihasaj-recall-${version}.tgz.sha256`,
   ];
   return {
     tag_name: `v${version}`,
     draft: false,
     prerelease: false,
-    assets: names.slice(0, complete ? names.length : 4).map((name) => ({ name, state: "uploaded" })),
+    assets: names.slice(0, complete ? names.length : 4).map((name) => ({
+      name, state: "uploaded", digest: name === "Recall-Install.ps1" ? `sha256:${"a".repeat(64)}` : null,
+    })),
   };
 }
 
@@ -35,6 +37,7 @@ describe("desktop update availability", () => {
     expect((await checker.check("1.4.17")).release_url).toBe(
       "https://github.com/edihasaj/recall/releases/tag/v1.4.18",
     );
+    expect((await checker.check("1.4.17")).installer_sha256).toBe("a".repeat(64));
     expect(fetchRelease).toHaveBeenCalledTimes(2);
   });
 
@@ -44,6 +47,16 @@ describe("desktop update availability", () => {
     expect(result.available).toBe(false);
     expect(result.latest_version).toBeNull();
     expect(result.error).toBe("Could not check for updates");
+  });
+
+  it("requires a checksummed installer before offering an update", async () => {
+    const incomplete = release("1.4.18");
+    incomplete.assets[incomplete.assets.length - 3]!.digest = null;
+    const checker = new ReleaseChecker(async () => ({ ok: true, json: async () => incomplete } as Response));
+    const result = await checker.check("1.4.17");
+    expect(result.ready).toBe(false);
+    expect(result.available).toBe(false);
+    expect(result.installer_sha256).toBeNull();
   });
 
   it("limits repeated manual checks while still allowing a fresh check", async () => {

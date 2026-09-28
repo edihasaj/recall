@@ -3,42 +3,52 @@
 package update
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
+	"time"
 )
 
 const createNewConsole = 0x00000010
 
-// StartInstaller copies the packaged installer outside npm's replaceable tree,
+// StartInstaller downloads the verified release installer to a stable location,
 // then starts it in a separate console. The tray exits only after Start succeeds.
-func StartInstaller(daemonScript, latestVersion string, trayPID int) error {
+func StartInstaller(latestVersion, installerSHA256 string, trayPID int) error {
 	if !IsNewer(latestVersion, "0.0.0") {
 		return fmt.Errorf("invalid update version %q", latestVersion)
 	}
-	latestVersion = strings.TrimPrefix(latestVersion, "v")
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
 		return fmt.Errorf("LOCALAPPDATA is unavailable")
 	}
-	script, err := os.ReadFile(InstallerPath(daemonScript))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	script, err := DownloadInstaller(ctx, latestVersion, installerSHA256)
 	if err != nil {
-		return fmt.Errorf("updater script unavailable: %w", err)
+		return err
 	}
 	updateDir := filepath.Join(localAppData, "Recall", "updates")
 	if err := os.MkdirAll(updateDir, 0o700); err != nil {
 		return err
 	}
-	staged := filepath.Join(updateDir, fmt.Sprintf("install-%s-%d.ps1", latestVersion, trayPID))
-	if err := os.WriteFile(staged, script, 0o600); err != nil {
+	file, err := os.CreateTemp(updateDir, "install-*.ps1")
+	if err != nil {
+		return err
+	}
+	staged := file.Name()
+	if _, err := file.Write(script); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
 		return err
 	}
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-		"-File", staged, "-Version", latestVersion, "-WaitForPid", strconv.Itoa(trayPID))
+		"-File", staged, "-Version", trimVersionPrefix(latestVersion), "-WaitForPid", strconv.Itoa(trayPID))
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNewConsole}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start updater: %w", err)
