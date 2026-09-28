@@ -191,7 +191,7 @@ jobs:
           out_dir="dist/release"
           mkdir -p "$out_dir"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "$out_dir/Recall.app.zip"
-          shasum -a 256 "$out_dir/Recall.app.zip" | tee "$out_dir/Recall.app.zip.sha256"
+          (cd "$out_dir" && shasum -a 256 Recall.app.zip > Recall.app.zip.sha256)
           sha="$(cut -d ' ' -f 1 "$out_dir/Recall.app.zip.sha256")"
           echo "zip=$out_dir/Recall.app.zip" >> "$GITHUB_OUTPUT"
           echo "sha_file=$out_dir/Recall.app.zip.sha256" >> "$GITHUB_OUTPUT"
