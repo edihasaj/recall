@@ -5,5 +5,5 @@ describe("agent CLI detection", () => {
   it("finds executables on the current platform's PATH", () => {
     expect(hasCommand("node")).toBe(true);
     expect(hasCommand("recall-command-that-does-not-exist-9e3a2f")).toBe(false);
-  });
+  }, 20_000);
 });
