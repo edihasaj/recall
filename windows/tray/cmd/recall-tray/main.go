@@ -160,7 +160,7 @@ func onReady() {
 			log.Printf("recall cloud open failed: %v", err)
 		}
 	})
-	mRefresh.Click(func() { refreshStatus(ctx) })
+	mRefresh.Click(func() { go refreshStatus(ctx) })
 	mRestart.Click(func() {
 		if s.mgr == nil {
 			return

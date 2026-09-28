@@ -134,5 +134,7 @@ describe("doctor detects agent install state", () => {
 
     codex = inspectAgentInstalls(home).find((e) => e.agent === "codex")!;
     expect(codex.hooks).toBe(true);
+    expect(codex.hook_trust_missing).toBe(true);
+    expect(codex.notes.join(" ")).toContain("hooks lack trust");
   });
 });

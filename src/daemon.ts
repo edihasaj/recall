@@ -87,7 +87,7 @@ import { authorizeLocalRequest } from "./daemon/http-security.js";
 import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
 import { recallBuildInfo } from "./runtime/build.js";
 import type { ReliabilityProbeResult } from "./reliability/probe.js";
-import { getDoctorReport } from "./doctor/report.js";
+import { getDoctorStatusReport } from "./doctor/report.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -438,7 +438,7 @@ const server = createServer(async (req, res) => {
     if (path === "/doctor" && method === "GET") {
       return send(res, 200, {
         version: pkg.version,
-        ...getDoctorReport(),
+        ...getDoctorStatusReport(),
       });
     }
 

@@ -20,6 +20,7 @@ type Agent struct {
 	Rules              string `json:"rules"`
 	ClaudeMD           string `json:"claude_md"`
 	LegacyNotifyBridge bool   `json:"legacy_notify_bridge"`
+	HookTrustMissing   bool   `json:"hook_trust_missing"`
 }
 
 type Upgrade struct {
@@ -47,7 +48,7 @@ type Manager struct {
 func New(baseURL string) *Manager {
 	return &Manager{
 		BaseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 2 * time.Second},
+		client:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -154,7 +155,7 @@ func (r Report) AgentsLabel() string {
 }
 
 func agentHealthy(agent Agent) bool {
-	if !agent.MCP || agent.LegacyNotifyBridge {
+	if !agent.MCP || agent.LegacyNotifyBridge || agent.HookTrustMissing {
 		return false
 	}
 	if agent.Hookless {

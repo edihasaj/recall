@@ -391,6 +391,7 @@ http://localhost:7890
 Useful endpoints:
 
 ```bash
+curl -s http://localhost:7890/doctor
 curl -s 'http://localhost:7890/quality?repo=owner/repo'
 curl -s -X POST http://localhost:7890/compile \
   -H 'Content-Type: application/json' \
@@ -400,6 +401,10 @@ curl -s -X POST http://localhost:7890/correct \
   -H 'Content-Type: application/json' \
   -d '{"repo":"owner/repo","session_id":"s1","text":"don'\''t use npm, use pnpm"}'
 ```
+
+`GET /doctor` returns the installed version, data path, detected agent setup,
+and upgrade signal as JSON. The Windows tray uses this local status report;
+`recall doctor` performs the full audit.
 
 Session collector endpoints:
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func doctorServer(t *testing.T, report Report) *httptest.Server {
@@ -55,6 +56,20 @@ func TestRefreshReadsDoctorReport(t *testing.T) {
 	}
 }
 
+func TestRefreshAcceptsSlowDoctorReport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2500 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.4.14","agents":[]}`))
+	}))
+	defer srv.Close()
+
+	report, err := New(srv.URL).Refresh(context.Background())
+	if err != nil || report.Version != "1.4.14" {
+		t.Fatalf("slow doctor refresh: report=%+v err=%v", report, err)
+	}
+}
+
 func TestSetupLabelDetectsMissingWiring(t *testing.T) {
 	report := Report{
 		Agents: []Agent{
@@ -66,6 +81,20 @@ func TestSetupLabelDetectsMissingWiring(t *testing.T) {
 	}
 	if report.AgentsLabel() != "Codex !" {
 		t.Fatalf("agents = %q", report.AgentsLabel())
+	}
+}
+
+func TestSetupLabelDetectsUntrustedCodexHooks(t *testing.T) {
+	report := Report{
+		Agents: []Agent{
+			{Agent: "codex", Detected: true, MCP: true, Hooks: true, HookTrustMissing: true},
+		},
+	}
+	if report.SetupLabel() != "action required" {
+		t.Fatalf("setup = %q, want action required", report.SetupLabel())
+	}
+	if report.AgentsLabel() != "Codex !" {
+		t.Fatalf("agents = %q, want Codex !", report.AgentsLabel())
 	}
 }
 

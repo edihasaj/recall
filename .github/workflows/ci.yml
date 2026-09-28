@@ -94,7 +94,7 @@ jobs:
       - name: Verify installer checksum and failure handling
         run: ./test/windows-installer.test.ps1
       - name: Verify native vector queries and lexical fallback
-        run: npx vitest run test/native-extension.test.ts test/sqlite-vec-phase2.test.ts test/history-phase6.test.ts test/vector-unavailable.test.ts
+        run: npx vitest run test/native-extension.test.ts test/sqlite-vec-phase2.test.ts test/history-phase6.test.ts test/vector-unavailable.test.ts test/agent-command-detection.test.ts
       - name: Generate, persist, and search real embeddings
         env:
           RECALL_TEST_REAL_EMBEDDINGS: "true"

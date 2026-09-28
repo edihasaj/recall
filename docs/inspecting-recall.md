@@ -40,6 +40,18 @@ Check daemon health:
 curl -s http://localhost:7890/health
 ```
 
+Check the setup report used by the Windows tray:
+
+```bash
+curl -s http://localhost:7890/doctor
+```
+
+The report includes the daemon version, database path, detected agent wiring,
+and upgrade signal. Use `recall doctor` for the full database and OS audit.
+A detected Codex install also reports
+`hook_trust_missing: true` when its Recall hooks lack trust keys. Review those
+hooks in Codex with `/hooks` before treating setup as ready.
+
 Check launchd status via the bundled runtime:
 
 ```bash
