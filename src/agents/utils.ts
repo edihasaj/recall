@@ -7,7 +7,7 @@ export function resolveUserHomeDir(): string {
 
 export function hasCommand(name: string): boolean {
   try {
-    execFileSync("which", [name], { stdio: "ignore" });
+    execFileSync(process.platform === "win32" ? "where.exe" : "which", [name], { stdio: "ignore" });
     return true;
   } catch {
     return false;

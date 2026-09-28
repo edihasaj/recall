@@ -97,6 +97,19 @@ async function get(path: string): Promise<{ status: number; json: any }> {
 }
 
 describe("daemon /graph REST routes (live HTTP)", () => {
+  it("GET /doctor exposes the local report for tray clients", async () => {
+    const r = await fetch(`${baseUrl}/doctor`);
+    const report = await r.json();
+    expect(r.status).toBe(200);
+    expect(r.headers.get("cache-control")).toBe("no-store");
+    expect(typeof report.version).toBe("string");
+    expect(report.db_path).toBe(join(dataDir, "recall.db"));
+    expect(Array.isArray(report.agents)).toBe(true);
+    expect(typeof report.upgrade.available).toBe("boolean");
+    expect(report.app_registrations).toBeUndefined();
+    expect(report.cleanup).toBeUndefined();
+  }, 15_000);
+
   it("rejects browser requests from non-loopback origins", async () => {
     const r = await fetch(`${baseUrl}/health`, {
       headers: { Origin: "https://attacker.example" },

@@ -22,6 +22,8 @@ export interface AgentDoctorEntry {
   hook_activity?: HookActivity;
   hook_trust?: CodexTrustReport[];
   legacy_notify_bridge?: boolean;
+  /** True when Codex hook trust keys are missing or cannot be inspected. */
+  hook_trust_missing?: boolean;
   config_path: string;
   hook_path?: string;
   /** Only set for Claude Code — managed CLAUDE.md memory-override block status. */
@@ -80,8 +82,15 @@ export interface DoctorReport {
   app_registrations: AppRegistrationReport;
 }
 
-export function getDoctorReport(): DoctorReport {
+/** Fast local status for desktop clients; omit CLI-only database and OS audits. */
+export function getDoctorStatusReport(): Pick<DoctorReport, "db_path" | "agents" | "upgrade"> {
   const dbPath = getDbPath();
+  const agents = inspectAgentInstalls();
+  return { db_path: dbPath, agents, upgrade: computeUpgradeSignal(agents) };
+}
+
+export function getDoctorReport(): DoctorReport {
+  const { db_path: dbPath, agents, upgrade } = getDoctorStatusReport();
   const launchd = process.platform === "darwin"
     ? (() => {
         try {
@@ -112,7 +121,6 @@ export function getDoctorReport(): DoctorReport {
       })()
     : null;
 
-  const agents = inspectAgentInstalls();
   for (const agent of agents) {
     if (agent.detected && !agent.hookless) agent.hook_activity = readHookActivity(dbPath, agent.agent);
   }
@@ -124,7 +132,7 @@ export function getDoctorReport(): DoctorReport {
     launchd,
     systemd,
     agents,
-    upgrade: computeUpgradeSignal(agents),
+    upgrade,
     cleanup: readCleanupHealth(dbPath),
     dispatcher: readDispatcherHealth(dbPath),
     app_registrations: inspectAppRegistrations(),
@@ -409,6 +417,7 @@ function inspectCodexHome(codexHome: string) {
   let mcp = false;
   let hooks = false;
   let legacy_notify_bridge = false;
+  let hookTrustMissing = false;
 
   if (existsSync(configPath)) {
     const raw = readFileSync(configPath, "utf-8");
@@ -422,8 +431,12 @@ function inspectCodexHome(codexHome: string) {
     if (managedHooksJson) {
       try {
         const missing = missingCodexTrustKeys(raw, hooksPath, JSON.parse(readFileSync(hooksPath, "utf-8")));
-        if (missing.length) notes.push(`${missing.length} Recall hooks lack trust for this profile path. Review them with Codex /hooks; setup does not grant trust.`);
+        if (missing.length) {
+          hookTrustMissing = true;
+          notes.push(`${missing.length} Recall hooks lack trust for this profile path. Review them with Codex /hooks; setup does not grant trust.`);
+        }
       } catch {
+        hookTrustMissing = true;
         notes.push("hooks.json could not be parsed for trust inspection");
       }
     }
@@ -443,7 +456,7 @@ function inspectCodexHome(codexHome: string) {
     notes.push("Codex CLI detected but config.toml missing");
   }
 
-  return { codexHome, configPath, hooksPath, detected, mcp, hooks, legacy_notify_bridge, notes };
+  return { codexHome, configPath, hooksPath, detected, mcp, hooks, legacy_notify_bridge, hookTrustMissing, notes };
 }
 
 function inspectCodexInstall(home: string): AgentDoctorEntry {
@@ -468,6 +481,7 @@ function inspectCodexInstall(home: string): AgentDoctorEntry {
     mcp: entries.every((entry) => entry.mcp),
     hooks: entries.every((entry) => entry.hooks),
     legacy_notify_bridge: entries.some((entry) => entry.legacy_notify_bridge),
+    hook_trust_missing: entries.some((entry) => entry.hookTrustMissing),
     config_path: primary.configPath,
     hook_path: primary.hooksPath,
     notes,
