@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.19 - 2026-09-28
+
+### Fixed
+
+- The macOS app is signed with Developer ID, notarized, and stapled before
+  release. Direct downloads now pass Gatekeeper, and Homebrew no longer removes
+  quarantine. Thanks to Edi Hasaj (@edihasaj) for the release work.
+
 ## 1.4.18 - 2026-09-28
 
 ### Added
