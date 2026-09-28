@@ -93,7 +93,7 @@ jobs:
   macos-app:
     name: Build and publish macOS app
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 60
     permissions:
       contents: write
     env:
@@ -130,8 +130,13 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install build and signing tools
+        run: brew install xcodegen uv 1password-cli
+
+      - name: Fetch pinned signing helper
+        run: |
+          git clone https://github.com/edihasaj/agent.git /tmp/recall-agent-codesign
+          git -C /tmp/recall-agent-codesign checkout --detach 2b56a8ccc536e66d9aa353e04ebc289dac86af6c
 
       - name: Typecheck
         run: npm run typecheck
@@ -155,6 +160,27 @@ jobs:
             echo "::error::release version mismatch: tag=$expected app=$app_version runtime=$runtime_version"
             exit 1
           fi
+
+      - name: Set up Developer ID and notarization
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is missing"; exit 1; }
+          uv run --quiet /tmp/recall-agent-codesign/skills/apple-codesign/scripts/apple_codesign.py --vault applifyer setup
+
+      - name: Sign, notarize, and verify Recall.app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="build/DerivedData/Build/Products/Release/Recall.app"
+          keychain="$HOME/Library/Keychains/apple-codesign.keychain-db"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/{print $2; exit}')"
+          test -n "$identity" || { echo "::error::Developer ID identity is unavailable"; exit 1; }
+          scripts/sign-macos-nested.sh "$app_path" "$identity"
+          uv run --quiet /tmp/recall-agent-codesign/skills/apple-codesign/scripts/apple_codesign.py run "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=2 "$app_path"
 
       - name: Package app
         id: package
