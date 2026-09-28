@@ -1,3 +1,10 @@
+---
+summary: "How Recall tags and publishes matching npm, macOS, and Windows releases."
+read_when:
+  - Cutting a Recall release.
+  - Changing version numbers or release workflows.
+---
+
 # Releasing Recall
 
 Release artifacts are produced from tags named `vX.Y.Z`.
@@ -23,8 +30,9 @@ manual release dispatches fail unless the requested tag is an existing
 
 ## Checklist
 
-1. Update `package.json` version.
-2. Update `CHANGELOG.md`.
+1. Run `npm version X.Y.Z --no-git-tag-version` to update `package.json` and
+   `package-lock.json` together.
+2. Give the release its own `## X.Y.Z` section in `CHANGELOG.md`.
 3. Run the local gate:
 
 ```bash
@@ -42,6 +50,12 @@ node dist/cli.js reliability --canary --real-embeddings
 ## What CI Publishes
 
 The release workflows publish the npm package, build `Recall.app`, package it as `Recall.app.zip`, write `Recall.app.zip.sha256`, build both Windows tray architectures, create a GitHub Release if needed, and upload all platform assets.
+
+The `X.Y.Z` in the tag must match the npm package, macOS app short version,
+bundled runtime, and both Windows tray binaries. Release jobs check these values
+before uploading assets. The Windows workflow reads its Go toolchain version
+from `windows/tray/go.mod`. The macOS and Windows UIs both display `vX.Y.Z`;
+the macOS build number stays in `CFBundleVersion` for diagnostics.
 
 The package job uploads `edihasaj-recall-X.Y.Z.tgz` and its `.sha256` file before
 attempting npm publication. The Windows installer verifies that checksum and

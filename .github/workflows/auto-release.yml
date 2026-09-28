@@ -34,6 +34,12 @@ jobs:
             echo "::error::package.json version must be X.Y.Z for automatic releases; got $version"
             exit 1
           fi
+          lock_version="$(node -p "require('./package-lock.json').version")"
+          lock_package_version="$(node -p "require('./package-lock.json').packages[''].version")"
+          if [ "$lock_version" != "$version" ] || [ "$lock_package_version" != "$version" ]; then
+            echo "::error::package-lock.json versions must match package.json ($version)"
+            exit 1
+          fi
 
           tag="v$version"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then

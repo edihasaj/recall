@@ -11,10 +11,6 @@ enum AppVersion {
     static let display: String = {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "0.0.0"
-        let build = info?["CFBundleVersion"] as? String
-        if let build, build != short, !build.isEmpty {
-            return "v\(short) (\(build))"
-        }
         return "v\(short)"
     }()
 }

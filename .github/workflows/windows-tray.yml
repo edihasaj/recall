@@ -53,10 +53,15 @@ jobs:
           git show-ref --verify --quiet "refs/tags/$env:RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           git checkout --detach "refs/tags/$env:RELEASE_TAG"
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($packageVersion -ne $env:RELEASE_TAG.Substring(1)) {
+            Write-Error "package version ($packageVersion) does not match $env:RELEASE_TAG"
+            exit 1
+          }
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: "1.22"
+          go-version-file: windows/tray/go.mod
           cache-dependency-path: windows/tray/go.sum
 
       - name: Test daemon supervision and tray helpers
@@ -67,6 +72,16 @@ jobs:
         working-directory: windows/tray
         run: |
           go build -ldflags "-H windowsgui -X main.version=${{ env.RELEASE_TAG }}" -o ../../recall-tray-${{ matrix.arch }}.exe ./cmd/recall-tray
+
+      - name: Verify tray version
+        working-directory: windows/tray
+        shell: pwsh
+        run: |
+          $buildInfo = (go version -m "../../recall-tray-${{ matrix.arch }}.exe") -join "`n"
+          if ($LASTEXITCODE -ne 0 -or -not $buildInfo.Contains("-X main.version=$env:RELEASE_TAG")) {
+            Write-Error "tray binary version does not match $env:RELEASE_TAG"
+            exit 1
+          }
 
       - name: upload artifact (build inspection)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

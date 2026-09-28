@@ -1,12 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.4.17 - 2026-09-28
 
 ### Added
 
 - The Windows tray now shows daemon health, setup state, detected agents, and
   the data directory, with Recall Cloud and Refresh Status actions. Thanks to
   Francisco Cedermaz (@francedermaz) for contributing this feature.
+
+### Fixed
+
+- Release jobs now check that the macOS app, bundled runtime, and Windows tray
+  binaries match the release tag. Windows tray builds use the Go version from
+  `go.mod`.
+- The macOS menu and dashboard show the same release version as the Windows
+  tray, without an extra build number in the label.
 
 ## 1.4.16 - 2026-09-24
 
