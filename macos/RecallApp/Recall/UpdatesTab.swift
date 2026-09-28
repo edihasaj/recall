@@ -97,8 +97,8 @@ struct UpdatesTab: View {
                             .frame(width: 240, height: 240)
                             .blur(radius: 54)
                             .offset(x: 55, y: -85)
-                            .clipped()
                     }
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .strokeBorder(amber.opacity(0.22), lineWidth: 1)

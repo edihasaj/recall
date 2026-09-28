@@ -17,6 +17,10 @@ Release artifacts are produced from tags named `vX.Y.Z`.
 - `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to both taps if Homebrew publishing should run.
 - npm trusted publishing configured for `@edihasaj/recall`, trusting the `edihasaj/recall` repository and the `release.yml` workflow with no environment. The npm job authenticates through GitHub OIDC, so it needs no `NPM_TOKEN` secret. To set it up from a logged-in npm CLI (11.20.0 or later; older CLIs get an unexplained 400 because the registry now requires an allowed action), run `npm trust github @edihasaj/recall --repo edihasaj/recall --file release.yml --allow-publish`, or use the package's Settings page on npmjs.com.
 - XcodeGen available in CI through `brew install xcodegen` (handled by the release workflow).
+- Local `Recall.app` builds need a standalone Node 22. The build script uses
+  Node 22 from `PATH` or `~/.nvm/versions/node/`; set `RECALL_NODE_PATH` to
+  select another installation. The signed app's bundled Node cannot load a
+  newly rebuilt unsigned SQLite addon during a local build.
 - `OP_SERVICE_ACCOUNT_TOKEN` repository secret with read access to the
   `Apple Developer ID Application` certificate and `Apple Admin API Key` in
   the `applifyer` 1Password vault. The macOS release job uses the shared
