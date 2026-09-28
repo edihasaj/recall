@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/energye/systray"
@@ -21,6 +22,7 @@ import (
 	"github.com/edihasaj/recall/windows/tray/internal/daemon"
 	"github.com/edihasaj/recall/windows/tray/internal/dashboard"
 	traystatus "github.com/edihasaj/recall/windows/tray/internal/status"
+	trayupdate "github.com/edihasaj/recall/windows/tray/internal/update"
 	"github.com/edihasaj/recall/windows/tray/internal/webui"
 )
 
@@ -65,7 +67,10 @@ type state struct {
 	mgr          *daemon.Manager
 	webui        *webui.Manager
 	status       *traystatus.Manager
+	updates      *trayupdate.Manager
 	mVersion     *systray.MenuItem
+	mUpdate      *systray.MenuItem
+	mCheckUpdate *systray.MenuItem
 	mStatus      *systray.MenuItem
 	mSetup       *systray.MenuItem
 	mAgents      *systray.MenuItem
@@ -83,8 +88,10 @@ func onReady() {
 	systray.SetTitle("Recall")
 	systray.SetTooltip("Recall — starting…")
 
-	s.mVersion = systray.AddMenuItem("Recall "+version, "Installed Recall tray version")
+	s.mVersion = systray.AddMenuItem(versionTitle(version, ""), "Installed tray and daemon versions")
 	s.mVersion.Disable()
+	s.mUpdate = systray.AddMenuItem("↑ Update Recall", "Install the latest Recall release")
+	s.mUpdate.Hide()
 	s.mStatus = systray.AddMenuItem("Daemon: starting…", "Daemon health")
 	s.mStatus.Disable()
 	s.mSetup = systray.AddMenuItem("Setup: checking…", "Agent integration status")
@@ -100,6 +107,7 @@ func onReady() {
 	mCloud := systray.AddMenuItem("Recall Cloud…", "Open Recall Cloud in your browser")
 	s.mWebUIToggle = systray.AddMenuItem("Start Dashboard", "Start the local web UI server")
 	mRefresh := systray.AddMenuItem("Refresh Status", "Refresh daemon, setup, and WebUI status")
+	s.mCheckUpdate = systray.AddMenuItem("Check for Updates", "Check the latest complete Recall release")
 	systray.AddSeparator()
 	mRestart := systray.AddMenuItem("Restart Daemon", "Stop and start the recall daemon child process")
 	s.mAuto = systray.AddMenuItemCheckbox("Start at login", "Toggle the per-user Run-key entry", currentAutostart())
@@ -130,6 +138,8 @@ func onReady() {
 		go s.webui.Watch(ctx, 3*time.Second, repaintWebUI)
 		s.status = traystatus.New(baseURL)
 		go s.status.Watch(ctx, 10*time.Second, repaintDoctor)
+		s.updates = trayupdate.New(baseURL)
+		go s.updates.Watch(ctx, time.Minute, repaintUpdate)
 	}
 
 	mOpen.Click(func() {
@@ -161,6 +171,33 @@ func onReady() {
 		}
 	})
 	mRefresh.Click(func() { go refreshStatus(ctx) })
+	s.mCheckUpdate.Click(func() { go refreshUpdates(ctx, true) })
+	s.mUpdate.Click(func() {
+		if s.updates == nil || s.mgr == nil {
+			return
+		}
+		report, ok := s.updates.Status()
+		if !ok || !report.Ready || !trayupdate.IsNewer(report.LatestVersion, version) {
+			return
+		}
+		if report.InstallerSHA256 == "" {
+			if report.ReleaseURL != "" {
+				_ = dashboard.Open(report.ReleaseURL)
+			}
+			return
+		}
+		s.mUpdate.SetTitle("Downloading verified updater…")
+		s.mUpdate.Disable()
+		go func() {
+			if err := trayupdate.StartInstaller(report.LatestVersion, report.InstallerSHA256, os.Getpid()); err != nil {
+				log.Printf("update launch failed: %v", err)
+				s.mUpdate.SetTitle("Update failed to start · try again")
+				s.mUpdate.Enable()
+				return
+			}
+			systray.Quit()
+		}()
+	})
 	mRestart.Click(func() {
 		if s.mgr == nil {
 			return
@@ -206,15 +243,53 @@ func repaintDoctor(report traystatus.Report, ok bool) {
 		s.mData.SetTitle("Data: ?")
 		return
 	}
-	if report.Version != "" {
-		s.mVersion.SetTitle("Recall v" + report.Version)
-	}
+	s.mVersion.SetTitle(versionTitle(version, report.Version))
 	s.mSetup.SetTitle("Setup: " + report.SetupLabel())
 	s.mAgents.SetTitle("Agents: " + report.AgentsLabel())
 	if report.DBPath == "" {
 		s.mData.SetTitle("Data: unknown")
 	} else {
 		s.mData.SetTitle("Data: " + filepath.Dir(report.DBPath))
+	}
+}
+
+func versionTitle(trayVersion, daemonVersion string) string {
+	if daemonVersion == "" {
+		return "Recall " + trayVersion
+	}
+	if trayVersion != "dev" && strings.TrimPrefix(trayVersion, "v") != daemonVersion {
+		return "Tray " + trayVersion + " · daemon v" + daemonVersion
+	}
+	return "Recall v" + daemonVersion
+}
+
+func repaintUpdate(report trayupdate.Report, ok bool) {
+	if !ok {
+		return
+	}
+	if report.Ready && trayupdate.IsNewer(report.LatestVersion, version) {
+		s.mUpdate.SetTitle("↑ Update Recall to v" + report.LatestVersion + "…")
+		s.mUpdate.Show()
+	} else {
+		s.mUpdate.Hide()
+	}
+}
+
+func refreshUpdates(ctx context.Context, force bool) {
+	if s.updates == nil {
+		return
+	}
+	report, err := s.updates.Refresh(ctx, force)
+	if err != nil {
+		log.Printf("update check failed: %v", err)
+		s.mCheckUpdate.SetTitle("Could not check · retry")
+		return
+	}
+	repaintUpdate(report, true)
+	if report.Ready && !trayupdate.IsNewer(report.LatestVersion, version) {
+		s.mCheckUpdate.SetTitle("✓ Recall is up to date · check again")
+	} else {
+		s.mCheckUpdate.SetTitle("Check for Updates")
 	}
 }
 

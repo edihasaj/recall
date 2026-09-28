@@ -4,6 +4,7 @@ import SwiftUI
 extension Notification.Name {
     static let recallOpenDashboard = Notification.Name("RecallOpenDashboard")
     static let recallOpenPreferences = Notification.Name("RecallOpenPreferences")
+    static let recallOpenUpdates = Notification.Name("RecallOpenUpdates")
     static let recallRefreshStatus = Notification.Name("RecallRefreshStatus")
 }
 
@@ -55,7 +56,9 @@ private struct DashboardHost: View {
         DashboardView(
             controller: delegate.controller,
             preferences: delegate.preferences,
-            webui: delegate.webui
+            webui: delegate.webui,
+            updates: delegate.updates,
+            onInstallUpdate: delegate.installUpdate
         )
     }
 }
@@ -147,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let controller: DaemonController
     let preferences = AppPreferences()
     let webui: WebUIController
+    let updates = UpdateController()
 
     override init() {
         let controller = DaemonController()
@@ -162,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var loginStatusItem: NSMenuItem?
     private var webuiStatusItem: NSMenuItem?
     private var webuiToggleItem: NSMenuItem?
+    private var updateItem: NSMenuItem?
     private var userInitiatedQuit = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -192,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Boot controllers first — the menu we're about to build reads from them.
         controller.start()
         webui.start()
+        updates.start()
         preferences.syncLaunchAtLogin()
         preferences.applyActivationPolicy()
 
@@ -213,6 +219,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         header.title = "Recall \(AppVersion.display)"
         header.isEnabled = false
         menu.addItem(header)
+
+        updateItem = makeItem(title: "Update Recall…", action: #selector(openUpdates))
+        updateItem?.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: "Update")
+        updateItem?.isHidden = true
+        menu.addItem(updateItem!)
 
         launchdStatusItem = makeStatusItem()
         healthStatusItem = makeStatusItem()
@@ -247,6 +258,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStatusItems() {
+        updateItem?.isHidden = !updates.isAvailable
+        if let latest = updates.latestVersion, updates.isAvailable {
+            updateItem?.title = "Update available · v\(latest)…"
+            statusItem?.button?.toolTip = "Recall v\(latest) is ready"
+        } else {
+            statusItem?.button?.toolTip = "Recall"
+        }
         launchdStatusItem?.title = "Launchd:  \(controller.launchdState)"
         let healthDot = controller.healthOK ? "●" : "○"
         healthStatusItem?.title = "Health:   \(healthDot) \(controller.healthText)"
@@ -294,6 +312,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.refresh()
         webui.refresh()
         updateStatusItems()
+        Task {
+            await updates.check()
+            updateStatusItems()
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -350,6 +372,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             NotificationCenter.default.post(name: .recallOpenPreferences, object: nil)
         }
+    }
+
+    @objc private func openUpdates() {
+        openDashboard()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            NotificationCenter.default.post(name: .recallOpenUpdates, object: nil)
+        }
+    }
+
+    func installUpdate() {
+        updates.install { self.quitForUpdate() }
+    }
+
+    private func quitForUpdate() {
+        userInitiatedQuit = true
+        NSApp.terminate(nil)
     }
 
     @objc private func openCloud() {

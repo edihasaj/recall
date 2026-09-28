@@ -88,6 +88,7 @@ import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
 import { recallBuildInfo } from "./runtime/build.js";
 import type { ReliabilityProbeResult } from "./reliability/probe.js";
 import { getDoctorStatusReport } from "./doctor/report.js";
+import { releaseChecker } from "./updates/check.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -440,6 +441,10 @@ const server = createServer(async (req, res) => {
         version: pkg.version,
         ...getDoctorStatusReport(),
       });
+    }
+
+    if (path === "/update" && method === "GET") {
+      return send(res, 200, await releaseChecker.check(pkg.version, url.searchParams.get("refresh") === "1"));
     }
 
     // Compile context (hook injection endpoint)

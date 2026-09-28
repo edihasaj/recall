@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.18 - 2026-09-28
+
+### Added
+
+- The macOS app and Windows tray show when a complete release is available.
+  Homebrew installations can update and reopen Recall from the macOS dashboard;
+  Windows users can start the installer from the tray. Thanks to Edi Hasaj
+  (@edihasaj) for contributing the update experience.
+
+### Fixed
+
+- Re-running the Windows installer backs up the database, stops the old tray
+  and daemon, verifies the package and tray downloads, and starts the matching
+  release.
+
 ## 1.4.17 - 2026-09-28
 
 ### Added

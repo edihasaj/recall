@@ -4,9 +4,11 @@ import SwiftUI
 struct OverviewTab: View {
     @ObservedObject var controller: DaemonController
     @ObservedObject var webui: WebUIController
+    @ObservedObject var updates: UpdateController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            UpdateNotice(updates: updates)
             HStack(spacing: 18) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)

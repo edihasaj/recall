@@ -5,6 +5,8 @@ struct DashboardView: View {
     @ObservedObject var controller: DaemonController
     @ObservedObject var preferences: AppPreferences
     @ObservedObject var webui: WebUIController
+    @ObservedObject var updates: UpdateController
+    let onInstallUpdate: () -> Void
 
     @State private var selection: AppSection = .overview
 
@@ -13,7 +15,8 @@ struct DashboardView: View {
             SidebarView(
                 selection: $selection,
                 controller: controller,
-                webui: webui
+                webui: webui,
+                updates: updates
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
@@ -21,22 +24,28 @@ struct DashboardView: View {
                 section: selection,
                 controller: controller,
                 preferences: preferences,
-                webui: webui
+                webui: webui,
+                updates: updates,
+                onInstallUpdate: onInstallUpdate
             )
         }
         .navigationSplitViewStyle(.balanced)
         .onReceive(NotificationCenter.default.publisher(for: .recallOpenPreferences)) { _ in
             selection = .preferences
         }
+        .onReceive(NotificationCenter.default.publisher(for: .recallOpenUpdates)) { _ in
+            selection = .updates
+        }
     }
 }
 
 private enum AppSection: String, Hashable, CaseIterable {
-    case overview, cloud, daemon, webui, preferences
+    case overview, updates, cloud, daemon, webui, preferences
 
     var label: String {
         switch self {
         case .overview: return "Overview"
+        case .updates: return "Updates"
         case .cloud: return "Recall Cloud"
         case .daemon: return "Daemon"
         case .webui: return "Web Dashboard"
@@ -47,6 +56,7 @@ private enum AppSection: String, Hashable, CaseIterable {
     var systemImage: String {
         switch self {
         case .overview: return "square.grid.2x2.fill"
+        case .updates: return "arrow.down.circle.fill"
         case .cloud: return "cloud.fill"
         case .daemon: return "bolt.horizontal.circle.fill"
         case .webui: return "safari.fill"
@@ -59,6 +69,7 @@ private struct SidebarView: View {
     @Binding var selection: AppSection
     @ObservedObject var controller: DaemonController
     @ObservedObject var webui: WebUIController
+    @ObservedObject var updates: UpdateController
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,8 +97,16 @@ private struct SidebarView: View {
             List(selection: $selection) {
                 Section {
                     ForEach(AppSection.allCases, id: \.self) { section in
-                        Label(section.label, systemImage: section.systemImage)
-                            .tag(section)
+                        HStack {
+                            Label(section.label, systemImage: section.systemImage)
+                            if section == .updates && updates.isAvailable {
+                                Spacer()
+                                Circle()
+                                    .fill(Color(red: 0.98, green: 0.71, blue: 0.36))
+                                    .frame(width: 7, height: 7)
+                            }
+                        }
+                        .tag(section)
                     }
                 }
             }
@@ -185,6 +204,8 @@ private struct DetailView: View {
     @ObservedObject var controller: DaemonController
     @ObservedObject var preferences: AppPreferences
     @ObservedObject var webui: WebUIController
+    @ObservedObject var updates: UpdateController
+    let onInstallUpdate: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -199,7 +220,9 @@ private struct DetailView: View {
                 Group {
                     switch section {
                     case .overview:
-                        OverviewTab(controller: controller, webui: webui)
+                        OverviewTab(controller: controller, webui: webui, updates: updates)
+                    case .updates:
+                        UpdatesTab(updates: updates, onInstall: onInstallUpdate)
                     case .cloud:
                         CloudTab()
                     case .daemon:
@@ -249,6 +272,8 @@ private struct DetailHeader: View {
         switch section {
         case .overview:
             return "Your local memory system at a glance."
+        case .updates:
+            return "New releases, installed here when you're ready."
         case .cloud:
             return "One memory layer across every Mac and agent."
         case .daemon:
@@ -278,4 +303,3 @@ private struct StatusBadge: View {
         .background(.quinary, in: Capsule())
     }
 }
-

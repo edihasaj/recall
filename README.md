@@ -64,6 +64,11 @@ recall setup --yes
 recall doctor
 ```
 
+Recall checks for complete releases in the menu bar and dashboard. A Homebrew
+installation can update from the dashboard's **Updates** page; Recall installs
+the cask, restarts its daemon, and reopens the app. Direct `.app` installs get
+the release download instead.
+
 ### Bash one-liner (macOS, Linux)
 
 ```bash
@@ -90,7 +95,7 @@ On Linux, `recall daemon install` writes `~/.config/systemd/user/recall-daemon.s
 irm https://recallmemory.dev/install.ps1 | iex
 ```
 
-Installs the `@edihasaj/recall` CLI via npm, downloads the system-tray companion (`recall-tray-<arch>.exe`) into `%LOCALAPPDATA%\Programs\Recall`, registers a per-user Run-key entry for autostart, and launches the tray. Supports `arm64` and `amd64`. Logs land in `%LOCALAPPDATA%\Recall\`.
+Installs the `@edihasaj/recall` CLI via npm, downloads the system-tray companion (`recall-tray-<arch>.exe`) into `%LOCALAPPDATA%\Programs\Recall`, registers a per-user Run-key entry for autostart, and launches the tray. Supports `arm64` and `amd64`. The tray shows **Update Recall** when a complete release is ready; it opens the same installer in a separate PowerShell window, after the tray exits. Re-running the installer also updates an existing installation, with a database backup and package and tray checksum checks. Logs land in `%LOCALAPPDATA%\Recall\`.
 
 ### GitHub Releases
 
@@ -392,6 +397,7 @@ Useful endpoints:
 
 ```bash
 curl -s http://localhost:7890/doctor
+curl -s http://localhost:7890/update
 curl -s 'http://localhost:7890/quality?repo=owner/repo'
 curl -s -X POST http://localhost:7890/compile \
   -H 'Content-Type: application/json' \
@@ -405,6 +411,9 @@ curl -s -X POST http://localhost:7890/correct \
 `GET /doctor` returns the installed version, data path, detected agent setup,
 and upgrade signal as JSON. The Windows tray uses this local status report;
 `recall doctor` performs the full audit.
+`GET /update` compares the installed runtime with GitHub's latest complete
+release. It offers an update only after the package, macOS app, both Windows
+tray binaries, and the checksummed updater have finished uploading.
 
 Session collector endpoints:
 
