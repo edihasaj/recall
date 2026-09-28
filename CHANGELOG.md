@@ -6,7 +6,8 @@
 
 - The macOS app and Windows tray show when a complete release is available.
   Homebrew installations can update and reopen Recall from the macOS dashboard;
-  Windows users can start the installer from the tray.
+  Windows users can start the installer from the tray. Thanks to Edi Hasaj
+  (@edihasaj) for contributing the update experience.
 
 ### Fixed
 
