@@ -4,6 +4,7 @@ read_when:
   - Checking whether Recall.app or the bundled daemon is healthy.
   - Verifying Codex/Claude MCP integration.
   - Debugging crashes, launchd issues, or missing memory writes.
+  - Diagnosing update checks or in-app upgrades.
 ---
 
 # Inspecting Recall
@@ -39,6 +40,21 @@ Check daemon health:
 ```bash
 curl -s http://localhost:7890/health
 ```
+
+Check release availability:
+
+```bash
+curl -s http://localhost:7890/update
+```
+
+The app and tray show an update only after all platform assets are uploaded.
+The daemon caches successful release checks for 30 minutes; a manual check uses
+`/update?refresh=1` and limits repeated network requests to once per minute.
+On macOS, updates save a fresh database backup under `~/.recall/backups/`;
+progress and failures go to `~/.recall/logs/update.log`. The helper records
+`success` or `failed` in `~/.recall/updates/result` and reopens the app.
+Windows updates run in a separate PowerShell window and back up the database
+under `%USERPROFILE%\.recall\backups\` before replacing the tray.
 
 Check the setup report used by the Windows tray:
 

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Complete a user-initiated Homebrew update after Recall.app exits.
+set -euo pipefail
+
+version="${1:?expected X.Y.Z}"
+old_pid="${2:?expected Recall process ID}"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+[[ "$old_pid" =~ ^[0-9]+$ ]]
+
+update_dir="$HOME/.recall/updates"
+log_dir="$HOME/.recall/logs"
+mkdir -p "$update_dir" "$log_dir"
+chmod 700 "$update_dir"
+result_file="$update_dir/result"
+log_file="$log_dir/update.log"
+touch "$log_file"
+chmod 600 "$log_file"
+exec >>"$log_file" 2>&1
+
+result=failed
+finish() {
+  status=$?
+  printf '%s\t%s\n' "$result" "$version" > "$result_file"
+  if [[ -d /Applications/Recall.app ]]; then
+    /usr/bin/open /Applications/Recall.app || true
+  else
+    /usr/bin/open "https://github.com/edihasaj/recall/releases/tag/v$version" || true
+  fi
+  exit "$status"
+}
+trap finish EXIT
+
+echo "Updating Recall to v$version"
+for ((attempt=0; attempt<300; attempt++)); do
+  if ! kill -0 "$old_pid" 2>/dev/null; then break; fi
+  sleep 0.1
+done
+if kill -0 "$old_pid" 2>/dev/null; then
+  echo "Recall did not exit before the update"
+  exit 1
+fi
+
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  brew=/opt/homebrew/bin/brew
+elif [[ -x /usr/local/bin/brew ]]; then
+  brew=/usr/local/bin/brew
+else
+  echo "Homebrew is unavailable"
+  exit 1
+fi
+"$brew" list --cask recall >/dev/null
+"$brew" update
+"$brew" upgrade --cask recall
+
+app=/Applications/Recall.app
+installed="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+if [[ "$installed" != "$version" ]]; then
+  echo "Installed app is v$installed, expected v$version"
+  exit 1
+fi
+"$app/Contents/Resources/Runtime/bin/recall" daemon restart
+result=success
+echo "Recall v$version is ready"

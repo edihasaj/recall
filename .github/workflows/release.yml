@@ -148,6 +148,7 @@ jobs:
           set -euo pipefail
           app_path="build/DerivedData/Build/Products/Release/Recall.app"
           expected="${RELEASE_TAG#v}"
+          test -x "$app_path/Contents/Resources/Runtime/bin/recall-update-macos"
           app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")"
           runtime_version="$(node -p 'require(process.argv[1]).version' "$PWD/$app_path/Contents/Resources/Runtime/package.json")"
           if [ "$app_version" != "$expected" ] || [ "$runtime_version" != "$expected" ]; then

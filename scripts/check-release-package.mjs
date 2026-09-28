@@ -14,6 +14,11 @@ try {
     stdio: "inherit",
   });
   const installed = join(prefix, "lib", "node_modules", "@edihasaj", "recall");
+  assert.equal(
+    readFileSync(join(installed, "scripts", "install.ps1"), "utf8"),
+    readFileSync("scripts/install.ps1", "utf8"),
+    "Windows updater script is missing from the published package",
+  );
   const dependencies = [...new Set([
     ...Object.keys(lock.packages[""].dependencies),
     ...Object.keys(lock.packages[""].optionalDependencies ?? {}),

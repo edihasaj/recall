@@ -1,6 +1,6 @@
 {
   "name": "@edihasaj/recall",
-  "version": "1.4.17",
+  "version": "1.4.18",
   "description": "Cross-tool coding memory and instruction compiler",
   "license": "MIT",
   "homepage": "https://recallmemory.dev/",
@@ -24,6 +24,7 @@
     "scripts/recall-claude",
     "scripts/recall-codex",
     "scripts/recall-session",
+    "scripts/install.ps1",
     "README.md",
     "LICENSE"
   ],
