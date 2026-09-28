@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.20 - 2026-09-28
+
+### Fixed
+
+- The macOS Updates card clips its glow to the rounded card edge, removing a
+  visible square in the top-right corner. Thanks to Edi Hasaj (@edihasaj) for
+  spotting it.
+- Local macOS builds use a standalone Node 22. They no longer try to load an
+  unsigned rebuilt SQLite module with the signed app's bundled Node.
+
 ## 1.4.19 - 2026-09-28
 
 ### Fixed

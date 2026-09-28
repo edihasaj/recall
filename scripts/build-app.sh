@@ -8,11 +8,20 @@ derived_data="$root_dir/build/DerivedData"
 project_path="$app_dir/RecallApp.xcodeproj"
 node_bin="${RECALL_NODE_PATH:-}"
 
-if [[ -z "$node_bin" && -x "/Applications/Recall.app/Contents/Resources/Runtime/bin/node" ]]; then
-  node_bin="/Applications/Recall.app/Contents/Resources/Runtime/bin/node"
+if [[ -z "$node_bin" ]]; then
+  candidate="$(command -v node || true)"
+  if [[ -n "$candidate" && "$("$candidate" -p "process.versions.node.split('.')[0]")" == "22" ]]; then
+    node_bin="$candidate"
+  fi
 fi
 if [[ -z "$node_bin" ]]; then
-  node_bin="$(command -v node)"
+  for candidate in "$HOME"/.nvm/versions/node/v22.*/bin/node; do
+    [[ -x "$candidate" ]] && node_bin="$candidate"
+  done
+fi
+if [[ -z "$node_bin" ]]; then
+  echo "Recall.app build needs a standalone Node 22; set RECALL_NODE_PATH or install Node 22." >&2
+  exit 1
 fi
 
 node_major="$("$node_bin" -p "process.versions.node.split('.')[0]")"
