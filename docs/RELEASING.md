@@ -59,6 +59,8 @@ bundled native code and outer app with Developer ID, notarize and staple it,
 package it as `Recall.app.zip`, write `Recall.app.zip.sha256`, build both Windows
 tray architectures, create a GitHub Release if needed, and upload all platform
 assets. The macOS job checks `codesign`, `stapler`, and Gatekeeper before upload.
+After downloading both macOS assets into one directory, verify the zip with
+`shasum -a 256 -c Recall.app.zip.sha256`.
 
 The daemon's `/update` endpoint waits until these seven release assets are all
 uploaded before either desktop app offers an update: the npm package and
