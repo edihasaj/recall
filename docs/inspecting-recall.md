@@ -103,6 +103,16 @@ restarts. A macOS `.diag` report saying `Action taken: none` is not a crash.
 Check the responsible application and executable path in `.ips` reports;
 another application's Node process is not necessarily Recall.
 
+A macOS dialog saying Apple could not verify `Recall.app` is a Gatekeeper
+launch block, not an app crash. Check the path that macOS selected. A local
+unsigned Xcode Debug build can appear beside the notarized app in Spotlight.
+Xcode builds now go to the repo's `build/DerivedData.noindex` directory, which
+Spotlight excludes. Existing copies may still be registered. Run
+`recall doctor` to list them, then `recall doctor --fix` to remove those
+registrations without deleting files. Open `/Applications/Recall.app` by its
+full path and check it with `spctl -a -vv -t execute /Applications/Recall.app`.
+Keep the quarantine attribute on a signed release so Gatekeeper can assess it.
+
 Recall 1.4.3 contains dashboard file-read failures within the HTTP request and
 serializes dashboard start/stop operations. An unavailable bundle returns 503;
 the daemon stays running and can serve the repaired bundle without a restart.

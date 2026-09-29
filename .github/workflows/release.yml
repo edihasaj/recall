@@ -151,7 +151,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app_path="build/DerivedData/Build/Products/Release/Recall.app"
+          app_path="build/DerivedData.noindex/Build/Products/Release/Recall.app"
           expected="${RELEASE_TAG#v}"
           test -x "$app_path/Contents/Resources/Runtime/bin/recall-update-macos"
           app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")"
@@ -172,7 +172,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app_path="build/DerivedData/Build/Products/Release/Recall.app"
+          app_path="build/DerivedData.noindex/Build/Products/Release/Recall.app"
           keychain="$HOME/Library/Keychains/apple-codesign.keychain-db"
           identity="$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/{print $2; exit}')"
           test -n "$identity" || { echo "::error::Developer ID identity is unavailable"; exit 1; }
@@ -187,7 +187,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app_path="build/DerivedData/Build/Products/Release/Recall.app"
+          app_path="build/DerivedData.noindex/Build/Products/Release/Recall.app"
           out_dir="dist/release"
           mkdir -p "$out_dir"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "$out_dir/Recall.app.zip"

@@ -4,7 +4,7 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_dir="$root_dir/macos/RecallApp"
 runtime_dir="$app_dir/Generated/Runtime"
-derived_data="$root_dir/build/DerivedData"
+derived_data="$root_dir/build/DerivedData.noindex"
 project_path="$app_dir/RecallApp.xcodeproj"
 node_bin="${RECALL_NODE_PATH:-}"
 
@@ -33,7 +33,7 @@ fi
 
 cd "$root_dir"
 
-# Xcode writes a full Recall.app into build/DerivedData. Spotlight indexes it,
+# Xcode writes a full Recall.app into build/DerivedData.noindex. Spotlight indexes it,
 # LaunchServices then registers it as a *second* Recall install, and macOS
 # starts offering the repo build in Open With / Spotlight alongside the real
 # one in /Applications. A .metadata_never_index marker excludes the whole

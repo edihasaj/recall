@@ -7,6 +7,9 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: 15.0
     SWIFT_VERSION: 6.0
     GENERATE_INFOPLIST_FILE: YES
+    # Keep Debug and Release apps out of Spotlight. An unsigned Debug copy in
+    # Xcode's default DerivedData can shadow the notarized /Applications app.
+    SYMROOT: $(PROJECT_DIR)/../../build/DerivedData.noindex/Build/Products
     INFOPLIST_KEY_CFBundleDisplayName: Recall
     INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
     INFOPLIST_KEY_LSUIElement: YES

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.21 - 2026-09-29
+
+### Fixed
+
+- Xcode now puts local Recall builds in the repo's unindexed build directory.
+  This keeps unsigned Debug copies out of Spotlight, where they could be
+  mistaken for the notarized app in `/Applications` and blocked by Gatekeeper.
+
 ## 1.4.20 - 2026-09-28
 
 ### Fixed
