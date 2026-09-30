@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { compileContextHybrid } from "../src/compiler/context.js";
 import { initStandaloneDb } from "../src/db/client.js";
-import { bootstrapEmbeddings, loadEmbeddingConfigFromEnv } from "../src/embeddings/embeddings.js";
+import { bootstrapEmbeddings, hybridSearch, loadEmbeddingConfigFromEnv } from "../src/embeddings/embeddings.js";
 import { resetRerankerCache, setRerankScorerForTests } from "../src/embeddings/reranker.js";
 import { captureCorrectionFallback } from "../src/mcp/fallback.js";
 import { createMemory, getMemory, setMemoryNote } from "../src/models/memory.js";
@@ -49,6 +49,15 @@ it("setting a note later re-indexes the memory", () => {
   expect(setMemoryNote(db, id, replicasNote)).toBe(true);
   expect(searchMemoryFtsIndex(db, "reporting jobs", { repo }).map((m) => m.memory_id)).toEqual([id]);
   expect(setMemoryNote(db, "00000000-0000-4000-8000-000000000000", "x")).toBe(false);
+});
+
+// Regression: search built memories with its own row mapper, which dropped
+// the note, so re-ranking scored memories without it.
+it("search results carry the note", async () => {
+  const db = freshDb();
+  createMemory(db, { ...replicas, note: replicasNote });
+  const [result] = await hybridSearch(db, "reporting jobs", null, { repo, limit: 5 });
+  expect(result?.memory.note).toBe(replicasNote);
 });
 
 it("a repeat capture adds the note the first one lacked, and never replaces one", () => {
