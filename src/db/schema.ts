@@ -26,6 +26,12 @@ export const memories = sqliteTable("memories", {
   }).notNull(),
   evidence: text("evidence", { mode: "json" }).notNull().default("[]"),
   capture_context: text("capture_context", { mode: "json" }),
+  // What this memory affects, in the words a later request would use: the
+  // situations, tools and choices it should change. Written once when the
+  // memory is saved (usually by the capturing agent) and embedded and
+  // re-ranked with the text, so a memory can match a request that shares no
+  // words with it. Null when no note was written.
+  note: text("note"),
   supersedes: text("supersedes"),
   dedupe_key: text("dedupe_key"),
   created_at: text("created_at").notNull(),

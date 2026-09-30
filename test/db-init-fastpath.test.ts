@@ -109,11 +109,16 @@ describe("initDb fast path", () => {
       1,
       new Date().toISOString(),
     );
-    first.$client.prepare(`
+    // Roll back to before 0011 (the compaction under test) so it runs again.
+    // Drizzle applies only migrations newer than the latest recorded one, so
+    // every later migration is rolled back too and its schema change undone.
+    const rolledBack = first.$client.prepare(`
       delete from __drizzle_migrations
-      where created_at = (select max(created_at) from __drizzle_migrations)
+      where created_at in (select created_at from __drizzle_migrations order by created_at desc limit 2)
     `).run();
-    first.$client.pragma(`user_version = ${RECALL_DB_USER_VERSION - 1}`);
+    expect(rolledBack.changes).toBe(2);
+    first.$client.exec("alter table memories drop column note"); // 0012_memory_notes
+    first.$client.pragma(`user_version = ${RECALL_DB_USER_VERSION - 2}`);
     first.$client.close();
 
     const migrated = initStandaloneDb(path);

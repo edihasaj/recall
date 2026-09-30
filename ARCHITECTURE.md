@@ -88,6 +88,7 @@ erDiagram
       string id
       string type
       string text
+      string note
       string scope
       string repo
       string status
@@ -153,6 +154,11 @@ The capture layer:
 3. checks for duplicates
 4. applies repo-quality-aware thresholds
 5. creates or promotes memories
+6. stores the agent's `affects` note, if it sent one
+
+The note says what the memory affects, in the words a later request would
+use. Recall indexes, embeds and re-ranks the memory text together with the
+note, so a memory can match a request that shares no words with it.
 
 ```mermaid
 flowchart LR

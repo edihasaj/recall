@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `RECALL_RERANK=true` did nothing. The re-ranker read its single-output
+  model through a pipeline that returned 1.0 for every pair, so results kept
+  the fused order and every score became 1. It now reads the model's output
+  directly and returns a relevance probability.
+- With re-ranking on, a memory that matters without sharing words with the
+  query never reached the re-ranker: the vector arm only admitted matches
+  with 0.8 similarity, and the query pack dropped anything under 0.7. The
+  re-ranker now judges candidates below those floors, and a memory it scores
+  at `RECALL_RERANK_MIN_SCORE` (0.5) or higher can be injected.
+
+### Added
+
+- Memory notes. `capture_correction` and `report_correction` accept an
+  optional `affects` note: what the memory should change later, such as
+  "load tests, reporting jobs" for "Staging has no read replicas". Recall
+  indexes, embeds and re-ranks the note with the memory. Run `recall setup`
+  to update the agent instructions that ask for it.
+- `RECALL_RERANK_MODEL` accepts a local model directory, and
+  `RECALL_RERANK_MAX_LENGTH` caps the tokens per pair.
+
 ## 1.4.21 - 2026-09-29
 
 ### Fixed

@@ -107,6 +107,7 @@ export const MemoryItem = z.object({
   source: MemorySource,
   evidence: z.array(EvidenceEntry),
   capture_context: CaptureContext.nullable(),
+  note: z.string().nullable().optional(),
   supersedes: z.string().uuid().nullable(),
   created_at: z.string(),
   updated_at: z.string(),

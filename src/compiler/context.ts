@@ -6,6 +6,7 @@ import { recordHistoryInjections } from "../models/history-injections.js";
 import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type HistorySnippet, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { rerankMinScore } from "../embeddings/reranker.js";
 import { listHistorySnippets } from "../history/snippets.js";
 import { searchHistorySnippets } from "../history/retrieval.js";
 import { textMatchScore } from "../text/match.js";
@@ -442,6 +443,11 @@ export async function compileContextHybrid(
       const retrievalItem = retrievalById.get(memory.id);
       if (effectiveQuery) {
         if (!retrievalItem) return false;
+        // The cross-encoder judged query and memory together; a memory that
+        // matters without sharing words has low vector similarity by design,
+        // so the floor below would drop exactly what re-ranking found. It
+        // still has to clear the re-ranker's own bar.
+        if (retrievalItem.reranked && retrievalItem.score >= rerankMinScore()) return true;
         const hasStrongLexicalMatch =
           retrievalItem.lexical_score >= QUERY_TEXT_MATCH_FLOOR;
         if (

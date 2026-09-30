@@ -427,12 +427,33 @@ and conversational-haystack workloads.
 | `RECALL_HYDE_MODEL` | provider default | Override the HyDE model (e.g. `gpt-4o-mini`, `claude-haiku-4-5-20251001`). |
 | `RECALL_HYDE_CACHE_PATH` | unset | Persist HyDE results to a JSON file for reproducible benchmarks. |
 | `RECALL_RERANK` | `false` | Set to `true` to cross-encoder re-rank the top-50 hybrid candidates. |
-| `RECALL_RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | Re-ranker model. |
+| `RECALL_RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | Re-ranker model: a Hugging Face id, or an absolute path to a local model directory (config, tokenizer, `onnx/model_quantized.onnx`). |
 | `RECALL_RERANK_TOP_K` | `50` | Window pulled into the re-rank stage. |
+| `RECALL_RERANK_MAX_LENGTH` | `256` | Tokens per (query, memory) pair. Longer pairs are cut. |
+| `RECALL_RERANK_MIN_SCORE` | `0.5` | Relevance probability a re-ranked memory needs before a query-driven pack may include it without also passing the vector-similarity floor. |
+| `RECALL_RERANK_CANDIDATE_MIN_SIM` | `0` | Vector-similarity floor for candidates while re-ranking is on. The normal floor (`RECALL_SIMILARITY_THRESHOLD`, 0.8) would drop memories that matter without sharing words with the query before the re-ranker sees them. |
 
 For chat-haystack benchmarks (e.g. LongMemEval-S) the recommended
 combination is `RECALL_HYDE=true RECALL_RERANK=true`, on top of the
 defaults — see `benchmark/COMPARISON.md` for measured numbers.
+
+Before this release the re-ranker returned 1.0 for every pair, so
+`RECALL_RERANK=true` kept the fused order. Re-ranking numbers measured
+before then describe the fused order, not the re-ranker.
+
+### Memory notes
+
+A memory can carry a note: what it affects, in the words a later request
+would use. For "Staging has no read replicas" the note might be "load tests,
+heavy read queries, reporting jobs, connection pool sizing". Recall adds the
+note to the text it indexes, embeds and re-ranks, so a request such as "Can I
+run the nightly reporting job against staging?" finds the memory even though
+the memory itself never mentions reports.
+
+Agents write the note when they capture a memory, through the optional
+`affects` field of `capture_correction` and `report_correction`. The managed
+instruction block written by `recall setup` asks for it. Notes are stored
+locally in `memories.note`; team sync does not carry them yet.
 
 ## Verification
 

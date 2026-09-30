@@ -2,6 +2,7 @@ import type { RecallDb } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { memories } from "../db/schema.js";
 import { getSynonyms } from "./synonyms.js";
+import { retrievalText } from "../models/retrieval-text.js";
 import { BACKGROUND_INDEX_BATCH_SIZE, processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 
 const FTS_MEMORY_INDEX = "fts_memory_index";
@@ -121,7 +122,7 @@ export function removeMemoryFtsRow(
 
 export function upsertMemoryFtsRow(
   db: RecallDb,
-  memory: Pick<MemoryRow, "id" | "text" | "repo" | "status" | "type" | "scope" | "path_scope" | "confidence">,
+  memory: Pick<MemoryRow, "id" | "text" | "note" | "repo" | "status" | "type" | "scope" | "path_scope" | "confidence">,
 ) {
   ensureMemoryFtsIndex(db);
 
@@ -144,7 +145,7 @@ export function upsertMemoryFtsRow(
     ) values (?, ?, ?, ?, ?, ?, ?)
   `).run(
     memory.id,
-    memory.text,
+    retrievalText(memory),
     memory.repo ?? "",
     memory.status,
     memory.type,
@@ -207,7 +208,7 @@ export function rebuildMemoryFtsIndex(
     for (const row of batch) {
       stmt.run(
         row.id,
-        row.text,
+        retrievalText(row),
         row.repo ?? "",
         row.status,
         row.type,
@@ -242,7 +243,7 @@ export async function rebuildMemoryFtsIndexResponsive(
   `);
   const insertMany = sqlite.transaction((batch: typeof rows) => {
     for (const row of batch) {
-      stmt.run(row.id, row.text, row.repo ?? "", row.status, row.type, row.scope, row.path_scope ?? "");
+      stmt.run(row.id, retrievalText(row), row.repo ?? "", row.status, row.type, row.scope, row.path_scope ?? "");
     }
   });
   await processInResponsiveBatches(rows, async (batch) => { insertMany(batch); }, {

@@ -1,6 +1,6 @@
 import type { RecallDb } from "../db/client.js";
 import { processCorrection } from "../capture/correction.js";
-import { recordFeedback, getMemory } from "../models/memory.js";
+import { recordFeedback, getMemory, setMemoryNote } from "../models/memory.js";
 import { createActivityEvent } from "../models/activity.js";
 import { endSessionLifecycle } from "../session/lifecycle.js";
 import type { ActivitySource, FeedbackOutcome } from "../types.js";
@@ -16,6 +16,8 @@ export interface CaptureCorrectionInput {
   agent?: string;
   prev_assistant_turn?: string;
   recent_tool_calls?: readonly RecentToolCall[];
+  /** What the correction affects, written by the capturing agent; stored as memories.note. */
+  affects?: string;
 }
 
 export interface CaptureCorrectionResult {
@@ -53,6 +55,18 @@ export interface SessionEndResult {
   repo: string | null;
 }
 
+/**
+ * Give each captured memory the agent's note of what it affects, unless it
+ * already has one. A note sent with a capture that is deferred to background
+ * extraction is not kept: those memories do not exist yet.
+ */
+function attachNote(db: RecallDb, ids: readonly string[], affects: string | undefined) {
+  if (!affects?.trim()) return;
+  for (const id of ids) {
+    if (!getMemory(db, id)?.note) setMemoryNote(db, id, affects);
+  }
+}
+
 export async function captureCorrectionFallback(
   db: RecallDb,
   input: CaptureCorrectionInput,
@@ -68,6 +82,7 @@ export async function captureCorrectionFallback(
     recent_tool_calls: input.recent_tool_calls,
     force_semantic_capture: true,
   });
+  attachNote(db, ids, input.affects);
 
   createActivityEvent(db, {
     session_id: sessionId,
