@@ -34,6 +34,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./site.css" />
+    <script defer src="./downloads.js"></script>
     <script defer src="https://insights.applifyer.com/insights.js" data-website-id="d0141a43-e7cb-5e98-9d7f-2d4f76d4b996" data-domains="recallmemory.dev,www.recallmemory.dev" data-do-not-track="true" data-exclude-search="true" data-exclude-hash="true" data-performance="true"></script>
   </head>
   <body>
@@ -63,9 +64,10 @@
           </p>
 
           <div class="hero-actions">
-            <a class="button primary" href="https://github.com/edihasaj/recall/releases/latest">Get Recall free</a>
+            <a class="button primary" href="#downloads" data-platform-download>Get Recall free</a>
             <a class="button secondary" href="#how">See how it works</a>
           </div>
+          <p class="download-note"><a href="#downloads" data-platform-note>All platforms &amp; install options</a></p>
 
           <p class="trust-line">
             <span>Open source</span>
@@ -254,9 +256,9 @@
           <p class="eyebrow">Install</p>
           <h2>Install. Open. That's it.</h2>
           <p>
-            One command on any platform. Use Homebrew on macOS, <code>curl | bash</code> on Linux,
-            one PowerShell line on Windows. Each installer auto-detects your coding agents and
-            wires up MCP and lifecycle hooks for you.
+            Download the Mac app below, or install with Homebrew. On Windows, use the PowerShell
+            installer after installing Node.js 22+. On Linux, use the shell installer. Setup detects
+            your coding agents and connects Recall for you.
           </p>
           <p>
             From the next session on, Recall injects the right rules automatically. The CLI is
@@ -266,17 +268,33 @@
             When a new release is ready, the Mac app and Windows tray show it. Update from Recall
             and return to your work with your memories in place.
           </p>
+          <div class="downloads" id="downloads" aria-label="Direct downloads">
+            <a class="button primary" href="https://github.com/edihasaj/recall/releases/latest/download/Recall.app.zip">Download for macOS · ZIP</a>
+            <p>Unzip, move Recall.app to Applications, then open it and click <strong>Install + Start</strong>.</p>
+            <div class="download-options" id="windows-downloads">
+              <a class="button secondary" href="https://github.com/edihasaj/recall/releases/latest/download/recall-tray-amd64.exe">Windows x64 · EXE</a>
+              <a class="button secondary" href="https://github.com/edihasaj/recall/releases/latest/download/recall-tray-arm64.exe">Windows ARM64 · EXE</a>
+            </div>
+            <p>The Windows EXEs are tray apps. They need Node.js 22+ and the Recall CLI installed.
+              For a first install, install Node.js 22+, then use the PowerShell command below, or
+              <a href="https://github.com/edihasaj/recall/releases/latest/download/Recall-Install.ps1">download the PowerShell installer</a>.</p>
+          </div>
         </div>
         <div class="command-stack" data-reveal="13">
-          <pre data-os="macos"><code># macOS: install &amp; done
+          <pre data-os="macos"><code># macOS: trust Recall, then install
+brew tap edihasaj/tap
+brew trust --cask edihasaj/tap/recall
 brew install --cask edihasaj/tap/recall
-# open Recall.app → Install + Start → magic</code></pre>
-          <pre data-os="linux"><code># Linux: one-line installer
+# open Recall.app → Install + Start</code></pre>
+          <p class="download-note">Homebrew 7+ requires explicit trust for third-party packages.
+            This trusts only Recall. If your Homebrew has no <code>trust</code> command, run <code>brew update</code> first.</p>
+          <pre data-os="linux" id="linux-install"><code># Linux: one-line installer
 curl -fsSL https://recallmemory.dev/install.sh | bash
 # or do it by hand:
 #   npm i -g @edihasaj/recall && recall setup --yes
 #   recall daemon install   # systemd --user service</code></pre>
-          <pre data-os="windows"><code># Windows: PowerShell installer
+          <pre data-os="windows"><code># Windows: requires Node.js 22+
+# Get Node: winget install OpenJS.NodeJS.LTS
 irm https://recallmemory.dev/install.ps1 | iex
 # or do it by hand:
 #   npm i -g @edihasaj/recall &amp;&amp; recall setup --yes

@@ -102,3 +102,11 @@ Run the local docs check before changing the page:
 ```bash
 npm run docs:check
 ```
+
+The landing page links directly to the latest release's `Recall.app.zip`, both
+Windows tray EXEs, and `Recall-Install.ps1`. Keep those asset names stable.
+`docs/downloads.js` selects the hero link by platform; all downloads remain
+available without JavaScript. Windows browsers cannot reliably report CPU
+architecture, so the hero labels its x64 default and the panel offers ARM64.
+The Windows EXEs require Node.js and the CLI. After Node.js 22+ is installed,
+the PowerShell installer sets up the CLI and tray.

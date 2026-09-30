@@ -203,6 +203,36 @@ h1 em {
   gap: 10px;
 }
 
+.download-note {
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.downloads {
+  display: grid;
+  gap: 14px;
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(36, 22, 17, 0.18);
+}
+
+#downloads,
+#windows-downloads,
+#linux-install {
+  scroll-margin-top: 110px;
+}
+
+.downloads p {
+  font-size: 14px;
+}
+
+.download-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .trust-line {
   display: flex;
   flex-wrap: wrap;

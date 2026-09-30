@@ -113,6 +113,21 @@ registrations without deleting files. Open `/Applications/Recall.app` by its
 full path and check it with `spctl -a -vv -t execute /Applications/Recall.app`.
 Keep the quarantine attribute on a signed release so Gatekeeper can assess it.
 
+If Recall was moved to Trash, Homebrew can still record it as installed even
+though `/Applications/Recall.app` is missing. Restore it with:
+
+```bash
+brew trust --cask edihasaj/tap/recall
+brew reinstall --cask edihasaj/tap/recall
+open /Applications/Recall.app
+```
+
+Homebrew trust applies to the package definition. macOS assesses the app
+separately. A fresh signed install may wait for an Open confirmation before
+its bundled Node runtime can start. Complete that prompt, then check `/health`.
+Reinstalling the cask preserves `~/.recall`; do not use `brew uninstall --zap`
+for this recovery, because the cask's zap removes that data directory.
+
 Recall 1.4.3 contains dashboard file-read failures within the HTTP request and
 serializes dashboard start/stop operations. An unavailable bundle returns 503;
 the daemon stays running and can serve the repaired bundle without a restart.

@@ -59,10 +59,15 @@ The MiniLM row isolates the system contribution (same embedding model agentmemor
 ### Homebrew (macOS)
 
 ```bash
+brew tap edihasaj/tap
+brew trust --cask edihasaj/tap/recall
 brew install --cask edihasaj/tap/recall
 recall setup --yes
 recall doctor
 ```
+
+Homebrew 7+ requires explicit trust for third-party packages. These commands
+trust only the Recall cask. Run `brew update` first if `brew trust` is unavailable.
 
 Recall checks for complete releases in the menu bar and dashboard. A Homebrew
 installation can update from the dashboard's **Updates** page; Recall installs
@@ -99,7 +104,7 @@ Installs the `@edihasaj/recall` CLI via npm, downloads the system-tray companion
 
 ### GitHub Releases
 
-Download `Recall.app.zip` from [the latest release](https://github.com/edihasaj/recall/releases/latest), unzip it, move `Recall.app` into `/Applications`, then run setup:
+Download [Recall.app.zip](https://github.com/edihasaj/recall/releases/latest/download/Recall.app.zip), unzip it, move `Recall.app` into `/Applications`, then run setup:
 
 ```bash
 open /Applications/Recall.app             # click Install + Start once
