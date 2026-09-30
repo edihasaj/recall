@@ -154,7 +154,8 @@ haystack per question, only the toggle changes.
 | Config | R@5 | R@10 | R@20 | Δ R@5 vs shipped |
 |--------|-----|------|------|-------------------|
 | baseline (shipped) | 95.00 % | 98.33 % | 98.33 % | — |
-| rerank-on (top-50 ms-marco MiniLM) | 95.00 % | 98.33 % | 98.33 % | 0 |
+| rerank-on (top-50 ms-marco MiniLM), broken: kept fused order | 95.00 % | 98.33 % | 98.33 % | 0 |
+| rerank-on, fixed re-ranker (2026-09-30; baseline that run 95.00 / 95.00 / 100.00) | 85.00 % | 91.67 % | 91.67 % | −10.0 |
 | no-prefix-matching | 95.00 % | 98.33 % | 100.00 % | 0 R@5 (+1.7 R@20) |
 | no-synonym-expansion | 98.33 % | 100.00 % | 100.00 % | +3.3 R@5 |
 | weighted-sum fusion (legacy) | 91.67 % | 98.33 % | 98.33 % | −3.3 R@5 |
@@ -176,8 +177,11 @@ Reading honestly:
 - **Prefix matching is R@5-neutral on this slice.** It buys 1.7 pp at
   R@20, consistent with its role: it widens recall for partial-word
   questions, not top-5 ranking.
-- **Cross-encoder rerank** still contributes nothing on this corpus.
-  Kept behind `RECALL_RERANK=true` as headroom.
+- **Cross-encoder rerank** showed no effect here because it was broken:
+  it returned 1.0 for every pair and kept the fused order. With the fix
+  (2026-09-30) it lowers R@5 from 95.00% to 85.00% on this slice (R@10
+  91.67%, R@20 91.67%), because each session is much longer than the
+  re-ranker's 256-token limit. Keep it off for chat haystacks.
 
 Raw ablation JSON:
 `benchmark/data/recall-lme-ablation-n60-shuffled.json` (current,

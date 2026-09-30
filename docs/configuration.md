@@ -433,13 +433,20 @@ and conversational-haystack workloads.
 | `RECALL_RERANK_MIN_SCORE` | `0.5` | Relevance probability a re-ranked memory needs before a query-driven pack may include it without also passing the vector-similarity floor. |
 | `RECALL_RERANK_CANDIDATE_MIN_SIM` | `0` | Vector-similarity floor for candidates while re-ranking is on. The normal floor (`RECALL_SIMILARITY_THRESHOLD`, 0.8) would drop memories that matter without sharing words with the query before the re-ranker sees them. |
 
-For chat-haystack benchmarks (e.g. LongMemEval-S) the recommended
-combination is `RECALL_HYDE=true RECALL_RERANK=true`, on top of the
-defaults — see `benchmark/COMPARISON.md` for measured numbers.
+Keep `RECALL_RERANK` off for chat-haystack memories such as LongMemEval-S
+sessions. Each session is far longer than the re-ranker's token limit, and
+with the default model R@5 (right session in the top 5) fell from 95.0% to
+85.0% on the stratified N=60 slice. Before this release the re-ranker
+returned 1.0 for every pair, so `RECALL_RERANK=true` kept the fused order,
+and earlier re-ranking numbers in `benchmark/COMPARISON.md` describe the
+fused order, not the re-ranker.
 
-Before this release the re-ranker returned 1.0 for every pair, so
-`RECALL_RERANK=true` kept the fused order. Re-ranking numbers measured
-before then describe the fused order, not the re-ranker.
+Re-ranking helps short memories that matter without sharing words with the
+request. On the InMind implicit-relevance tasks (72 held-out tasks, notes
+written for every memory), a 22M relevance model trained for this, with
+`RECALL_RERANK_MIN_SCORE=0.02`, injected the decisive memory for 26.4% of
+requests, against 0% with re-ranking off. It injected an unrelated memory
+for 2.9% of negative controls.
 
 ### Memory notes
 

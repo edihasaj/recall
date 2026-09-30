@@ -7,7 +7,9 @@
 - `RECALL_RERANK=true` did nothing. The re-ranker read its single-output
   model through a pipeline that returned 1.0 for every pair, so results kept
   the fused order and every score became 1. It now reads the model's output
-  directly and returns a relevance probability.
+  directly and returns a relevance probability. It now changes results:
+  keep it off for long chat-session memories, where it lowered
+  LongMemEval-S R@5 from 95.0% to 85.0% on the N=60 slice.
 - With re-ranking on, a memory that matters without sharing words with the
   query never reached the re-ranker: the vector arm only admitted matches
   with 0.8 similarity, and the query pack dropped anything under 0.7. The
