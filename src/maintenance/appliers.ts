@@ -25,6 +25,7 @@ import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.
 import type {
   ExtractedRule,
   ExtractRulesFromPromptResult,
+  NoteMemoryResult,
   MergeDuplicatesResult,
   RefineCandidateResult,
   SummarizeHistoryResult,
@@ -415,6 +416,23 @@ export function applySynthesizeRepo(
 // provider is configured, that left repetition_count at 0 for essentially
 // every candidate and made repeat-based promotion unreachable — the store
 // captured knowledge but never learned from it.
+/** Store a written note unless the memory gained one meanwhile; never overwrite. */
+export function applyNoteMemory(
+  db: RecallDb,
+  task: MaintenanceTask,
+  result: NoteMemoryResult,
+): ApplyOutcome {
+  const memoryId = (task.payload as { memory_id?: string }).memory_id;
+  if (!memoryId) throw new ApplyError("payload missing memory_id", "invalid-state");
+  const before = getMemory(db, memoryId);
+  if (!before) throw new ApplyError(`memory ${memoryId} not found`, "target-missing");
+  if (before.note || !result.affects?.trim()) {
+    return { audit_entry_id: null, target_id: memoryId, changed_fields: [] };
+  }
+  setMemoryNote(db, memoryId, result.affects);
+  return { audit_entry_id: null, target_id: memoryId, changed_fields: ["note"] };
+}
+
 export function applyExtractRulesFromPrompt(
   db: RecallDb,
   task: MaintenanceTask,
@@ -655,6 +673,8 @@ export function applyTaskResult(
       return applySynthesizeRepo(db, task, result as SynthesizeRepoResult);
     case "extract_rules_from_prompt":
       return applyExtractRulesFromPrompt(db, task, result as ExtractRulesFromPromptResult);
+    case "note_memory":
+      return applyNoteMemory(db, task, result as NoteMemoryResult);
     default: {
       const never: never = task.kind;
       throw new ApplyError(`unknown kind ${never}`, "unsupported-kind");

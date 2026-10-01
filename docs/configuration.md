@@ -459,8 +459,16 @@ the memory itself never mentions reports.
 
 Agents write the note when they capture a memory, through the optional
 `affects` field of `capture_correction` and `report_correction`. The managed
-instruction block written by `recall setup` asks for it. Notes are stored
-locally in `memories.note`; team sync does not carry them yet.
+instruction block written by `recall setup` asks for it. When a capture goes
+through background LLM extraction, the task carries the agent's note and the
+extractor writes its own as well.
+
+Memories saved without a note get one later. Each maintenance run queues a
+`note_memory` task for up to 10 live memories that have none, most-used
+first. The dispatcher's LLM writes the note, or an agent picks the task up
+through `maintenance_peek` and `maintenance_claim`. A note is never
+overwritten. Notes are stored locally in `memories.note`; team sync does not
+carry them yet.
 
 ## Verification
 

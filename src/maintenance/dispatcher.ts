@@ -1,6 +1,7 @@
 import type { RecallDb } from "../db/client.js";
 import type { MaintenanceTask, MaintenanceTaskKind } from "../types.js";
 import {
+  NOTE_MEMORY_INSTRUCTIONS,
   TaskClaimConflictError,
   abandonInvalidOpenTasks,
   abandonClaimedTask,
@@ -289,9 +290,30 @@ export function buildPrompt(task: MaintenanceTask): Prompt | null {
       return buildSynthesizeRepoPrompt(task);
     case "extract_rules_from_prompt":
       return buildExtractRulesFromPromptPrompt(task);
+    case "note_memory":
+      return buildNoteMemoryPrompt(task);
     default:
       return null;
   }
+}
+
+function buildNoteMemoryPrompt(task: MaintenanceTask): Prompt {
+  const payload = task.payload as { text?: string; type?: string; repo?: string | null };
+  const system = [
+    "You write retrieval notes for a coding-agent memory store.",
+    NOTE_MEMORY_INSTRUCTIONS,
+    "Do not restate the memory. Return null if it affects nothing a later request would name.",
+    JSON_ONLY,
+  ].join(" ");
+  const user = [
+    `Repo: ${JSON.stringify(payload.repo ?? null)}`,
+    `Memory type: ${JSON.stringify(payload.type ?? null)}`,
+    `MEMORY:`,
+    JSON.stringify(payload.text ?? ""),
+    "",
+    'Return JSON: {"affects": string|null}',
+  ].join("\n");
+  return { system, user, max_output_tokens: 200 };
 }
 
 function buildExtractRulesFromPromptPrompt(task: MaintenanceTask): Prompt {

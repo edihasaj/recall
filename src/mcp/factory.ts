@@ -1131,6 +1131,7 @@ const maintenanceTaskKinds = [
   "summarize_session",
   "synthesize_repo",
   "verify_capture",
+  "note_memory",
 ] as const;
 
 tool(

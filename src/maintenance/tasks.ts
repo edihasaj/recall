@@ -35,6 +35,8 @@ export const DEFAULT_PRIORITIES: Record<MaintenanceTaskKind, number> = {
   refine_candidate: 10,
   merge_duplicates: 8,
   summarize_history: 5,
+  // Notes for memories saved before notes existed, or saved without one.
+  note_memory: 4,
   summarize_session: 3,
   synthesize_repo: 1,
 };
@@ -174,7 +176,7 @@ export function getTaskStats(db: RecallDb): TaskStats {
   const rows = db.select().from(memoryMaintenanceTasks).all();
 
   const by_status = { pending: 0, claimed: 0, submitted: 0, completed: 0, abandoned: 0 } as Record<MaintenanceTaskStatus, number>;
-  const by_kind = { verify_capture: 0, refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0, extract_rules_from_prompt: 0 } as Record<MaintenanceTaskKind, number>;
+  const by_kind = { verify_capture: 0, refine_candidate: 0, merge_duplicates: 0, summarize_history: 0, summarize_session: 0, synthesize_repo: 0, extract_rules_from_prompt: 0, note_memory: 0 } as Record<MaintenanceTaskKind, number>;
   const by_kind_status: Record<string, number> = {};
 
   const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
@@ -815,6 +817,52 @@ export function produceSynthesizeRepoTasks(
   return enqueued;
 }
 
+/**
+ * Queue a note for live memories that have none: what each memory affects, in
+ * the words a later request would use. Most-used and most-confident first, at
+ * most `max_per_kind` per run, so a large backlog fills in over several runs.
+ */
+export function produceNoteMemoryTasks(
+  db: RecallDb,
+  config: Pick<EnqueueConfig, "max_per_kind">,
+): number {
+  const rows = db.select().from(memories)
+    .where(and(
+      inArray(memories.status, ["active", "candidate"]),
+      isNull(memories.note),
+    ))
+    .orderBy(desc(memories.injection_count), desc(memories.confidence))
+    .limit(config.max_per_kind)
+    .all();
+
+  let enqueued = 0;
+  for (const row of rows) {
+    const id = insertTaskIdempotent(db, {
+      kind: "note_memory",
+      target: row.id,
+      repo: row.repo,
+      payload: {
+        memory_id: row.id,
+        text: row.text,
+        type: row.type,
+        scope: row.scope,
+        repo: row.repo,
+        // Agents claiming over MCP see only the payload, so it says what to return.
+        instructions: NOTE_MEMORY_INSTRUCTIONS,
+        expected_result: { affects: "string, or null if it affects nothing a later request would name" },
+      },
+    });
+    if (id) enqueued += 1;
+  }
+  return enqueued;
+}
+
+export const NOTE_MEMORY_INSTRUCTIONS =
+  "Write what this memory should change later: the tasks, tools, commands, files, services or choices it "
+  + "affects, in the words a future request would use, including links not obvious from its wording. "
+  + "For 'Never point load tests at staging, it has no read replicas': 'load tests, benchmarks, stress tests, "
+  + "heavy read queries, reporting jobs, connection pool sizing'. One or two lines, comma-separated, in English.";
+
 // --- Orchestrator ---
 
 export async function enqueueMaintenanceTasks(
@@ -834,6 +882,7 @@ export async function enqueueMaintenanceTasks(
   counts.summarize_session = produceSummarizeSessionTasks(db, config);
   counts.synthesize_repo = produceSynthesizeRepoTasks(db, config);
   counts.merge_duplicates = await produceMergeDuplicateTasks(db, config);
+  counts.note_memory = produceNoteMemoryTasks(db, config);
 
   const dropped = applyBacklogCaps(db, config);
 
@@ -916,6 +965,11 @@ const ExtractedRule = z.object({
   affects: z.string().max(600).nullable().optional(),
 });
 
+const NoteMemoryResult = z.object({
+  // null when the memory affects nothing a later request would name.
+  affects: z.string().max(600).nullable(),
+});
+
 const ExtractRulesFromPromptResult = z.object({
   rules: z.array(ExtractedRule).max(10),
   dropped_reason: z.string().max(500).nullable().optional(),
@@ -929,6 +983,7 @@ const RESULT_SCHEMAS: Record<MaintenanceTaskKind, z.ZodTypeAny> = {
   summarize_session: SummarizeSessionResult,
   synthesize_repo: SynthesizeRepoResult,
   extract_rules_from_prompt: ExtractRulesFromPromptResult,
+  note_memory: NoteMemoryResult,
 };
 
 export type RefineCandidateResult = z.infer<typeof RefineCandidateResult>;
@@ -939,6 +994,7 @@ export type SummarizeSessionResult = z.infer<typeof SummarizeSessionResult>;
 export type SynthesizeRepoResult = z.infer<typeof SynthesizeRepoResult>;
 export type ExtractedRule = z.infer<typeof ExtractedRule>;
 export type ExtractRulesFromPromptResult = z.infer<typeof ExtractRulesFromPromptResult>;
+export type NoteMemoryResult = z.infer<typeof NoteMemoryResult>;
 
 export interface PeekOptions {
   repo?: string;

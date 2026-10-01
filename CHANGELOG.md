@@ -23,6 +23,8 @@
   "load tests, reporting jobs" for "Staging has no read replicas". Recall
   indexes, embeds and re-ranks the note with the memory. Run `recall setup`
   to update the agent instructions that ask for it.
+- Memories saved without a note get one through a new `note_memory`
+  maintenance task, written by the dispatcher's LLM or by an agent.
 - `RECALL_RERANK_MODEL` accepts a local model directory, and
   `RECALL_RERANK_MAX_LENGTH` caps the tokens per pair.
 
