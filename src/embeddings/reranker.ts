@@ -10,6 +10,7 @@
  * Hugging Face id or an absolute path to a local model directory (config,
  * tokenizer and onnx/model_quantized.onnx), such as a relevance model trained
  * for memories. Pairs are cut at RECALL_RERANK_MAX_LENGTH tokens (default 256).
+ * The cutoff for injecting a re-ranked memory is per model; see rerankMinScore.
  *
  * The model is read directly rather than through the text-classification
  * pipeline: these models have a single output, and the pipeline's softmax
@@ -18,7 +19,7 @@
  *
  * The reranker is loaded lazily on first use; consecutive calls reuse it.
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import {
   AutoModelForSequenceClassification,
@@ -68,14 +69,46 @@ export function isRerankerEnabled(): boolean {
   return process.env.RECALL_RERANK === "true";
 }
 
+// Re-rankers put probabilities on very different scales, so the injection
+// cutoff belongs to the model. ms-marco scores correct coding memories
+// around 1e-4 to 1e-1; 0.0003 kept 43% of them and fired on none of the
+// controls in benchmark/data (see docs/configuration.md).
+const DEFAULT_MIN_SCORES: Record<string, number> = { [DEFAULT_MODEL]: 0.0003 };
+const FALLBACK_MIN_SCORE = 0.5;
+const configMinScores = new Map<string, number | null>();
+
+function asProbability(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : null;
+}
+
+/** A local model directory may declare `recall_rerank_min_score` in its config.json. */
+function configMinScore(model: string): number | null {
+  if (!isAbsolute(model)) return null;
+  if (!configMinScores.has(model)) {
+    let value: number | null = null;
+    try {
+      value = asProbability(JSON.parse(readFileSync(join(model, "config.json"), "utf8")).recall_rerank_min_score);
+    } catch {
+      value = null;
+    }
+    configMinScores.set(model, value);
+  }
+  return configMinScores.get(model) ?? null;
+}
+
 /**
  * The least relevance probability at which a re-ranked memory may be
- * injected without also clearing the vector-similarity floor.
- * RECALL_RERANK_MIN_SCORE, default 0.5.
+ * injected without also clearing the vector-similarity floor: the
+ * RECALL_RERANK_MIN_SCORE override, else the model's own default (its
+ * config.json, or the built-in value for the default model), else 0.5.
  */
 export function rerankMinScore(): number {
-  const parsed = Number.parseFloat(process.env.RECALL_RERANK_MIN_SCORE ?? "");
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.5;
+  const model = rerankerModel();
+  return asProbability(process.env.RECALL_RERANK_MIN_SCORE)
+    ?? configMinScore(model)
+    ?? DEFAULT_MIN_SCORES[model]
+    ?? FALLBACK_MIN_SCORE;
 }
 
 /**

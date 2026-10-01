@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { initStandaloneDb } from "../src/db/client.js";
 import { hybridSearch } from "../src/embeddings/embeddings.js";
-import { rerankPairs, resetRerankerCache, setRerankScorerForTests } from "../src/embeddings/reranker.js";
+import { rerankMinScore, rerankPairs, resetRerankerCache, setRerankScorerForTests } from "../src/embeddings/reranker.js";
+import { writeFileSync } from "node:fs";
 import { createMemory } from "../src/models/memory.js";
 
 afterEach(() => {
@@ -33,6 +34,18 @@ it("hybridSearch reorders by the reranker's scores and keeps them", async () => 
 
   expect(results.map((result) => result.memory.id)).toEqual([second, first]);
   expect(results.map((result) => result.score)).toEqual([0.9, 0.2]);
+});
+
+it("the injection cutoff follows the model unless overridden", () => {
+  expect(rerankMinScore()).toBe(0.0003); // default ms-marco model
+  const dir = mkdtempSync(join(tmpdir(), "recall-rerank-model-"));
+  writeFileSync(join(dir, "config.json"), JSON.stringify({ recall_rerank_min_score: 0.02 }));
+  vi.stubEnv("RECALL_RERANK_MODEL", dir);
+  expect(rerankMinScore()).toBe(0.02);
+  vi.stubEnv("RECALL_RERANK_MODEL", "someone/other-reranker");
+  expect(rerankMinScore()).toBe(0.5);
+  vi.stubEnv("RECALL_RERANK_MIN_SCORE", "0.1");
+  expect(rerankMinScore()).toBe(0.1);
 });
 
 // Regression: the text-classification pipeline's softmax over a single-output

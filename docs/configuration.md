@@ -430,7 +430,7 @@ and conversational-haystack workloads.
 | `RECALL_RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | Re-ranker model: a Hugging Face id, or an absolute path to a local model directory (config, tokenizer, `onnx/model_quantized.onnx`). |
 | `RECALL_RERANK_TOP_K` | `50` | Window pulled into the re-rank stage. |
 | `RECALL_RERANK_MAX_LENGTH` | `256` | Tokens per (query, memory) pair. Longer pairs are cut. |
-| `RECALL_RERANK_MIN_SCORE` | `0.5` | Relevance probability a re-ranked memory needs before a query-driven pack may include it without also passing the vector-similarity floor. |
+| `RECALL_RERANK_MIN_SCORE` | per model | Relevance probability a re-ranked memory needs before a query-driven pack may include it without also passing the vector-similarity floor. Defaults to `0.0003` for the default ms-marco model, to `recall_rerank_min_score` in a local model's `config.json`, else `0.5`. Re-rankers score on very different scales, so set it together with `RECALL_RERANK_MODEL`. |
 | `RECALL_RERANK_CANDIDATE_MIN_SIM` | `0` | Vector-similarity floor for candidates while re-ranking is on. The normal floor (`RECALL_SIMILARITY_THRESHOLD`, 0.8) would drop memories that matter without sharing words with the query before the re-ranker sees them. |
 
 Keep `RECALL_RERANK` off for chat-haystack memories such as LongMemEval-S
@@ -442,11 +442,18 @@ and earlier re-ranking numbers in `benchmark/COMPARISON.md` describe the
 fused order, not the re-ranker.
 
 Re-ranking helps short memories that matter without sharing words with the
-request. On the InMind implicit-relevance tasks (72 held-out tasks, notes
-written for every memory), a 22M relevance model trained for this, with
-`RECALL_RERANK_MIN_SCORE=0.02`, injected the decisive memory for 26.4% of
-requests, against 0% with re-ranking off. It injected an unrelated memory
-for 2.9% of negative controls.
+request, once they have notes. Measured through `compileContextHybrid`
+(at most 2 memories injected per request):
+
+| Memories | Re-ranking off | `RECALL_RERANK=true` (ms-marco) | Unrelated memory injected |
+| --- | ---: | ---: | ---: |
+| 30 coding rules with notes, 60 in the store | 3.3% | 43.3% | 0 of 10 controls |
+| InMind personal facts with notes (72 held-out tasks) | 0% | 6.9% | 0 of 68 controls |
+
+The percentages are how often the memory the request depends on was
+injected. ms-marco suits coding rules; on personal facts a relevance model
+trained for that domain injected 26.4% (2.9% unrelated), but on the coding
+set it fired on 2 of 10 controls, so it is not the default.
 
 ### Memory notes
 

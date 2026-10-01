@@ -14,7 +14,9 @@
   query never reached the re-ranker: the vector arm only admitted matches
   with 0.8 similarity, and the query pack dropped anything under 0.7. The
   re-ranker now judges candidates below those floors, and a memory it scores
-  at `RECALL_RERANK_MIN_SCORE` (0.5) or higher can be injected.
+  at `RECALL_RERANK_MIN_SCORE` or higher can be injected. The cutoff defaults
+  per model: 0.0003 for the default ms-marco model, or the value a local
+  model declares in its `config.json`.
 
 ### Added
 
