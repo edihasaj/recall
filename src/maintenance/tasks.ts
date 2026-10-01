@@ -859,7 +859,9 @@ export function produceNoteMemoryTasks(
 
 export const NOTE_MEMORY_INSTRUCTIONS =
   "Write what this memory should change later: the tasks, tools, commands, files, services or choices it "
-  + "affects, in the words a future request would use, including links not obvious from its wording. "
+  + "affects, in the words a future request would use, including links not obvious from its wording and "
+  + "other names for the same things (environment aliases such as preprod for staging, abbreviations, "
+  + "everyday phrasings such as 'hammer it with traffic' for a load test). "
   + "For 'Never point load tests at staging, it has no read replicas': 'load tests, benchmarks, stress tests, "
   + "heavy read queries, reporting jobs, connection pool sizing'. One or two lines, comma-separated, in English.";
 

@@ -290,7 +290,8 @@ tool(
 // with it, so the description asks for the situations, not a restatement.
 const AFFECTS_DESCRIPTION =
   "What this rule should change later, in the words a future request would use: the tasks, tools, "
-  + "commands, files, services or choices it affects, including links not obvious from the rule's wording. "
+  + "commands, files, services or choices it affects, including links not obvious from the rule's wording "
+  + "and other names for the same things (preprod for staging, abbreviations, everyday phrasings). "
   + "For 'staging has no read replicas': 'load tests, heavy read queries, reporting jobs, migrations that "
   + "scan large tables, connection pool sizing'. One or two lines; omit if unsure.";
 
