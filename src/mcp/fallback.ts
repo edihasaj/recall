@@ -57,8 +57,8 @@ export interface SessionEndResult {
 
 /**
  * Give each captured memory the agent's note of what it affects, unless it
- * already has one. A note sent with a capture that is deferred to background
- * extraction is not kept: those memories do not exist yet.
+ * already has one. A capture deferred to background extraction carries the
+ * note in its task instead, and the extraction applies it.
  */
 function attachNote(db: RecallDb, ids: readonly string[], affects: string | undefined) {
   if (!affects?.trim()) return;
@@ -81,6 +81,7 @@ export async function captureCorrectionFallback(
     prev_assistant_turn: input.prev_assistant_turn,
     recent_tool_calls: input.recent_tool_calls,
     force_semantic_capture: true,
+    affects: input.affects,
   });
   attachNote(db, ids, input.affects);
 

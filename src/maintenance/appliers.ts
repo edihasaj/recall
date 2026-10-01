@@ -6,6 +6,7 @@ import {
   appendEvidence,
   countDistinctCorrectionSessions,
   createMemory,
+  setMemoryNote,
   getMemory,
   incrementMemoryRepetition,
   promoteMemory,
@@ -427,6 +428,7 @@ export function applyExtractRulesFromPrompt(
     raw_prompt?: string;
     prev_assistant_turn?: string | null;
     recent_tool_calls?: RecentToolCall[] | null;
+    affects?: string | null;
   };
   const repo = payload.repo ?? null;
   const profile = getRepoQualityProfile(db, repo ?? undefined);
@@ -476,9 +478,11 @@ export function applyExtractRulesFromPrompt(
       context: payload.raw_prompt ?? "",
     };
 
+    const note = rule.affects ?? payload.affects ?? null;
     const duplicate = findSimilar(db, repo, rule);
     if (duplicate) {
       const before = getMemory(db, duplicate.id);
+      if (note && !before?.note) setMemoryNote(db, duplicate.id, note);
       appendEvidence(db, duplicate.id, evidence);
       restoreAutoInject(db, duplicate.id);
       // Only replace stored context when this capture actually knows more.
@@ -532,6 +536,7 @@ export function applyExtractRulesFromPrompt(
       confidence: seedCandidateConfidence(rule.confidence, profile),
       evidence: [evidence],
       capture_context: captureContext,
+      note,
     });
     createdIds.push(id);
     applySupersession(db, id);

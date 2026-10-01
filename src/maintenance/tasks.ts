@@ -497,6 +497,7 @@ export function enqueueExtractRulesFromPrompt(
     session_id: string;
     prev_assistant_turn?: string | null;
     recent_tool_calls?: unknown;
+    affects?: string | null;
   },
 ): string | null {
   return insertTaskIdempotent(db, {
@@ -512,6 +513,7 @@ export function enqueueExtractRulesFromPrompt(
       session_id: payload.session_id,
       prev_assistant_turn: payload.prev_assistant_turn ?? null,
       recent_tool_calls: payload.recent_tool_calls ?? null,
+      affects: payload.affects ?? null,
     },
   });
 }
@@ -909,6 +911,9 @@ const ExtractedRule = z.object({
   durability_evidence: z.string().max(500).nullable().optional(),
   is_destructive_risky: z.boolean().optional(),
   rationale: z.string().max(500).nullable().optional(),
+  // What the rule should change later; stored as memories.note. Optional for
+  // already-queued tasks and older model responses.
+  affects: z.string().max(600).nullable().optional(),
 });
 
 const ExtractRulesFromPromptResult = z.object({
