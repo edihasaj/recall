@@ -30,17 +30,20 @@ it("is off unless explicitly enabled", () => {
   expect(isLlmJudgeEnabled()).toBe(true);
 });
 
-it("when enabled, injects exactly the memories it grades 2 or 3", async () => {
+it("when enabled, injects exactly the memories it grades 3 (or the configured minimum)", async () => {
   const { db, replicas, style, request } = setup();
   vi.stubEnv("RECALL_RELEVANCE_LLM", "true");
   const seen: string[][] = [];
   setLlmJudgeForTests(async (_query, memories) => {
     seen.push(memories.map((m) => m.id));
-    return new Map(memories.map((m) => [m.id, m.id === replicas ? 3 : 1]));
+    return new Map(memories.map((m) => [m.id, m.id === replicas ? 3 : 2]));
   });
   const pack = await compileContextHybrid(db, request);
   expect(seen[0]).toEqual(expect.arrayContaining([replicas, style]));
   expect(pack.memories_included).toEqual([replicas]);
+  vi.stubEnv("RECALL_RELEVANCE_LLM_MIN_GRADE", "2");
+  const looser = await compileContextHybrid(db, { ...request, session_id: "judge-2" });
+  expect(new Set(looser.memories_included)).toEqual(new Set([replicas, style]));
 });
 
 it("keeps the local decision when the judge gives no answer", async () => {

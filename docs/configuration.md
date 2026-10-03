@@ -431,7 +431,8 @@ and conversational-haystack workloads.
 | `RECALL_RERANK_TOP_K` | `50` | Window pulled into the re-rank stage. |
 | `RECALL_RERANK_MAX_LENGTH` | `256` | Tokens per (query, memory) pair. Longer pairs are cut. |
 | `RECALL_RERANK_MIN_SCORE` | per model | Relevance probability a re-ranked memory needs before a query-driven pack may include it without also passing the vector-similarity floor. Defaults to `0.0003` for the default ms-marco model, to `recall_rerank_min_score` in a local model's `config.json`, else `0.5`. Re-rankers score on very different scales, so set it together with `RECALL_RERANK_MODEL`. |
-| `RECALL_RELEVANCE_LLM` | `false` | Opt-in. With a connected provider (`recall credentials`, or the `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `AZURE_OPENAI_*` variables), one call per query-driven pack asks that model which of the top 8 candidates would change what the agent does; only memories it grades 2-3 are injected. Without a provider, on a timeout or on any error, the local decision stands. |
+| `RECALL_RELEVANCE_LLM` | `false` | Opt-in. With a connected provider (`recall credentials`, or the `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `AZURE_OPENAI_*` variables), one call per query-driven pack asks that model which of the top 8 candidates would change what the agent does; only memories it grades 3 ("handling the request without it would be wrong") are injected. Without a provider, on a timeout or on any error, the local decision stands. |
+| `RECALL_RELEVANCE_LLM_MIN_GRADE` | `3` | Lowest grade (1-3) the judge must give. Grade 2 also admits broad conventions the session-start pack already carries. |
 | `RECALL_RELEVANCE_LLM_TIMEOUT_MS` | `4000` | Time budget for that call. |
 | `RECALL_RERANK_CANDIDATE_MIN_SIM` | `0` | Vector-similarity floor for candidates while re-ranking is on. The normal floor (`RECALL_SIMILARITY_THRESHOLD`, 0.8) would drop memories that matter without sharing words with the query before the re-ranker sees them. |
 

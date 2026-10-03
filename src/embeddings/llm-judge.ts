@@ -6,7 +6,10 @@
  * RECALL_RELEVANCE_LLM=true, one call per request asks that model which of
  * the top candidates would change what a careful assistant does, the same
  * counterfactual question the local models are trained on. Only memories it
- * grades 2 or 3 are injected.
+ * grades at least RECALL_RELEVANCE_LLM_MIN_GRADE (default 3) are injected:
+ * on the coding benchmark grade 2 also admitted broad conventions (naming,
+ * test framework) that the session-start pack already carries, and a false
+ * injection on 64% of dev controls against 12% at grade 3.
  *
  * The call has a time budget (RECALL_RELEVANCE_LLM_TIMEOUT_MS, default 4000).
  * A timeout, a missing provider or any error returns null, and the caller
@@ -39,6 +42,11 @@ function provider(): LlmProvider | null {
     if (hasProviderConfigured(candidate)) return candidate;
   }
   return null;
+}
+
+export function llmJudgeMinGrade(): number {
+  const parsed = Number.parseInt(process.env.RECALL_RELEVANCE_LLM_MIN_GRADE ?? "", 10);
+  return [1, 2, 3].includes(parsed) ? parsed : 3;
 }
 
 export function isLlmJudgeEnabled(): boolean {

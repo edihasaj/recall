@@ -7,7 +7,7 @@ import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type HistorySnip
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import { rerankMinScore } from "../embeddings/reranker.js";
-import { judgeRelevance } from "../embeddings/llm-judge.js";
+import { judgeRelevance, llmJudgeMinGrade } from "../embeddings/llm-judge.js";
 import { listHistorySnippets } from "../history/snippets.js";
 import { searchHistorySnippets } from "../history/retrieval.js";
 import { textMatchScore } from "../text/match.js";
@@ -456,7 +456,7 @@ export async function compileContextHybrid(
       const retrievalItem = retrievalById.get(memory.id);
       if (effectiveQuery) {
         if (!retrievalItem) return false;
-        if (judged) return (judged.get(memory.id) ?? 0) >= 2;
+        if (judged) return (judged.get(memory.id) ?? 0) >= llmJudgeMinGrade();
         // The cross-encoder judged query and memory together; a memory that
         // matters without sharing words has low vector similarity by design,
         // so the floor below would drop exactly what re-ranking found. It
