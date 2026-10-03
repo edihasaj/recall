@@ -7,6 +7,7 @@ import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type HistorySnip
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import { rerankMinScore } from "../embeddings/reranker.js";
+import { judgeRelevance } from "../embeddings/llm-judge.js";
 import { listHistorySnippets } from "../history/snippets.js";
 import { searchHistorySnippets } from "../history/retrieval.js";
 import { textMatchScore } from "../text/match.js";
@@ -435,6 +436,18 @@ export async function compileContextHybrid(
     }
   }
 
+  // Opt-in: a connected LLM grades the top candidates; when it answers, its
+  // verdict replaces the local gate. Null keeps the local decision.
+  const judged = effectiveQuery
+    ? await judgeRelevance(
+        db,
+        effectiveQuery,
+        passing
+          .filter((memory) => retrievalById.has(memory.id))
+          .sort((a, b) => (retrievalById.get(b.id)?.score ?? 0) - (retrievalById.get(a.id)?.score ?? 0)),
+      )
+    : null;
+
   const summaries = getMemoryFeedbackSummaries(db, passing.map((m) => m.id));
   const emptySummary = { followed: 0, overridden: 0, contradicted: 0, ignored: 0, resolved: 0 };
 
@@ -443,6 +456,7 @@ export async function compileContextHybrid(
       const retrievalItem = retrievalById.get(memory.id);
       if (effectiveQuery) {
         if (!retrievalItem) return false;
+        if (judged) return (judged.get(memory.id) ?? 0) >= 2;
         // The cross-encoder judged query and memory together; a memory that
         // matters without sharing words has low vector similarity by design,
         // so the floor below would drop exactly what re-ranking found. It
@@ -464,7 +478,8 @@ export async function compileContextHybrid(
       return retrievalScore >= 0.2;
     })
     .map((memory) => {
-      const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
+      const judgedGrade = judged?.get(memory.id);
+      const retrievalScore = judgedGrade !== undefined ? judgedGrade / 3 : retrievalById.get(memory.id)?.score ?? 0;
       const weighted = feedbackWeightedScore(memory.confidence, summaries.get(memory.id) ?? emptySummary);
       const score = effectiveQuery
         ? (retrievalScore * 0.45) +

@@ -25,6 +25,10 @@
   "load tests, reporting jobs" for "Staging has no read replicas". Recall
   indexes, embeds and re-ranks the note with the memory. Run `recall setup`
   to update the agent instructions that ask for it.
+- `RECALL_RELEVANCE_LLM=true` (opt-in) lets a connected model make the final
+  relevance call for query-driven packs, one call per request over the top 8
+  candidates. Recall falls back to the local decision when the model is
+  missing, slow or fails.
 - Memories saved without a note get one through a new `note_memory`
   maintenance task, written by the dispatcher's LLM or by an agent.
 - `RECALL_RERANK_MODEL` accepts a local model directory, and
