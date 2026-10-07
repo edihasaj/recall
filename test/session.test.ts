@@ -1,11 +1,12 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { initStandaloneDb } from "../src/db/client.js";
 import { listActivityEvents } from "../src/models/activity.js";
 import { queryMemories } from "../src/models/memory.js";
+import { writeRepoContextArtifact } from "../src/artifacts/context.js";
 import {
   endSessionLifecycle,
   recordSessionLifecycleEvent,
@@ -48,6 +49,13 @@ describe("session lifecycle", () => {
     const repoRoot = mkdtempSync(join(tmpdir(), "recall-session-repo-"));
     makeRepo(repoRoot, "https://github.com/edihasaj/session-start.git");
 
+    const excludePathRaw = execFileSync(
+      "git", ["-C", repoRoot, "rev-parse", "--git-path", "info/exclude"],
+      { encoding: "utf-8", stdio: "pipe" },
+    ).trim();
+    const excludePath = isAbsolute(excludePathRaw) ? excludePathRaw : resolve(repoRoot, excludePathRaw);
+    const excludeBefore = readFileSync(excludePath, "utf-8");
+
     const started = startSessionLifecycle(db, {
       session_id: "sess-1",
       client: "codex",
@@ -57,18 +65,11 @@ describe("session lifecycle", () => {
     expect(started.repo).toBe("edihasaj/session-start");
     expect(started.bootstrap_status).toBe("bootstrapped");
     expect(started.created_ids.length).toBeGreaterThan(0);
-    const artifact = readFileSync(join(repoRoot, ".recall", "context.md"), "utf-8");
-    expect(artifact).toContain("# Recall Context");
-    expect(artifact).toContain("edihasaj/session-start");
-    const excludePathRaw = execFileSync(
-      "git",
-      ["-C", repoRoot, "rev-parse", "--git-path", "info/exclude"],
-      { encoding: "utf-8", stdio: "pipe" },
-    ).trim();
-    const excludePath = isAbsolute(excludePathRaw)
-      ? excludePathRaw
-      : resolve(repoRoot, excludePathRaw);
-    expect(readFileSync(excludePath, "utf-8")).toContain(".recall/");
+    expect(existsSync(join(repoRoot, ".recall"))).toBe(false);
+    expect(readFileSync(excludePath, "utf-8")).toBe(excludeBefore);
+    const exported = writeRepoContextArtifact(db, {repo: started.repo, repo_path: repoRoot});
+    expect(exported.written).toBe(true);
+    expect(readFileSync(join(repoRoot, ".recall", "context.md"), "utf-8")).toContain("edihasaj/session-start");
 
     recordSessionLifecycleEvent(db, {
       session_id: "sess-1",

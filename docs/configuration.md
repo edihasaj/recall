@@ -17,6 +17,12 @@ feedback on other rules never promotes a new candidate.
 
 Routine app launch, daemon start, and daemon restart do not restore removed hooks or repo instruction files. Reinstalling agent integrations is explicit: run `recall setup --yes`, `recall doctor --fix`, or use the app's Install + Start action.
 
+Session startup reads repository context and delivers memory through the hook
+response. It does not create `.recall/context.md` or change Git's local excludes.
+This keeps generated memory exports out of exact-revision delivery worktrees.
+Run `recall publish <path>` when you explicitly want a repository-local export;
+the normal MCP and hook injection paths do not need that file.
+
 You can tune that with these env vars (read fresh on each hook invocation — no daemon restart needed):
 
 | Variable | Default | Effect |

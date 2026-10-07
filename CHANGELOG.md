@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.22 - 2026-10-07
+
+### Fixed
+
+- Session startup delivers memory through hooks and MCP without creating a
+  repository-local context export or editing Git exclusions. This prevents
+  optional memory output from invalidating exact-revision delivery checks.
+  Explicit `recall publish` exports remain available.
+
 ## 1.4.21 - 2026-09-29
 
 ### Fixed

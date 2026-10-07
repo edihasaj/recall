@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -175,8 +175,7 @@ describe("phase 2 hook handlers", () => {
     expect(baseTypes).toEqual(["scan", "session_end", "session_start"]);
     const sessionEnd = events.find((e) => e.event_type === "session_end")!;
     expect(sessionEnd.result.turn_count).toBe(4);
-    const artifact = readFileSync(join(repoRoot, ".recall", "context.md"), "utf-8");
-    expect(artifact).toContain("edihasaj/hook-phase2");
+    expect(existsSync(join(repoRoot, ".recall", "context.md"))).toBe(false);
   });
 
   it("falls back to direct sqlite writes when the daemon is unavailable", async () => {

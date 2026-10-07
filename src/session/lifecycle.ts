@@ -1,7 +1,6 @@
 import type { RecallDb } from "../db/client.js";
 import { createActivityEvent } from "../models/activity.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath, refreshKnownRepoScan } from "../repo/discovery.js";
-import { writeRepoContextArtifact } from "../artifacts/context.js";
 import type { ActivitySource } from "../types.js";
 import { tagActivitySource } from "../types.js";
 
@@ -72,11 +71,6 @@ export function startSessionLifecycle(
     }
   }
 
-  const artifact = writeRepoContextArtifact(db, {
-    repo: bootstrap.repo,
-    repo_path: bootstrap.repo_path ?? input.repo_path ?? null,
-  });
-
   createActivityEvent(db, {
     session_id: input.session_id,
     repo: bootstrap.repo,
@@ -91,8 +85,8 @@ export function startSessionLifecycle(
     result: {
       bootstrap_status: bootstrap.status,
       created: bootstrap.created_ids.length,
-      artifact_path: artifact.output_path,
-      artifact_written: artifact.written,
+      artifact_path: null,
+      artifact_written: false,
     },
   });
 
