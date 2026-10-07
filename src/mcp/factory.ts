@@ -286,6 +286,15 @@ tool(
   },
 );
 
+// The note is how a memory is later found by requests that share no words
+// with it, so the description asks for the situations, not a restatement.
+const AFFECTS_DESCRIPTION =
+  "What this rule should change later, in the words a future request would use: the tasks, tools, "
+  + "commands, files, services or choices it affects, including links not obvious from the rule's wording "
+  + "and other names for the same things (preprod for staging, abbreviations, everyday phrasings). "
+  + "For 'staging has no read replicas': 'load tests, heavy read queries, reporting jobs, migrations that "
+  + "scan large tables, connection pool sizing'. One or two lines; omit if unsure.";
+
 tool(
   "report_correction",
   "Report a possible durable correction or standing rule based on its meaning in any language. Do not use for instructions limited to the current task. Accepts optional assistant/tool context and creates only candidate memories.",
@@ -304,8 +313,9 @@ tool(
         exit_code: z.number().optional(),
       }),
     ).optional().describe("Last 1-3 tool calls leading up to the correction."),
+    affects: z.string().optional().describe(AFFECTS_DESCRIPTION),
   },
-  async ({ text, repo, path, session_id, agent, prev_assistant_turn, recent_tool_calls }) => {
+  async ({ text, repo, path, session_id, agent, prev_assistant_turn, recent_tool_calls, affects }) => {
     const result = await captureCorrectionFallback(db, {
       text,
       repo,
@@ -314,6 +324,7 @@ tool(
       agent: agent ?? "mcp",
       prev_assistant_turn,
       recent_tool_calls,
+      affects,
     }, mcpSource());
 
     if (result.ids.length === 0) {
@@ -366,8 +377,9 @@ tool(
         exit_code: z.number().optional(),
       }),
     ).optional().describe("Last 1-3 tool calls leading up to the correction."),
+    affects: z.string().optional().describe(AFFECTS_DESCRIPTION),
   },
-  async ({ text, repo, path, session_id, agent, prev_assistant_turn, recent_tool_calls }) => {
+  async ({ text, repo, path, session_id, agent, prev_assistant_turn, recent_tool_calls, affects }) => {
     const result = await captureCorrectionFallback(db, {
       text,
       repo,
@@ -376,6 +388,7 @@ tool(
       agent,
       prev_assistant_turn,
       recent_tool_calls,
+      affects,
     }, mcpSource());
 
     if (result.ids.length === 0) {
@@ -1119,6 +1132,7 @@ const maintenanceTaskKinds = [
   "summarize_session",
   "synthesize_repo",
   "verify_capture",
+  "note_memory",
 ] as const;
 
 tool(

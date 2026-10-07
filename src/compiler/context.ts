@@ -6,6 +6,8 @@ import { recordHistoryInjections } from "../models/history-injections.js";
 import { CONFIDENCE, type CompilerConfig, type EmbeddingConfig, type HistorySnippet, type MemoryItem } from "../types.js";
 import { getRepoQualityProfile } from "../repo/quality.js";
 import { hybridSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { isRerankerEnabled, rerankCompanionRatio, rerankMinScore } from "../embeddings/reranker.js";
+import { isLlmJudgeEnabled, judgeRelevance, llmJudgeCandidates, llmJudgeMinGrade } from "../embeddings/llm-judge.js";
 import { listHistorySnippets } from "../history/snippets.js";
 import { searchHistorySnippets } from "../history/retrieval.js";
 import { textMatchScore } from "../text/match.js";
@@ -404,14 +406,19 @@ export async function compileContextHybrid(
   const retrieval = effectiveQuery
     ? await hybridSearch(db, effectiveQuery, embeddingConfig, {
         repo: req.repo,
-        limit: QUERY_RESULT_LIMIT,
+        // The LLM judge (when on) can grade more candidates than the local path keeps.
+        limit: isLlmJudgeEnabled() ? Math.max(QUERY_RESULT_LIMIT, llmJudgeCandidates()) : QUERY_RESULT_LIMIT,
       })
     : [];
 
   const retrievalById = new Map(
     retrieval.map((item) => [item.memory.id, item]),
   );
-  if (effectiveQuery) {
+  // With a re-ranker, every candidate comes through hybridSearch and is
+  // scored by it. Adding plain word matches here would put unscored memories
+  // (with lexical scores that outrank re-ranker probabilities) into the pack
+  // and into the LLM judge's eight slots.
+  if (effectiveQuery && !isRerankerEnabled()) {
     for (const memory of passing) {
       const lexical = textMatchScore(effectiveQuery, memory.text);
       if (lexical.score < QUERY_TEXT_MATCH_FLOOR) continue;
@@ -434,6 +441,18 @@ export async function compileContextHybrid(
     }
   }
 
+  // Opt-in: a connected LLM grades the top candidates; when it answers, its
+  // verdict replaces the local gate. Null keeps the local decision.
+  const judged = effectiveQuery
+    ? await judgeRelevance(
+        db,
+        effectiveQuery,
+        passing
+          .filter((memory) => retrievalById.has(memory.id))
+          .sort((a, b) => (retrievalById.get(b.id)?.score ?? 0) - (retrievalById.get(a.id)?.score ?? 0)),
+      )
+    : null;
+
   const summaries = getMemoryFeedbackSummaries(db, passing.map((m) => m.id));
   const emptySummary = { followed: 0, overridden: 0, contradicted: 0, ignored: 0, resolved: 0 };
 
@@ -442,6 +461,15 @@ export async function compileContextHybrid(
       const retrievalItem = retrievalById.get(memory.id);
       if (effectiveQuery) {
         if (!retrievalItem) return false;
+        if (judged) return (judged.get(memory.id) ?? 0) >= llmJudgeMinGrade();
+        // The cross-encoder judged query and memory together; a memory that
+        // matters without sharing words has low vector similarity by design,
+        // so the floor below would drop exactly what re-ranking found. It
+        // still has to clear the re-ranker's own bar.
+        // The re-ranker's verdict is final for memories it scored: its candidate
+        // pool is wide (OR keyword matches), so the lexical fallback below
+        // would let weak word overlaps through.
+        if (retrievalItem.reranked) return retrievalItem.score >= rerankMinScore(passing.length);
         const hasStrongLexicalMatch =
           retrievalItem.lexical_score >= QUERY_TEXT_MATCH_FLOOR;
         if (
@@ -458,7 +486,8 @@ export async function compileContextHybrid(
       return retrievalScore >= 0.2;
     })
     .map((memory) => {
-      const retrievalScore = retrievalById.get(memory.id)?.score ?? 0;
+      const judgedGrade = judged?.get(memory.id);
+      const retrievalScore = judgedGrade !== undefined ? judgedGrade / 3 : retrievalById.get(memory.id)?.score ?? 0;
       const weighted = feedbackWeightedScore(memory.confidence, summaries.get(memory.id) ?? emptySummary);
       const score = effectiveQuery
         ? (retrievalScore * 0.45) +
@@ -480,10 +509,16 @@ export async function compileContextHybrid(
   let commandCount = 0;
   let gotchaCount = 0;
   let lineCount = 0;
+  const companionRatio = effectiveQuery && !judged && isRerankerEnabled() ? rerankCompanionRatio() : 0;
 
   for (const item of dedupedRanked) {
     if (effectiveQuery && selected.length >= QUERY_SELECTION_LIMIT) break;
     const memory = item.memory;
+    if (companionRatio > 0 && selected.length > 0) {
+      const first = retrievalById.get(selected[0].id);
+      const candidate = retrievalById.get(memory.id);
+      if (first?.reranked && candidate?.reranked && candidate.score < first.score * companionRatio) continue;
+    }
     const memLines = renderMemoryText(memory).split("\n").length;
 
     if (lineCount + memLines > config.max_lines) continue;

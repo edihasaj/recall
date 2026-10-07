@@ -2,6 +2,7 @@ import type { RecallDb } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { memories } from "../db/schema.js";
 import { getSynonyms } from "./synonyms.js";
+import { retrievalText } from "../models/retrieval-text.js";
 import { BACKGROUND_INDEX_BATCH_SIZE, processInResponsiveBatches } from "../embeddings/responsive-batches.js";
 
 const FTS_MEMORY_INDEX = "fts_memory_index";
@@ -48,7 +49,7 @@ function expandTokenWithSynonyms(
   return `(${[base, ...alts].join(" OR ")})`;
 }
 
-function buildFtsQuery(query: string) {
+function buildFtsQuery(query: string, mode?: "and" | "or") {
   const tokens = query
     .match(/[A-Za-z0-9_.:/-]+/g)
     ?.map((token) => token.replace(/"/g, '""'))
@@ -62,7 +63,7 @@ function buildFtsQuery(query: string) {
   // synonym group with the next token (implicit-AND via whitespace is only
   // valid between bare phrases) — use the keyword form universally so both
   // shapes work.
-  const join = process.env.RECALL_FTS_MODE === "or" ? " OR " : " AND ";
+  const join = (mode ?? (process.env.RECALL_FTS_MODE === "or" ? "or" : "and")) === "or" ? " OR " : " AND ";
   const prefixDisabled = process.env.RECALL_FTS_PREFIX === "false";
   const synonymsDisabled = process.env.RECALL_SYNONYMS === "false";
   return tokens
@@ -121,7 +122,7 @@ export function removeMemoryFtsRow(
 
 export function upsertMemoryFtsRow(
   db: RecallDb,
-  memory: Pick<MemoryRow, "id" | "text" | "repo" | "status" | "type" | "scope" | "path_scope" | "confidence">,
+  memory: Pick<MemoryRow, "id" | "text" | "note" | "repo" | "status" | "type" | "scope" | "path_scope" | "confidence">,
 ) {
   ensureMemoryFtsIndex(db);
 
@@ -144,7 +145,7 @@ export function upsertMemoryFtsRow(
     ) values (?, ?, ?, ?, ?, ?, ?)
   `).run(
     memory.id,
-    memory.text,
+    retrievalText(memory),
     memory.repo ?? "",
     memory.status,
     memory.type,
@@ -207,7 +208,7 @@ export function rebuildMemoryFtsIndex(
     for (const row of batch) {
       stmt.run(
         row.id,
-        row.text,
+        retrievalText(row),
         row.repo ?? "",
         row.status,
         row.type,
@@ -242,7 +243,7 @@ export async function rebuildMemoryFtsIndexResponsive(
   `);
   const insertMany = sqlite.transaction((batch: typeof rows) => {
     for (const row of batch) {
-      stmt.run(row.id, row.text, row.repo ?? "", row.status, row.type, row.scope, row.path_scope ?? "");
+      stmt.run(row.id, retrievalText(row), row.repo ?? "", row.status, row.type, row.scope, row.path_scope ?? "");
     }
   });
   await processInResponsiveBatches(rows, async (batch) => { insertMany(batch); }, {
@@ -289,13 +290,13 @@ export function verifyMemoryFtsIndex(
 export function searchMemoryFtsIndex(
   db: RecallDb,
   query: string,
-  options: { repo?: string; limit?: number } = {},
+  options: { repo?: string; limit?: number; mode?: "and" | "or" } = {},
 ): Array<{ memory_id: string; lexical_rank: number }> {
   ensureMemoryFtsIndex(db);
 
   const sqlite = getSqlite(db);
   const limit = options.limit ?? 10;
-  const ftsQuery = buildFtsQuery(query);
+  const ftsQuery = buildFtsQuery(query, options.mode);
   if (!ftsQuery) return [];
 
   if (options.repo) {

@@ -4,6 +4,8 @@ import { hasNonDurableProvenance } from "../capture/provenance.js";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
 import { memoryDedupeKey } from "./dedupe.js";
+import { normalizeNote } from "./retrieval-text.js";
+import { rowToMemory } from "./memory-row.js";
 import { recordAudit } from "../audit/trail.js";
 import { queueMemoryEmbeddingSync } from "../embeddings/embeddings.js";
 import { safeIngestMemoryById } from "../graph/ingest.js";
@@ -37,6 +39,8 @@ export interface CreateMemoryInput {
   capture_context?: CaptureContext | null;
   supersedes?: string | null;
   dedupe?: boolean;
+  /** What this memory affects; see memories.note. */
+  note?: string | null;
 }
 
 export function statusFromConfidence(confidence: number): MemoryStatus {
@@ -69,11 +73,16 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
         text: input.text,
       });
 
+  const note = normalizeNote(input.note);
   if (dedupeKey) {
     const existing = db.select().from(memories)
       .where(and(eq(memories.dedupe_key, dedupeKey), sql`${memories.status} != 'rejected'`))
       .get();
-    if (existing) return existing.id;
+    if (existing) {
+      // A repeat capture can carry the note the first one lacked.
+      if (note && !existing.note) setMemoryNote(db, existing.id, note);
+      return existing.id;
+    }
   }
 
   // onConflictDoNothing closes the TOCTOU window between the pre-check SELECT
@@ -94,6 +103,7 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       source: input.source,
       evidence: (input.evidence ?? []) as any,
       capture_context: input.capture_context ? input.capture_context as any : null,
+      note,
       supersedes: input.supersedes ?? null,
       dedupe_key: dedupeKey,
       created_at: now,
@@ -119,6 +129,20 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
 
   queueMemoryEmbeddingSync(db, id);
   return id;
+}
+
+/**
+ * Set or replace what a memory affects, then refresh its keyword index row and
+ * embedding, both of which cover the note. Returns false for an unknown id.
+ */
+export function setMemoryNote(db: RecallDb, id: string, note: string | null): boolean {
+  const result = db.update(memories)
+    .set({ note: normalizeNote(note), updated_at: new Date().toISOString() })
+    .where(eq(memories.id, id))
+    .run();
+  if (result.changes === 0) return false;
+  queueMemoryEmbeddingSync(db, id); // also refreshes the keyword index
+  return true;
 }
 
 // --- Read ---
@@ -628,41 +652,6 @@ export function feedbackWeightedScore(
 }
 
 // --- Helpers ---
-
-function rowToMemory(row: MemoryRow): MemoryItem {
-  const evidence =
-    typeof row.evidence === "string"
-      ? JSON.parse(row.evidence as string)
-      : Array.isArray(row.evidence)
-        ? row.evidence
-        : [];
-  const captureContext =
-    typeof row.capture_context === "string"
-      ? JSON.parse(row.capture_context as string)
-      : row.capture_context ?? null;
-  return {
-    id: row.id,
-    type: row.type,
-    text: row.text,
-    scope: row.scope,
-    path_scope: row.path_scope,
-    repo: row.repo,
-    status: row.status,
-    confidence: row.confidence,
-    source: row.source,
-    evidence: evidence as EvidenceEntry[],
-    capture_context: captureContext as MemoryItem["capture_context"],
-    supersedes: row.supersedes,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    last_validated_at: row.last_validated_at,
-    last_injected_at: row.last_injected_at,
-    injection_count: row.injection_count,
-    override_count: row.override_count,
-    repetition_count: row.repetition_count,
-    auto_inject: row.auto_inject,
-  };
-}
 
 function hasEquivalentEvidence(
   existing: EvidenceEntry[],

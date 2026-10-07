@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.0.0 - 2026-10-07
+
+### Fixed
+
+- Long reranker pairs retain both separator tokens and memory content after
+  truncation. Local packages can declare their inference batch size.
+- `RECALL_RERANK=true` did nothing. The re-ranker read its single-output
+  model through a pipeline that returned 1.0 for every pair, so results kept
+  the fused order and every score became 1. It now reads the model's output
+  directly and returns a relevance probability. It now changes results:
+  keep it off for long chat-session memories, where it lowered
+  LongMemEval-S R@5 from 95.0% to 85.0% on the N=60 slice.
+- With re-ranking on, a memory that matters without sharing words with the
+  query never reached the re-ranker: the vector arm only admitted matches
+  with 0.8 similarity, and the query pack dropped anything under 0.7. The
+  re-ranker now judges candidates below those floors, and a memory it scores
+  at `RECALL_RERANK_MIN_SCORE` or higher can be injected. The cutoff defaults
+  per model: 0.0003 for the default ms-marco model, or the value a local
+  model declares in its `config.json`.
+
+### Added
+
+- Memory notes. `capture_correction` and `report_correction` accept an
+  optional `affects` note: what the memory should change later, such as
+  "load tests, reporting jobs" for "Staging has no read replicas". Recall
+  indexes, embeds and re-ranks the note with the memory. Run `recall setup`
+  to update the agent instructions that ask for it.
+- `RECALL_RELEVANCE_LLM=true` (opt-in) lets a connected model make the final
+  relevance call for query-driven packs, one call per request over the top 8
+  candidates, injecting those it grades 3 ("would be wrong without it").
+  Recall falls back to the local decision when the model is missing, slow or
+  fails.
+- Memories saved without a note get one through a new `note_memory`
+  maintenance task, written by the dispatcher's LLM or by an agent.
+- While re-ranking, keyword candidates use an OR join, and the re-ranker's
+  verdict on a memory it scored is final.
+- `RECALL_RERANK_MODEL` accepts a local model directory, and
+  `RECALL_RERANK_MAX_LENGTH` caps the tokens per pair.
+- A local re-ranker's `config.json` can give `recall_rerank_min_score` as
+  a curve from store size to cutoff, such as `{"180": 0.69, "1000": 0.855}`.
+  The more memories a query can match, the more near-misses score high, so
+  the cutoff rises with the number of memories in scope (linear in the log
+  of the size between points). `RECALL_RERANK_MIN_SCORE` still sets a fixed
+  cutoff.
+
+- Local model packages can set a companion score ratio to reduce marginal
+  second memories. The connected judge takes precedence when it answers.
+- A checksummed, 149M-parameter local relevance model is available as a separate
+  release download. It uses weight-only compression and a size-aware cutoff.
+  Reranking remains opt-in. Benchmark results and remaining general-question
+  errors are documented in the model card.
+
 ## 1.4.22 - 2026-10-07
 
 ### Fixed
@@ -8,6 +60,7 @@
   repository-local context export or editing Git exclusions. This prevents
   optional memory output from invalidating exact-revision delivery checks.
   Explicit `recall publish` exports remain available.
+
 
 ## 1.4.21 - 2026-09-29
 

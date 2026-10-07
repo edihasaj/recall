@@ -85,6 +85,13 @@
       "when": 1789989957000,
       "tag": "0011_compact_telemetry_dedupe_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790777678727,
+      "tag": "0012_memory_notes",
+      "breakpoints": true
     }
   ]
 }

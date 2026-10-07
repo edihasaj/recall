@@ -288,6 +288,8 @@ export interface CorrectionContext {
    * meaning/context, so bypass the cheap keyword screen and invoke the
    * semantic capture judge when available. */
   force_semantic_capture?: boolean;
+  /** The capturing agent's note of what the correction affects; see memories.note. */
+  affects?: string;
 }
 
 function stripTrailingPunctuation(text: string): string {
@@ -404,6 +406,7 @@ export async function processCorrection(
       session_id: ctx.sessionId,
       prev_assistant_turn: ctx.prev_assistant_turn ?? null,
       recent_tool_calls: ctx.recent_tool_calls ?? null,
+      affects: ctx.affects ?? null,
     });
     // Best-effort wake-up; missing daemon is fine, the timer-based cycle
     // will still run.

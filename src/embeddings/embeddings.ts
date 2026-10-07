@@ -28,7 +28,9 @@ import {
   verifyMemoryFtsIndex,
 } from "../vector/sqlite-fts.js";
 import { generateHydeText } from "./hyde.js";
-import { isRerankerEnabled, rerankerTopK, rerankPairs } from "./reranker.js";
+import { isRerankerEnabled, rerankCandidateMinSimilarity, rerankerTopK, rerankFtsMode, rerankPairs } from "./reranker.js";
+import { retrievalText } from "../models/retrieval-text.js";
+import { rowToMemory } from "../models/memory-row.js";
 import { processInResponsiveBatches } from "./responsive-batches.js";
 
 type MemoryRow = typeof memories.$inferSelect;
@@ -193,7 +195,7 @@ function deserializeEmbedding(buffer: Buffer): Float32Array {
 }
 
 function rowNeedsEmbeddingRefresh(
-  row: Pick<MemoryRow, "text">,
+  row: Pick<MemoryRow, "text" | "note">,
   existing: Pick<MemoryEmbeddingRow,
     "model" | "embedding_dimensions" | "index_dimensions" | "version" | "content_hash"
   > | undefined,
@@ -206,7 +208,7 @@ function rowNeedsEmbeddingRefresh(
     existing.embedding_dimensions !== metadata.canonical_dimensions ||
     existing.index_dimensions !== metadata.index_dimensions ||
     existing.version !== getEmbeddingVersion(config) ||
-    existing.content_hash !== hashMemoryText(row.text)
+    existing.content_hash !== hashMemoryText(retrievalText(row))
   );
 }
 
@@ -347,7 +349,7 @@ export async function syncMemoryEmbedding(
     return "skipped";
   }
 
-  const embedding = await generateEmbedding(memory.text, config, "document");
+  const embedding = await generateEmbedding(retrievalText(memory), config, "document");
 
   // Embedding generation is async; the parent memory may have been deleted
   // (e.g. test cleanup, hard-delete of a candidate) while we awaited. Skip the
@@ -363,7 +365,7 @@ export async function syncMemoryEmbedding(
     return "removed";
   }
 
-  storeEmbedding(db, memory.id, memory.text, embedding, config);
+  storeEmbedding(db, memory.id, retrievalText(memory), embedding, config);
   const refreshed = db
     .select()
     .from(memoryEmbeddings)
@@ -434,13 +436,13 @@ export async function bootstrapEmbeddings(
   let total = 0;
   await processInResponsiveBatches(pending, async (batch) => {
     const embeddings = await generateEmbeddings(
-      batch.map((row) => row.text),
+      batch.map((row) => retrievalText(row)),
       config,
       "document",
     );
 
     for (let j = 0; j < batch.length; j++) {
-      storeEmbedding(db, batch[j].id, batch[j].text, embeddings[j], config);
+      storeEmbedding(db, batch[j].id, retrievalText(batch[j]), embeddings[j], config);
       total++;
     }
   });
@@ -459,6 +461,7 @@ export function verifyEmbeddings(
     id: memories.id,
     repo: memories.repo,
     text: memories.text,
+    note: memories.note,
     status: memories.status,
     confidence: memories.confidence,
     source: memories.source,
@@ -562,11 +565,20 @@ export async function hybridSearch(
   score: number;
   similarity: number;
   lexical_score: number;
+  /** Ordered and scored by the cross-encoder, which read the query and memory together. */
+  reranked?: boolean;
 }>> {
   const limit = options.limit ?? 10;
-  const minSimilarity = config
-    ? Math.max(config.similarity_threshold, MIN_HYBRID_VECTOR_SIMILARITY)
-    : null;
+  // Without a re-ranker the similarity floor is the relevance check, so it is
+  // high. With one, the floor only bounds the candidate pool: a memory that
+  // matters without sharing words sits well below it, and the re-ranker makes
+  // the relevance call instead.
+  const reranking = isRerankerEnabled();
+  const minSimilarity = !config
+    ? null
+    : reranking
+      ? rerankCandidateMinSimilarity()
+      : Math.max(config.similarity_threshold, MIN_HYBRID_VECTOR_SIMILARITY);
 
   // Pull a wider window (10x final limit, min 50) into each arm so RRF has
   // enough headroom to recombine. Old code pulled 2x/min-20 which starves the
@@ -576,6 +588,11 @@ export async function hybridSearch(
   const lexicalMatches = searchMemoryFtsIndex(db, query, {
     repo: options.repo,
     limit: armLimit,
+    // With a re-ranker the lexical arm only gathers candidates, so any shared
+    // word should count: notes carry the words a request uses, and the AND
+    // join (every term must match) admitted the right memory to the top 50
+    // in 66% of benchmark requests at 1,000 memories against 88% with OR.
+    mode: reranking ? rerankFtsMode() : undefined,
   });
   // HyDE: if enabled and the query looks like a chat question, embed a
   // 1-sentence hypothetical answer instead of the question itself. Lex arm
@@ -666,16 +683,18 @@ export async function hybridSearch(
   // Cross-encoder re-rank: pull a wider window (default top-50), score each
   // (query, doc) pair jointly, then keep the limit-N best. Skip silently on
   // any failure — the fused order is already a sensible fallback.
-  if (isRerankerEnabled() && sorted.length > 1) {
+  // Even a single candidate needs the re-ranker's judgment: with re-ranking on,
+  // the lowered similarity floor no longer vouches for it.
+  if (reranking && sorted.length > 0) {
     const topK = Math.min(rerankerTopK(), sorted.length);
     const candidates = sorted.slice(0, topK);
     try {
       const scores = await rerankPairs(
         query,
-        candidates.map((c) => c.memory.text),
+        candidates.map((c) => retrievalText(c.memory)),
       );
       const rescored = candidates
-        .map((c, i) => ({ ...c, score: scores[i] ?? 0 }))
+        .map((c, i) => ({ ...c, score: scores[i] ?? 0, reranked: true }))
         .sort((a, b) => b.score - a.score);
       return rescored.slice(0, limit);
     } catch {
@@ -824,42 +843,4 @@ export async function findSimilarRejectedExemplar(
   }
 
   return best;
-}
-
-// --- Helpers ---
-
-function rowToMemory(row: MemoryRow): MemoryItem {
-  const evidence =
-    typeof row.evidence === "string"
-      ? JSON.parse(row.evidence as string)
-      : Array.isArray(row.evidence)
-        ? row.evidence
-        : [];
-  const captureContext =
-    typeof row.capture_context === "string"
-      ? JSON.parse(row.capture_context as string)
-      : row.capture_context ?? null;
-
-  return {
-    id: row.id,
-    type: row.type,
-    text: row.text,
-    scope: row.scope,
-    path_scope: row.path_scope,
-    repo: row.repo,
-    status: row.status,
-    confidence: row.confidence,
-    source: row.source,
-    evidence: evidence as EvidenceEntry[],
-    capture_context: captureContext as MemoryItem["capture_context"],
-    supersedes: row.supersedes,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    last_validated_at: row.last_validated_at,
-    last_injected_at: row.last_injected_at,
-    injection_count: row.injection_count,
-    override_count: row.override_count,
-    repetition_count: row.repetition_count,
-    auto_inject: row.auto_inject,
-  };
 }

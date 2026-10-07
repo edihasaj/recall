@@ -107,6 +107,7 @@ export const MemoryItem = z.object({
   source: MemorySource,
   evidence: z.array(EvidenceEntry),
   capture_context: CaptureContext.nullable(),
+  note: z.string().nullable().optional(),
   supersedes: z.string().uuid().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -152,6 +153,7 @@ export const MaintenanceTaskKind = z.enum([
   "synthesize_repo",
   "verify_capture",
   "extract_rules_from_prompt",
+  "note_memory",
 ]);
 export type MaintenanceTaskKind = z.infer<typeof MaintenanceTaskKind>;
 

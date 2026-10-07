@@ -309,9 +309,10 @@ describe("tier-2 maintenance tasks — phase 1", () => {
     insertSnippet(db, "test/repo");
 
     const result = await enqueueMaintenanceTasks(db);
-    expect(result.tasks_enqueued).toBe(2);
+    expect(result.tasks_enqueued).toBe(3);
     expect(result.per_kind.refine_candidate).toBe(1);
     expect(result.per_kind.summarize_history).toBe(1);
+    expect(result.per_kind.note_memory).toBe(1); // the memory has no note yet
     expect(result.expired_leases_swept).toBe(0);
     expect(result.dropped_over_cap).toBe(0);
 

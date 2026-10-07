@@ -433,12 +433,100 @@ and conversational-haystack workloads.
 | `RECALL_HYDE_MODEL` | provider default | Override the HyDE model (e.g. `gpt-4o-mini`, `claude-haiku-4-5-20251001`). |
 | `RECALL_HYDE_CACHE_PATH` | unset | Persist HyDE results to a JSON file for reproducible benchmarks. |
 | `RECALL_RERANK` | `false` | Set to `true` to cross-encoder re-rank the top-50 hybrid candidates. |
-| `RECALL_RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | Re-ranker model. |
+| `RECALL_RERANK_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | Re-ranker model: a Hugging Face id, or an absolute path to a local model directory (config, tokenizer, `onnx/model_quantized.onnx`). |
 | `RECALL_RERANK_TOP_K` | `50` | Window pulled into the re-rank stage. |
+| `RECALL_RERANK_MAX_LENGTH` | `256` | Tokens per (query, memory) pair. The longer sequence is shortened first, before adding the model's separator tokens, so a long query cannot crowd the entire memory out. |
+| `RECALL_RERANK_MIN_SCORE` | per model | Relevance probability a re-ranked memory needs before a query-driven pack may include it without also passing the vector-similarity floor. Defaults to `0.0003` for the default ms-marco model, to `recall_rerank_min_score` in a local model's `config.json`, else `0.5`. A model's `config.json` may give a curve instead, from store size to cutoff (`{"180": 0.69, "1000": 0.855, "2000": 0.92}`): the cutoff then follows the number of memories the query can inject, linear in the log of the size between points and flat beyond them. Setting this variable gives a fixed cutoff. Re-rankers score on very different scales, so set it together with `RECALL_RERANK_MODEL`. |
+| `RECALL_RELEVANCE_LLM` | `false` | Opt-in. With a connected provider (`recall credentials`, or the `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `AZURE_OPENAI_*` variables), one call per query-driven pack asks that model which of the top 8 candidates would change what the agent does; only memories it grades 3 ("handling the request without it would be wrong") are injected. Without a provider, on a timeout or on any error, the local decision stands. |
+| `RECALL_RELEVANCE_LLM_CANDIDATES` | `8` | How many top candidates the judge grades (1-32). More finds more in large stores at the cost of a longer prompt. |
+| `RECALL_RELEVANCE_LLM_MIN_GRADE` | `3` | Lowest grade (1-3) the judge must give. Grade 2 also admits broad conventions the session-start pack already carries. |
+| `RECALL_RELEVANCE_LLM_TIMEOUT_MS` | `8000` | Time budget for that call; on expiry the local decision stands. Keep it under the prompt hook's daemon wait (`RECALL_HOOK_DAEMON_TIMEOUT_MS`, 15000). |
+| `RECALL_RERANK_FTS_MODE` | `or` | Keyword-arm join while re-ranking. `or` lets any shared word make a memory a candidate (notes carry the words a request uses); the re-ranker then decides. At 1,000 memories it took the right memory's share of the top 50 from 66% to 88%. |
+| `RECALL_RERANK_CANDIDATE_MIN_SIM` | `0` | Vector-similarity floor for candidates while re-ranking is on. The normal floor (`RECALL_SIMILARITY_THRESHOLD`, 0.8) would drop memories that matter without sharing words with the query before the re-ranker sees them. |
 
-For chat-haystack benchmarks (e.g. LongMemEval-S) the recommended
-combination is `RECALL_HYDE=true RECALL_RERANK=true`, on top of the
-defaults — see `benchmark/COMPARISON.md` for measured numbers.
+Local model packages may declare `recall_rerank_companion_ratio` in
+`config.json`, a number from 0 to 1 (default 0). A query-driven companion must
+score at least that fraction of the first selected memory's reranker score,
+as well as passing the absolute cutoff. This can reduce marginal companions
+at some cost to recall. It does not apply when the connected judge returns a
+verdict. See [local reranker validation](reranker-validation.md) for calibration.
+
+The optional [Recall 2 local relevance model](relevance-model.md) is available
+as a separate checksummed release download, with its evaluated settings and
+benchmark limitations.
+
+Keep `RECALL_RERANK` off for chat-haystack memories such as LongMemEval-S
+sessions. Each session is far longer than the re-ranker's token limit, and
+with the default model R@5 (right session in the top 5) fell from 95.0% to
+85.0% on the stratified N=60 slice. Before this release the re-ranker
+returned 1.0 for every pair, so `RECALL_RERANK=true` kept the fused order,
+and earlier re-ranking numbers in `benchmark/COMPARISON.md` describe the
+fused order, not the re-ranker.
+
+Re-ranking helps short memories that matter without sharing words with the
+request, once they have notes. Measured through `compileContextHybrid`
+(at most 2 memories injected per request):
+
+| Memories | Re-ranking off | `RECALL_RERANK=true` (ms-marco) | Unrelated memory injected |
+| --- | ---: | ---: | ---: |
+| 30 coding rules with notes, 60 in the store | 3.3% | 43.3% | 0 of 10 controls |
+| InMind personal facts with notes (72 held-out tasks) | 0% | 6.9% | 0 of 68 controls |
+
+The percentages are how often the memory the request depends on was
+injected. ms-marco suits coding rules; on personal facts a relevance model
+trained for that domain injected 26.4% (2.9% unrelated), but on the coding
+set it fired on 2 of 10 controls, so it is not the default.
+
+### Relevance setups
+
+Which memories reach a query-driven pack, from lightest to most accurate.
+Numbers are from the InMind-Code v2 benchmark (relevance-lab), run through
+Recall's own retrieval: 120 coding memories that a request depends on without
+sharing its words, 60 convention rules, and 150 control requests, padded with
+unseen generated memories to each store size. "Useful" means a pack included
+the request's memory or another memory that a hand check confirmed applies.
+"False" means a control request received a memory that does not apply.
+
+| Setup | Runs on | Useful at 180 / 1,000 / 5,000 memories | False injections |
+| --- | --- | --- | --- |
+| Default (`RECALL_RERANK` off) | any device | about 1% | 0-4% |
+| `RECALL_RERANK=true` (default ms-marco model) | any device, ~25 MB model | 35% / 23% / - | 12-13% |
+| `RECALL_RERANK=true` with a relevance model trained for memories and a size-aware cutoff (`RECALL_RERANK_MODEL=<dir>`, 144 MB int8) | any device | 60% / 36% / 18% | 2-7% |
+| Add `RECALL_RELEVANCE_LLM=true` with a connected provider | needs the provider | 94% / 80% / 75% | 7-15% |
+
+The ms-marco row comes from the same benchmark scored outside Recall, with
+its best cutoff for each size. Every setup needs notes on the memories to
+find links that share no words with the request. The connected-provider setup
+costs one call per query-driven request (about $0.001 with gpt-5-mini) and
+adds about 4 seconds. The local relevance model adds about 0.5 to 0.8
+seconds per pack on an M2 Ultra CPU (it re-ranks the top 50 candidates;
+`RECALL_RERANK_TOP_K` lowers that), against 17 to 120 ms for default
+retrieval. With the provider, about 40% of packs also carry one marginal
+memory next to the right one. Typical stores are small: 180 to 1,000 memories
+in scope covers a heavy user, since a query only sees its repository's
+memories and global ones.
+
+### Memory notes
+
+A memory can carry a note: what it affects, in the words a later request
+would use. For "Staging has no read replicas" the note might be "load tests,
+heavy read queries, reporting jobs, connection pool sizing". Recall adds the
+note to the text it indexes, embeds and re-ranks, so a request such as "Can I
+run the nightly reporting job against staging?" finds the memory even though
+the memory itself never mentions reports.
+
+Agents write the note when they capture a memory, through the optional
+`affects` field of `capture_correction` and `report_correction`. The managed
+instruction block written by `recall setup` asks for it. When a capture goes
+through background LLM extraction, the task carries the agent's note and the
+extractor writes its own as well.
+
+Memories saved without a note get one later. Each maintenance run queues a
+`note_memory` task for up to 10 live memories that have none, most-used
+first. The dispatcher's LLM writes the note, or an agent picks the task up
+through `maintenance_peek` and `maintenance_claim`. A note is never
+overwritten. Notes are stored locally in `memories.note`; team sync does not
+carry them yet.
 
 ## Verification
 

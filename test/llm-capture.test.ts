@@ -244,6 +244,21 @@ describe("enqueueExtractRulesFromPrompt", () => {
     expect(pending[0]!.repo).toBe("test/repo");
   });
 
+  it("keeps the agent's affects note in the task payload", () => {
+    const db = freshDb();
+    enqueueExtractRulesFromPrompt(db, {
+      prompt_id: "prompt:s1:affects",
+      raw_prompt: "never point load tests at staging",
+      repo: "test/repo",
+      path: null,
+      agent: "claude-code",
+      session_id: "s1",
+      affects: "load tests, benchmarks",
+    });
+    const payload = db.$client.prepare("select payload from memory_maintenance_tasks").pluck().get() as string;
+    expect(JSON.parse(payload).affects).toBe("load tests, benchmarks");
+  });
+
   it("is idempotent on (kind, target_key)", () => {
     const db = freshDb();
     enqueueExtractRulesFromPrompt(db, {
@@ -419,6 +434,37 @@ describe("applyExtractRulesFromPrompt", () => {
     const memories = queryMemories(db, { repo: "test/repo" });
     expect(memories).toHaveLength(2);
     expect(memories.every((m) => m.status === "candidate")).toBe(true);
+  });
+
+  // Regression: captures go through background extraction when an LLM is
+  // configured, and the agent's affects note was dropped on that path.
+  it("stores the extractor's affects note, falling back to the agent's", () => {
+    const db = freshDb();
+    const rule = { type: "gotcha" as const, scope: "repo" as const, path_scope: null, confidence: 0.95 };
+    applyExtractRulesFromPrompt(db, fakeTask({
+      repo: "test/repo", path: null, session_id: "s1", raw_prompt: "never load test staging",
+      affects: "agent: load tests",
+    }), {
+      rules: [
+        { ...rule, text: "Never point load tests at staging", affects: "load tests, benchmarks, reporting jobs" },
+        { ...rule, text: "Keep the payments service on Node 18" },
+      ],
+    });
+    const byText = new Map(queryMemories(db, { repo: "test/repo" }).map((m) => [m.text, m.note]));
+    expect(byText.get("Never point load tests at staging")).toBe("load tests, benchmarks, reporting jobs");
+    expect(byText.get("Keep the payments service on Node 18")).toBe("agent: load tests");
+  });
+
+  it("adds a note to a matching memory that has none", () => {
+    const db = freshDb();
+    const rule = { text: "Never point load tests at staging", type: "gotcha" as const, scope: "repo" as const, path_scope: null, confidence: 0.95 };
+    applyExtractRulesFromPrompt(db, fakeTask({ repo: "test/repo", path: null, session_id: "s1", raw_prompt: "x" }), { rules: [rule] });
+    applyExtractRulesFromPrompt(db, fakeTask({ repo: "test/repo", path: null, session_id: "s2", raw_prompt: "x" }), {
+      rules: [{ ...rule, affects: "load tests, benchmarks" }],
+    });
+    const memories = queryMemories(db, { repo: "test/repo" });
+    expect(memories).toHaveLength(1);
+    expect(memories[0].note).toBe("load tests, benchmarks");
   });
 
   it("returns no-op when LLM returns empty rules list", () => {
@@ -613,6 +659,20 @@ describe("applyExtractRulesFromPrompt", () => {
     expect(prompt.system).toContain("never require magic keywords");
     expect(prompt.system).toContain("whatever language");
     expect(prompt.user).toContain("durability_evidence");
+  });
+
+  it("asks the judge for an affects note and shows it the agent's", () => {
+    const prompt = buildPrompt(fakeTask({
+      repo: "test/repo",
+      path: null,
+      session_id: "s1",
+      raw_prompt: "never point load tests at staging",
+      affects: "load tests, benchmarks",
+    }))!;
+
+    expect(prompt.system).toContain("also set affects");
+    expect(prompt.user).toContain('"affects": string');
+    expect(prompt.user).toContain('Agent\'s note of what it affects: "load tests, benchmarks"');
   });
 
   it("deduplicates against existing similar memory in the same repo", () => {
