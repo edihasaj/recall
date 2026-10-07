@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { ensureLaunchdStarted } from "./launchd-start.js";
 import {
   readDaemonProviderEnvironment,
   resolveDaemonProviderEnvironment,
@@ -68,8 +69,7 @@ export function startLaunchAgent(label = DEFAULT_LABEL): LaunchdStatus {
     throw new Error(`LaunchAgent not installed: ${cfg.plistPath}`);
   }
   execFileSync("launchctl", ["enable", `${domainTarget()}/${cfg.label}`], stdioOpts());
-  tryRun("launchctl", ["bootstrap", domainTarget(), cfg.plistPath]);
-  execFileSync("launchctl", ["kickstart", "-k", `${domainTarget()}/${cfg.label}`], stdioOpts());
+  ensureLaunchdStarted(domainTarget(), cfg.label, cfg.plistPath);
   return getLaunchAgentStatus(cfg.label);
 }
 

@@ -18,6 +18,8 @@ final class DaemonController: ObservableObject {
     private let daemonPort = 7890
     private var refreshTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Error>?
+    private var serviceCommandTask: Task<Void, Error>?
+    private var pendingServiceCommands = 0
     private var didAutoRestartForVersion = false
 
     var summary: String {
@@ -57,8 +59,10 @@ final class DaemonController: ObservableObject {
             healthOK = health.contains("\"status\":\"ok\"")
             healthText = healthOK ? "OK" : "Unexpected"
             if healthOK {
-                setupRunning = false
-                setupStatus = "Ready"
+                if pendingServiceCommands == 0 && recoveryTask == nil {
+                    setupRunning = false
+                    setupStatus = "Ready"
+                }
                 if let version = Self.jsonString(health, key: "version") {
                     daemonVersion = version
                 }
@@ -128,6 +132,7 @@ final class DaemonController: ObservableObject {
     /// it. A plist can exist while launchd has no loaded job, which previously
     /// left dashboard clicks pointing at an offline localhost port.
     func ensureRunning() async throws {
+        if let serviceCommandTask { _ = await serviceCommandTask.result }
         if await Self.isHealthy(port: daemonPort) {
             refresh()
             return
@@ -172,11 +177,7 @@ final class DaemonController: ObservableObject {
             ]
         }
 
-        let nodePath = runtimeNodePath
-        let cliPath = runtimeCliPath
-        _ = try await Task.detached(priority: .userInitiated) {
-            try Self.runShell(nodePath, [cliPath] + command)
-        }.value
+        try await executeServiceCommands([command])
 
         // launchd can throttle a recently stopped KeepAlive job for about ten
         // seconds. Allow enough time for that delay plus daemon cold startup.
@@ -251,29 +252,35 @@ final class DaemonController: ObservableObject {
         setupStatus = status
         lastError = nil
 
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await executeServiceCommands(commands)
+                lastError = nil
+            } catch {
+                setupRunning = false
+                lastError = error.localizedDescription
+            }
+            refresh()
+        }
+    }
+
+    /// Serialize recovery and button actions so a stop cannot unload another
+    /// action's freshly bootstrapped job before its kickstart.
+    private func executeServiceCommands(_ commands: [[String]]) async throws {
+        let previous = serviceCommandTask
         let nodePath = runtimeNodePath
         let cliPath = runtimeCliPath
-
-        Task { [weak self, commands, nodePath, cliPath] in
-            let errorText = await Task.detached(priority: .userInitiated) { () -> String? in
-                do {
-                    for args in commands {
-                        _ = try Self.runShell(nodePath, [cliPath] + args)
-                    }
-                    return nil
-                } catch {
-                    return String(describing: error)
-                }
-            }.value
-
-            if let errorText {
-                self?.setupRunning = false
-                self?.lastError = errorText
-            } else {
-                self?.lastError = nil
+        let task = Task.detached(priority: .userInitiated) { () async throws -> Void in
+            if let previous { _ = await previous.result }
+            for args in commands {
+                _ = try Self.runShell(nodePath, [cliPath] + args)
             }
-            self?.refresh()
         }
+        serviceCommandTask = task
+        pendingServiceCommands += 1
+        defer { pendingServiceCommands -= 1 }
+        try await task.value
     }
 
     private func updateSetupStatusFromLogs() {

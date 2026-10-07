@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.1 - 2026-10-08
+
+### Fixed
+
+- macOS daemon actions and automatic recovery run in sequence. A concurrent
+  stop no longer unloads another action's job before `launchctl kickstart`.
+- Starting an unloaded daemon retries bootstrap/kickstart races. A genuine
+  bootstrap failure keeps its original error instead of reporting a misleading
+  missing-service error.
+
 ## 2.0.0 - 2026-10-07
 
 ### Fixed

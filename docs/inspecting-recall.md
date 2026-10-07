@@ -35,6 +35,11 @@ read_when:
 
 ## Quick Health Checks
 
+Daemon start retries a job removed during bootstrap/kickstart and reports the
+original bootstrap error if loading fails. The macOS app queues install, start,
+stop, restart and automatic recovery commands so they cannot unload each
+other's jobs. An existing loaded job is reused without rewriting its plist.
+
 Check daemon health:
 
 ```bash
