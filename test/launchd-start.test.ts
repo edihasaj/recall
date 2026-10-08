@@ -39,3 +39,14 @@ it("does not retry unrelated kickstart failures on a loaded job", () => {
   }, () => {})).toThrow("permission denied");
   expect(kicks).toBe(1);
 });
+
+it("starts a loaded job without killing the running instance", () => {
+  const calls: string[][] = [];
+  ensureLaunchdStarted("gui/501", "com.recall.daemon", "/fixture.plist", (args) => {
+    calls.push(args);
+  }, () => {});
+  expect(calls).toEqual([
+    ["print", "gui/501/com.recall.daemon"],
+    ["kickstart", "gui/501/com.recall.daemon"],
+  ]);
+});

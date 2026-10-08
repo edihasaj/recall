@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Recall.app took about 90 seconds to come back after an in-app update. It
+  now runs `brew update` and downloads the new version before it quits, so
+  Recall stays closed only while Homebrew swaps the app.
+- `recall daemon start`, `restart` and `install` no longer kill the daemon
+  that launchd has just started. `launchctl kickstart -k` stopped it within
+  milliseconds, and launchd then waited 10 seconds before the next start.
+  When Recall.app reopened after an update, it did this a second time to a
+  daemon that was still starting. A restart now becomes healthy in about
+  1.6 seconds instead of 12.
+
 ## 2.0.1 - 2026-10-08
 
 ### Fixed

@@ -49,8 +49,9 @@ else
   exit 1
 fi
 "$brew" list --cask recall >/dev/null
-"$brew" update
-"$brew" upgrade --cask recall
+# Recall.app ran `brew update` and fetched the download before quitting, so
+# the upgrade only installs the cached archive while the app is closed.
+HOMEBREW_NO_AUTO_UPDATE=1 "$brew" upgrade --cask recall
 
 app=/Applications/Recall.app
 installed="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"

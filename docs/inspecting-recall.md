@@ -55,9 +55,20 @@ curl -s http://localhost:7890/update
 The app and tray show an update only after all platform assets are uploaded.
 The daemon caches successful release checks for 30 minutes; a manual check uses
 `/update?refresh=1` and limits repeated network requests to once per minute.
-On macOS, updates save a fresh database backup under `~/.recall/backups/`;
-progress and failures go to `~/.recall/logs/update.log`. The helper records
-`success` or `failed` in `~/.recall/updates/result` and reopens the app.
+On macOS, Recall.app runs `brew update` and `brew fetch --cask recall` before
+it quits, then saves a fresh database backup under `~/.recall/backups/`. The
+helper installs the downloaded cask while the app is closed. Progress and
+failures go to `~/.recall/logs/update.log`. The helper records `success` or
+`failed` in `~/.recall/updates/result` and reopens the app.
+
+`recall daemon start` leaves a running daemon alone. If the app reopens slowly,
+check launchd for a respawn throttle:
+
+```bash
+/usr/bin/log show --last 10m --info --style compact \
+  --predicate 'process == "launchd" AND subsystem CONTAINS "com.recall.daemon"' |
+  grep -E "throttle|Successfully spawned"
+```
 Windows updates run in a separate PowerShell window and back up the database
 under `%USERPROFILE%\.recall\backups\` before replacing the tray.
 

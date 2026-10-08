@@ -46,7 +46,9 @@ export function installLaunchAgent(opts: LaunchdOptions = {}): LaunchdStatus {
   tryRun("launchctl", ["bootout", domainTarget(), cfg.plistPath]);
   execFileSync("launchctl", ["bootstrap", domainTarget(), cfg.plistPath], stdioOpts());
   execFileSync("launchctl", ["enable", `${domainTarget()}/${cfg.label}`], stdioOpts());
-  execFileSync("launchctl", ["kickstart", "-k", `${domainTarget()}/${cfg.label}`], stdioOpts());
+  // RunAtLoad has already spawned the job; `-k` would kill it and trigger
+  // launchd's 10-second respawn throttle.
+  execFileSync("launchctl", ["kickstart", `${domainTarget()}/${cfg.label}`], stdioOpts());
 
   return getLaunchAgentStatus(cfg.label);
 }

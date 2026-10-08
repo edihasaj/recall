@@ -84,6 +84,10 @@ final class UpdateController: ObservableObject {
         lastError = nil
         Task {
             do {
+                // Download while Recall still runs. The helper used to fetch
+                // after the app quit, which kept Recall closed for a minute.
+                phase = "Downloading Recall \(latestVersion)…"
+                try await prefetch(version: latestVersion)
                 phase = "Backing up local memories…"
                 try await backupDatabase(for: latestVersion)
                 phase = "Preparing the updater…"
@@ -137,6 +141,14 @@ final class UpdateController: ObservableObject {
         try helper.run()
     }
 
+    private func prefetch(version: String) async throws {
+        guard let brewPath else { throw UpdateFailure.commandFailed }
+        try await Self.run("/bin/echo", ["Downloading Recall v\(version)"], logPath: logPath)
+        try await Self.run(brewPath, ["update"], logPath: logPath)
+        try await Self.run(brewPath, ["fetch", "--cask", "recall"], logPath: logPath,
+                           environment: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
+    }
+
     private func backupDatabase(for version: String) async throws {
         let dbPath = NSHomeDirectory() + "/.recall/recall.db"
         guard FileManager.default.fileExists(atPath: dbPath) else { return }
@@ -175,7 +187,12 @@ final class UpdateController: ObservableObject {
         return false
     }
 
-    private nonisolated static func run(_ executable: String, _ arguments: [String], logPath: String) async throws {
+    private nonisolated static func run(
+        _ executable: String,
+        _ arguments: [String],
+        logPath: String,
+        environment: [String: String] = [:]
+    ) async throws {
         try await Task.detached(priority: .userInitiated) {
             let logURL = URL(fileURLWithPath: logPath)
             try FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -190,6 +207,9 @@ final class UpdateController: ObservableObject {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = arguments
+            if !environment.isEmpty {
+                process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
+            }
             process.standardOutput = output
             process.standardError = output
             try process.run()
