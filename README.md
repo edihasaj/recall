@@ -71,8 +71,10 @@ trust only the Recall cask. Run `brew update` first if `brew trust` is unavailab
 
 Recall checks for complete releases in the menu bar and dashboard. A Homebrew
 installation can update from the dashboard's **Updates** page; Recall installs
-the cask, restarts its daemon, and reopens the app. Direct `.app` installs get
-the release download instead.
+the cask, restarts its daemon, and reopens the app. Direct `.app` installs in a
+writable `/Applications` folder also update in-app. Recall verifies the archive
+checksum, its Apple developer signature, and notarization before replacing the
+app. It restores the previous app if the new daemon cannot start.
 
 ### Bash one-liner (macOS, Linux)
 

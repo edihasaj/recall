@@ -30,7 +30,17 @@ final class UpdateController: ObservableObject {
     }
 
     var canInstallInApp: Bool {
-        Bundle.main.bundlePath == "/Applications/Recall.app" && brewPath != nil &&
+        Self.canInstallInApp(at: Bundle.main.bundlePath, homebrew: isHomebrewInstall,
+                             writable: FileManager.default.isWritableFile(atPath:))
+    }
+
+    nonisolated static func canInstallInApp(at path: String, homebrew: Bool, writable: (String) -> Bool) -> Bool {
+        path == "/Applications/Recall.app" &&
+            (homebrew || writable("/Applications") && writable(path))
+    }
+
+    var isHomebrewInstall: Bool {
+        brewPath != nil &&
             ["/opt/homebrew/Caskroom/recall", "/usr/local/Caskroom/recall"]
             .contains(where: FileManager.default.fileExists(atPath:))
     }
@@ -75,7 +85,7 @@ final class UpdateController: ObservableObject {
     }
 
     func install(onInstalled: @escaping @MainActor () throws -> Void) {
-        guard isAvailable, let latestVersion else { return }
+        guard !installing, isAvailable, let latestVersion else { return }
         guard canInstallInApp else {
             if let releaseURL { NSWorkspace.shared.open(releaseURL) }
             return
@@ -123,7 +133,8 @@ final class UpdateController: ObservableObject {
     }
 
     private func launchHelper(for version: String) throws {
-        let source = Bundle.main.bundlePath + "/Contents/Resources/Runtime/bin/recall-update-macos"
+        let name = isHomebrewInstall ? "recall-update-macos" : "recall-update-direct-macos"
+        let source = Bundle.main.bundlePath + "/Contents/Resources/Runtime/bin/" + name
         let directory = NSHomeDirectory() + "/.recall/updates"
         try FileManager.default.createDirectory(
             atPath: directory,
@@ -137,11 +148,18 @@ final class UpdateController: ObservableObject {
         try "pending\t\(version)\n".write(toFile: resultPath, atomically: true, encoding: .utf8)
         let helper = Process()
         helper.executableURL = URL(fileURLWithPath: staged)
-        helper.arguments = [version, String(ProcessInfo.processInfo.processIdentifier)]
+        helper.arguments = isHomebrewInstall
+            ? [version, String(ProcessInfo.processInfo.processIdentifier)]
+            : ["install", version, Bundle.main.bundlePath, String(ProcessInfo.processInfo.processIdentifier)]
         try helper.run()
     }
 
     private func prefetch(version: String) async throws {
+        if !isHomebrewInstall {
+            let helper = Bundle.main.bundlePath + "/Contents/Resources/Runtime/bin/recall-update-direct-macos"
+            try await Self.run(helper, ["prepare", version, Bundle.main.bundlePath], logPath: logPath)
+            return
+        }
         guard let brewPath else { throw UpdateFailure.commandFailed }
         try await Self.run("/bin/echo", ["Downloading Recall v\(version)"], logPath: logPath)
         try await Self.run(brewPath, ["update"], logPath: logPath)

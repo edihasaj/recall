@@ -61,6 +61,21 @@ helper installs the downloaded cask while the app is closed. Progress and
 failures go to `~/.recall/logs/update.log`. The helper records `success` or
 `failed` in `~/.recall/updates/result` and reopens the app.
 
+Direct downloads installed at `/Applications/Recall.app` also support
+**Install & Restart** when the app and Applications folder are writable.
+Recall downloads the tagged archive before quitting, checks its SHA-256,
+verifies the Recall bundle ID and Applifyer developer team, and asks Gatekeeper
+to assess it. The helper swaps the app on the same filesystem and checks the
+live daemon version. A startup failure restores the previous app and restarts
+its daemon. Local memories stay in `~/.recall`, with a fresh backup made before
+the swap. An app in another folder or a protected Applications folder shows
+**Download Update** with a manual install explanation.
+
+Versions through 2.0.2 only supported Homebrew updates. A direct installation
+of those versions needs one manual download to get the new updater. Verify the
+archive with `shasum -a 256 -c Recall.app.zip.sha256`, quit Recall, replace the
+app in `/Applications`, then reopen it. Do not delete `~/.recall`.
+
 `recall daemon start` leaves a running daemon alone. If the app reopens slowly,
 check launchd for a respawn throttle:
 

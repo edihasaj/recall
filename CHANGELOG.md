@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.3 - 2026-10-10
+
+### Fixed
+
+- Direct macOS installs in `/Applications` now offer **Install & Restart**.
+  Previously, only Homebrew installs could update in-app; direct installs
+  opened GitHub instead. Recall verifies the download checksum, developer
+  signature, and notarization before replacing the app. It backs up local
+  memories and restores the previous app if the new daemon cannot start.
+  Direct installs on 2.0.2 or earlier need one manual update to get this fix.
+
 ## 2.0.2 - 2026-10-08
 
 ### Fixed

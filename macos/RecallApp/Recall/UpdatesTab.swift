@@ -31,7 +31,9 @@ struct UpdatesTab: View {
                         .font(.custom("AvenirNext-Bold", size: 30))
                         .foregroundStyle(.white)
                     Text(updates.isAvailable
-                         ? "Install the latest release here. Your local memories stay in place."
+                         ? (updates.canInstallInApp
+                            ? "Install the latest release here. Your local memories stay in place."
+                            : "Download the latest release and replace this copy. Your local memories stay in place.")
                          : (updates.latestVersion == nil
                             ? "Recall will show a release here once it can reach the update service."
                             : "We'll let you know when the next complete release arrives."))
@@ -126,8 +128,10 @@ struct UpdatesTab: View {
                 Image(systemName: "lock.shield")
                     .foregroundStyle(.secondary)
                 Text(updates.canInstallInApp
-                     ? "Homebrew verifies the download. Recall reopens after the app and daemon update."
-                     : "This copy isn't managed by Homebrew. Download the release to update it.")
+                     ? (updates.isHomebrewInstall
+                        ? "Homebrew verifies the download. Recall reopens after the app and daemon update."
+                        : "Recall verifies the download and Apple signature, then installs and reopens the app.")
+                     : "Move Recall to a writable Applications folder to install updates here.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -160,7 +164,7 @@ struct UpdateNotice: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Recall v\(latest) is ready")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Install the update without leaving Recall")
+                        Text(updates.canInstallInApp ? "Install the update without leaving Recall" : "Download the latest release")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

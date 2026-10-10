@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Prepare a verified direct download, then swap it after Recall.app exits.
+set -euo pipefail
+umask 077
+
+mode="${1:?expected prepare or install}"
+version="${2:?expected X.Y.Z}"
+app="${3:?expected Recall.app path}"
+[[ "$mode" == prepare || "$mode" == install ]]
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+[[ "$app" == /*/Recall.app && -d "$app" && ! -L "$app" ]]
+parent="$(dirname "$app")"
+[[ -w "$parent" && -w "$app" ]]
+
+update_dir="$HOME/.recall/updates"
+mkdir -p "$update_dir" "$HOME/.recall/logs"
+state="$update_dir/direct-stage-$version"
+result_file="$update_dir/result"
+log_file="$HOME/.recall/logs/update.log"
+touch "$log_file"
+chmod 600 "$log_file"
+exec >>"$log_file" 2>&1
+
+verify_app() {
+  local candidate="$1"
+  [[ -d "$candidate" && ! -L "$candidate" ]]
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist")" == "$version" ]]
+  # Pin both our app identity and developer team, not just any Apple signature.
+  /usr/bin/codesign --verify --deep --strict -R \
+    '=anchor apple generic and identifier "com.edihasaj.recall" and certificate leaf[subject.OU] = "T8J48M4QVY"' \
+    "$candidate"
+  /usr/sbin/spctl --assess --type execute "$candidate"
+  [[ -x "$candidate/Contents/Resources/Runtime/bin/recall" ]]
+  [[ "$("$candidate/Contents/Resources/Runtime/bin/recall" --version)" == "$version" ]]
+}
+
+if [[ "$mode" == prepare ]]; then
+  # Same filesystem as the installed app: replacement uses fast renames.
+  stage="$(mktemp -d "$parent/.recall-update.XXXXXX")"
+  prepared=false
+  clean_prepare() {
+    if [[ "$prepared" != true ]]; then /bin/rm -rf "$stage"; fi
+  }
+  trap clean_prepare EXIT
+  url="https://github.com/edihasaj/recall/releases/download/v$version"
+  echo "Downloading direct-install Recall v$version"
+  /usr/bin/curl --fail --location --proto '=https' --proto-redir '=https' \
+    --connect-timeout 15 --max-time 900 --retry 2 "$url/Recall.app.zip" -o "$stage/Recall.app.zip"
+  /usr/bin/curl --fail --location --proto '=https' --proto-redir '=https' \
+    --connect-timeout 15 --max-time 60 --retry 2 "$url/Recall.app.zip.sha256" -o "$stage/Recall.app.zip.sha256"
+  read -r expected filename < "$stage/Recall.app.zip.sha256"
+  [[ "$expected" =~ ^[a-fA-F0-9]{64}$ && "$filename" == Recall.app.zip ]]
+  actual="$(/usr/bin/shasum -a 256 "$stage/Recall.app.zip")"
+  [[ "${actual%% *}" == "$expected" ]] || { echo "App checksum mismatch"; exit 1; }
+  /usr/bin/ditto -x -k "$stage/Recall.app.zip" "$stage/unpacked"
+  verify_app "$stage/unpacked/Recall.app"
+  printf '%s\n' "$stage" > "$state.tmp"
+  /bin/mv "$state.tmp" "$state"
+  prepared=true
+  echo "Direct update verified and staged"
+  exit 0
+fi
+
+old_pid="${4:?expected Recall process ID}"
+[[ "$old_pid" =~ ^[1-9][0-9]*$ ]]
+IFS= read -r stage < "$state"
+[[ "$stage" == "$parent"/.recall-update.* && "$(dirname "$stage")" == "$parent" ]]
+[[ -d "$stage" && ! -L "$stage" ]]
+previous="$stage/previous.app"
+candidate="$stage/unpacked/Recall.app"
+result=failed
+swapped=false
+stopped=false
+
+finish() {
+  status=$?
+  trap - EXIT
+  printf '%s\t%s\n' "$result" "$version" > "$result_file"
+  if [[ "$result" != success && -d "$previous" ]]; then
+    echo "Restoring previous Recall.app"
+    if [[ "$swapped" == true ]]; then
+      "$app/Contents/Resources/Runtime/bin/recall" daemon stop || true
+      /bin/mv "$app" "$stage/failed.app" || { echo "Could not preserve failed app; previous copy at $previous"; exit 1; }
+    fi
+    /bin/mv "$previous" "$app" || { echo "Restore failed; previous copy at $previous"; exit 1; }
+  fi
+  if [[ "$result" != success && "$stopped" == true ]]; then
+    "$app/Contents/Resources/Runtime/bin/recall" daemon restart || true
+  fi
+  /usr/bin/open "$app" || true
+  if [[ "$result" == success ]]; then
+    /bin/rm -f "$state"
+    /bin/rm -rf "$stage"
+  fi
+  exit "$status"
+}
+trap finish EXIT
+
+# Verify again before touching the installed copy, including interrupted retries.
+verify_app "$candidate"
+[[ ! -e "$previous" ]]
+for ((attempt=0; attempt<300; attempt++)); do
+  if ! kill -0 "$old_pid" 2>/dev/null; then break; fi
+  sleep 0.1
+done
+if kill -0 "$old_pid" 2>/dev/null; then
+  echo "Recall did not exit before the update"
+  exit 1
+fi
+echo "Installing direct-download Recall v$version"
+stopped=true
+"$app/Contents/Resources/Runtime/bin/recall" daemon stop
+/bin/mv "$app" "$previous"
+/bin/mv "$candidate" "$app"
+swapped=true
+"$app/Contents/Resources/Runtime/bin/recall" daemon restart
+
+# The CLI succeeding is insufficient: the live daemon must serve this release.
+healthy=false
+for ((attempt=0; attempt<30; attempt++)); do
+  if /usr/bin/curl --fail --silent --max-time 2 http://127.0.0.1:7890/health | \
+    "$app/Contents/Resources/Runtime/bin/node" -e '
+      let data = "";
+      process.stdin.on("data", chunk => data += chunk);
+      process.stdin.on("end", () => {
+        try { const h = JSON.parse(data); process.exit(h.status === "ok" && h.version === process.argv[1] ? 0 : 1); }
+        catch { process.exit(1); }
+      });' "$version"; then
+    healthy=true
+    break
+  fi
+  sleep 1
+done
+[[ "$healthy" == true ]] || { echo "Updated daemon did not become healthy; rolling back"; exit 1; }
+result=success
+echo "Recall v$version is ready"

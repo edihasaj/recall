@@ -53,6 +53,8 @@ cp "$root_dir/scripts/recall-app" "$runtime_dir/bin/recall"
 chmod +x "$runtime_dir/bin/recall"
 cp "$root_dir/scripts/recall-update-macos" "$runtime_dir/bin/recall-update-macos"
 chmod +x "$runtime_dir/bin/recall-update-macos"
+cp "$root_dir/scripts/recall-update-direct-macos" "$runtime_dir/bin/recall-update-direct-macos"
+chmod +x "$runtime_dir/bin/recall-update-direct-macos"
 
 rsync -a "$root_dir/dist/" "$runtime_dir/dist/"
 rsync -a "$root_dir/drizzle/" "$runtime_dir/drizzle/"
