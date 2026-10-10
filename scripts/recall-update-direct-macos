@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Prepare a verified direct download, then swap it after Recall.app exits.
 set -euo pipefail
 umask 077
@@ -21,16 +21,17 @@ touch "$log_file"
 chmod 600 "$log_file"
 exec >>"$log_file" 2>&1
 
+# Explicit returns keep verification fail-closed on Apple's Bash 3.2.
 verify_app() {
   local candidate="$1"
-  [[ -d "$candidate" && ! -L "$candidate" ]]
-  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist")" == "$version" ]]
+  [[ -d "$candidate" && ! -L "$candidate" ]] || return 1
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist")" == "$version" ]] || return 1
   # Pin both our app identity and developer team, not just any Apple signature.
   /usr/bin/codesign --verify --deep --strict -R \
     '=anchor apple generic and identifier "com.edihasaj.recall" and certificate leaf[subject.OU] = "T8J48M4QVY"' \
-    "$candidate"
-  /usr/sbin/spctl --assess --type execute "$candidate"
-  [[ -x "$candidate/Contents/Resources/Runtime/bin/recall" ]]
+    "$candidate" || return 1
+  /usr/sbin/spctl --assess --type execute "$candidate" || return 1
+  [[ -x "$candidate/Contents/Resources/Runtime/bin/recall" ]] || return 1
   [[ "$("$candidate/Contents/Resources/Runtime/bin/recall" --version)" == "$version" ]]
 }
 
@@ -53,7 +54,7 @@ if [[ "$mode" == prepare ]]; then
   actual="$(/usr/bin/shasum -a 256 "$stage/Recall.app.zip")"
   [[ "${actual%% *}" == "$expected" ]] || { echo "App checksum mismatch"; exit 1; }
   /usr/bin/ditto -x -k "$stage/Recall.app.zip" "$stage/unpacked"
-  verify_app "$stage/unpacked/Recall.app"
+  verify_app "$stage/unpacked/Recall.app" || exit 1
   printf '%s\n' "$stage" > "$state.tmp"
   /bin/mv "$state.tmp" "$state"
   prepared=true
@@ -97,7 +98,7 @@ finish() {
 trap finish EXIT
 
 # Verify again before touching the installed copy, including interrupted retries.
-verify_app "$candidate"
+verify_app "$candidate" || exit 1
 [[ ! -e "$previous" ]]
 for ((attempt=0; attempt<300; attempt++)); do
   if ! kill -0 "$old_pid" 2>/dev/null; then break; fi

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.4 - 2026-10-10
+
+### Fixed
+
+- The direct macOS updater rejects version mismatches on Apple's bundled
+  Bash 3.2 as well as newer shells. The macOS 2.0.3 release was blocked by
+  this regression test; 2.0.4 includes the direct-install updater.
+
 ## 2.0.3 - 2026-10-10
 
 ### Fixed

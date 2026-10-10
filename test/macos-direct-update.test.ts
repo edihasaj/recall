@@ -75,7 +75,7 @@ if [[ '${release}' == '${version}' && "$*" == 'daemon restart' && "$FAIL_RESTART
   writeFileSync(helper, script);
   const env = { ...process.env, ...overrides, HOME: home, APP: app, INCOMING: incoming, CALLS: calls,
     PATH: `${commands}:${process.env.PATH}` };
-  const run = (mode: string) => spawnSync("bash", [helper, mode, version, app, "2147483647"], { env, encoding: "utf8" });
+  const run = (mode: string) => spawnSync(process.platform === "darwin" ? "/bin/bash" : "bash", [helper, mode, version, app, "2147483647"], { env, encoding: "utf8" });
   return { root, home, app, incoming, calls, run,
     state: join(home, ".recall", "updates", `direct-stage-${version}`),
     result: join(home, ".recall", "updates", "result") };
