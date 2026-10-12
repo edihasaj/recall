@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.5 - 2026-10-12
+
+### Added
+
+- **Hide the menu bar icon on macOS.** Preferences now has a **Show Menu Bar
+  Icon** switch next to **Show Dock Icon**. It is on by default. When it is
+  off, Recall and its daemon keep running in the background. Open Recall.app
+  again from Finder, Spotlight or Launchpad to show the dashboard.
+
 ## 2.0.4 - 2026-10-10
 
 ### Fixed
