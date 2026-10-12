@@ -95,12 +95,30 @@ export class ReleaseChecker {
   }
 
   private async load(): Promise<ReleaseInfo> {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error("release check timed out"));
+      }, 8_000);
+    });
+    try {
+      // Bound the entire check even if a fetch or response body ignores abort.
+      // A stuck request must not hold every subsequent /update call open.
+      return await Promise.race([this.loadRelease(controller.signal), deadline]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async loadRelease(signal: AbortSignal): Promise<ReleaseInfo> {
     const response = await this.fetchRelease(RELEASE_API, {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "recall-update-check",
       },
-      signal: AbortSignal.timeout(8_000),
+      signal,
     });
     if (!response.ok) throw new Error(`release API returned ${response.status}`);
     const raw = await response.json() as Record<string, unknown>;

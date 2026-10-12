@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.7 - 2026-10-12
+
+### Fixed
+
+- Update checks stop waiting after eight seconds even when the network request
+  or response body ignores cancellation. A stuck check no longer blocks all
+  later checks; Recall can retry without restarting the daemon.
+
 ## 2.0.6 - 2026-10-12
 
 ### Fixed

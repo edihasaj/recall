@@ -83,6 +83,32 @@ describe("desktop update availability", () => {
     expect(fetchRelease).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["fetch", "body"])("bounds a stuck %s and allows a subsequent retry", async (stage) => {
+    vi.useFakeTimers();
+    try {
+      let now = 1_000_000;
+      const never = new Promise<Response>(() => {});
+      const fetchRelease = vi.fn()
+        .mockImplementationOnce(() => stage === "fetch" ? never : Promise.resolve({
+          ok: true, json: () => new Promise(() => {}),
+        }))
+        .mockResolvedValue({ ok: true, json: async () => release("1.4.18") });
+      const checker = new ReleaseChecker(fetchRelease, () => now);
+      const pending = checker.check("1.4.17");
+      const concurrent = checker.check("1.4.17");
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect((await pending).error).toBe("Could not check for updates");
+      expect((await concurrent).error).toBe("Could not check for updates");
+      expect(fetchRelease.mock.calls[0]![1].signal.aborted).toBe(true);
+      now += 60_000;
+      expect((await checker.check("1.4.17")).available).toBe(true);
+      expect(fetchRelease).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("requires a checksummed installer before offering an update", async () => {
     const incomplete = release("1.4.18");
     incomplete.assets[incomplete.assets.length - 3]!.digest = null;

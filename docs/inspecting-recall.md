@@ -61,6 +61,10 @@ The daemon caches successful release checks for 30 minutes; a manual check uses
 Failed checks retain their error until a successful retry, with a one-minute
 retry interval. A cached release stays available during a network failure;
 the Updates tab does not claim Recall is current after a failed check.
+Release checks have an eight-second deadline covering both the request and
+response body. Even a request that ignores cancellation cannot leave `/update`
+waiting indefinitely. On older versions, a daemon restart clears that stuck
+request; check GitHub connectivity and `/update?refresh=1` afterward.
 On macOS, Recall.app runs `brew update` and `brew fetch --cask recall` before
 it quits, then saves a fresh database backup under `~/.recall/backups/`. The
 helper installs the downloaded cask while the app is closed. Progress and
