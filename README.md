@@ -153,6 +153,7 @@ npm run install:app
 
 The app embeds its own Node runtime plus Recall `dist/`, `drizzle/`, and `node_modules/`, then manages the bundled daemon via launchd.
 When run from `/Applications`, the app registers itself as a login item by default so the menu bar status icon comes back after login; the daemon LaunchAgent remains the background worker.
+Preferences has two visibility switches: **Show Dock Icon** (off by default) and **Show Menu Bar Icon** (on by default). With both off, Recall keeps running in the background; open Recall.app again (Finder, Spotlight or Launchpad) to bring the dashboard back.
 
 Configure local agent runtimes against the installed app. `recall setup --yes` wires MCP and lifecycle hooks for supported detected runtimes so memory injection does not depend on the model choosing to call `query`:
 

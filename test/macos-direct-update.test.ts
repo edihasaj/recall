@@ -130,5 +130,7 @@ suite("direct macOS updater", () => {
     expect(readFileSync(f.result, "utf8")).toBe(`failed\t${version}\n`);
     expect(readFileSync(f.calls, "utf8")).toContain("2.0.2 daemon restart");
     expect(readFileSync(f.calls, "utf8")).toContain(`open ${f.app}`);
-  });
+    // HEALTH_VERSION exhausts all 30 health attempts, each spawning two Node
+    // processes (mocked curl + node -e). Bounded by process start-up, not sleep.
+  }, 30_000);
 });

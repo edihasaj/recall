@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 extension Notification.Name {
@@ -168,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var webuiToggleItem: NSMenuItem?
     private var updateItem: NSMenuItem?
     private var userInitiatedQuit = false
+    private var menuBarVisibility: AnyCancellable?
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Menu bar is the persistent surface. Closing the dashboard window should
@@ -185,10 +187,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Clicking the dock icon (when visible) or re-activating from Launchpad
-        // after the window was closed should reopen the dashboard.
+        // Clicking the dock icon (when visible) or re-opening Recall.app from
+        // Finder, Spotlight or Launchpad should reopen the dashboard. This is
+        // the way back when both the Dock and menu bar icons are hidden.
         if !flag {
-            NotificationCenter.default.post(name: .recallOpenDashboard, object: nil)
+            openDashboard()
         }
         return true
     }
@@ -249,6 +252,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(makeItem(title: "Quit Recall", action: #selector(quit), keyEquivalent: "q"))
         item.menu = menu
+
+        item.isVisible = preferences.showMenuBarIcon
+        menuBarVisibility = preferences.$showMenuBarIcon
+            .removeDuplicates()
+            .sink { [weak self] visible in
+                self?.statusItem?.isVisible = visible
+            }
     }
 
     private func makeStatusItem() -> NSMenuItem {

@@ -322,6 +322,19 @@ struct PreferencesTab: View {
                         }
                     }
                     .toggleStyle(.switch)
+
+                    Toggle(isOn: Binding(
+                        get: { preferences.showMenuBarIcon },
+                        set: { preferences.setShowMenuBarIcon($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show Menu Bar Icon")
+                            Text("On by default. When off, Recall keeps running in the background. Open Recall.app again to show this window.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
                 }
                 .padding(.top, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -349,6 +362,14 @@ struct SettingsView: View {
                 set: { preferences.setShowDockIcon($0) }
             ))
             Text("Recall stays menu bar only by default. Turn this on only if you want Dock presence.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Show Menu Bar Icon", isOn: Binding(
+                get: { preferences.showMenuBarIcon },
+                set: { preferences.setShowMenuBarIcon($0) }
+            ))
+            Text("When off, Recall keeps running in the background. Open Recall.app again to show the dashboard.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

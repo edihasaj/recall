@@ -4,15 +4,18 @@ import ServiceManagement
 @MainActor
 final class AppPreferences: ObservableObject {
     @Published private(set) var showDockIcon: Bool
+    @Published private(set) var showMenuBarIcon: Bool
     @Published private(set) var launchAtLogin: Bool
     @Published private(set) var loginItemStatusText = "Checking"
 
     private let defaults = UserDefaults.standard
     private let dockKey = "showDockIcon"
+    private let menuBarKey = "showMenuBarIcon"
     private let launchAtLoginKey = "launchAtLogin"
 
     init() {
         self.showDockIcon = defaults.object(forKey: dockKey) as? Bool ?? false
+        self.showMenuBarIcon = defaults.object(forKey: menuBarKey) as? Bool ?? true
         self.launchAtLogin = defaults.object(forKey: launchAtLoginKey) as? Bool ?? true
         Self.applyBundledAppIcon()
         applyActivationPolicy()
@@ -23,6 +26,13 @@ final class AppPreferences: ObservableObject {
         showDockIcon = enabled
         defaults.set(enabled, forKey: dockKey)
         applyActivationPolicy()
+    }
+
+    /// Hiding the menu bar icon keeps Recall running in the background.
+    /// Opening Recall.app again brings the dashboard back.
+    func setShowMenuBarIcon(_ enabled: Bool) {
+        showMenuBarIcon = enabled
+        defaults.set(enabled, forKey: menuBarKey)
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
