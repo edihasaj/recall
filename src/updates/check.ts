@@ -49,6 +49,7 @@ export class ReleaseChecker {
   private checkedAtMs = 0;
   private expiresAtMs = 0;
   private pending: Promise<ReleaseInfo> | null = null;
+  private lastError: string | undefined;
 
   constructor(
     private readonly fetchRelease: (url: string, init: RequestInit) => Promise<Response> = fetch,
@@ -64,17 +65,18 @@ export class ReleaseChecker {
     if (this.pending) {
       try {
         this.cached = await this.pending;
+        this.lastError = undefined;
         this.checkedAtMs = this.now();
         this.expiresAtMs = this.checkedAtMs + (this.cached.ready ? READY_TTL_MS : RETRY_TTL_MS);
       } catch {
         this.checkedAtMs = this.now();
-        this.expiresAtMs = this.checkedAtMs + RETRY_TTL_MS;
-        if (!this.cached) return this.report(currentVersion, "Could not check for updates");
+        this.expiresAtMs = this.checkedAtMs + FORCE_FLOOR_MS;
+        this.lastError = "Could not check for updates";
       } finally {
         this.pending = null;
       }
     }
-    return this.report(currentVersion);
+    return this.report(currentVersion, this.lastError);
   }
 
   private report(currentVersion: string, error?: string): UpdateReport {

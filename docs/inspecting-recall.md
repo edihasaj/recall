@@ -13,6 +13,9 @@ read_when:
 
 - Production app: `/Applications/Recall.app`
 - Login item: Recall.app main app, enabled by default when launched from `/Applications`
+- Dock icon: visible while the dashboard is open. Closing the dashboard hides
+  the temporary icon and leaves Recall running. **Show Dock Icon** keeps it
+  visible after closing; **Show Menu Bar Icon** controls the tray separately.
 - LaunchAgent label: `com.recall.daemon`
 - Default daemon URL: `http://localhost:7890`
 - Data dir: `~/.recall`
@@ -55,6 +58,9 @@ curl -s http://localhost:7890/update
 The app and tray show an update only after all platform assets are uploaded.
 The daemon caches successful release checks for 30 minutes; a manual check uses
 `/update?refresh=1` and limits repeated network requests to once per minute.
+Failed checks retain their error until a successful retry, with a one-minute
+retry interval. A cached release stays available during a network failure;
+the Updates tab does not claim Recall is current after a failed check.
 On macOS, Recall.app runs `brew update` and `brew fetch --cask recall` before
 it quits, then saves a fresh database backup under `~/.recall/backups/`. The
 helper installs the downloaded cask while the app is closed. Progress and

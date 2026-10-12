@@ -49,6 +49,40 @@ describe("desktop update availability", () => {
     expect(result.error).toBe("Could not check for updates");
   });
 
+  it("keeps a failed check visible during the retry cooldown, then recovers", async () => {
+    let now = 1_000_000;
+    const fetchRelease = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ ok: true, json: async () => release("1.4.18") });
+    const checker = new ReleaseChecker(fetchRelease, () => now);
+    expect((await checker.check("1.4.17")).error).toBe("Could not check for updates");
+    now += 30_000;
+    expect((await checker.check("1.4.17")).error).toBe("Could not check for updates");
+    expect((await checker.check("1.4.17", true)).error).toBe("Could not check for updates");
+    expect(fetchRelease).toHaveBeenCalledTimes(1);
+    now += 30_000;
+    const recovered = await checker.check("1.4.17");
+    expect(recovered.available).toBe(true);
+    expect(recovered.error).toBeUndefined();
+    expect(fetchRelease).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains a known release while reporting a failed refresh", async () => {
+    let now = 1_000_000;
+    const fetchRelease = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => release("1.4.18") })
+      .mockRejectedValue(new Error("offline"));
+    const checker = new ReleaseChecker(fetchRelease, () => now);
+    await checker.check("1.4.17");
+    now += 60_000;
+    const result = await checker.check("1.4.17", true);
+    expect(result.latest_version).toBe("1.4.18");
+    expect(result.available).toBe(true);
+    expect(result.error).toBe("Could not check for updates");
+    expect((await checker.check("1.4.17")).error).toBe(result.error);
+    expect(fetchRelease).toHaveBeenCalledTimes(2);
+  });
+
   it("requires a checksummed installer before offering an update", async () => {
     const incomplete = release("1.4.18");
     incomplete.assets[incomplete.assets.length - 3]!.digest = null;

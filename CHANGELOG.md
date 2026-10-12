@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.6 - 2026-10-12
+
+### Fixed
+
+- Opening the macOS dashboard temporarily shows Recall in the Dock, including
+  when the menu bar icon is off. Closing the window hides the temporary Dock
+  icon and keeps Recall and its daemon running in the background.
+- Failed update checks remain visible until a successful retry. Recall retries
+  after one minute and no longer claims it is current after a failed check.
+
 ## 2.0.5 - 2026-10-12
 
 ### Added

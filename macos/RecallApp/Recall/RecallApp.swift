@@ -36,7 +36,7 @@ struct RecallApp: App {
             DashboardHost(delegate: delegate)
                 .frame(minWidth: 820, minHeight: 600)
                 .background(WindowOpener())
-                .background(DashboardWindowGuard())
+                .background(DashboardWindowGuard(preferences: delegate.preferences))
         }
         .defaultSize(width: 920, height: 640)
 
@@ -86,8 +86,10 @@ private struct WindowOpener: View {
 }
 
 private struct DashboardWindowGuard: NSViewRepresentable {
+    let preferences: AppPreferences
+
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(preferences: preferences)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -108,12 +110,18 @@ private struct DashboardWindowGuard: NSViewRepresentable {
     final class Coordinator: NSObject, NSWindowDelegate {
         private weak var window: NSWindow?
         private var observesOpenDashboard = false
+        private let preferences: AppPreferences
+
+        init(preferences: AppPreferences) {
+            self.preferences = preferences
+        }
 
         func attach(to window: NSWindow?) {
             guard let window, self.window !== window else { return }
             self.window = window
             window.isReleasedWhenClosed = false
             window.delegate = self
+            if window.isVisible { preferences.setDashboardVisible(true) }
             if !observesOpenDashboard {
                 NotificationCenter.default.addObserver(
                     self,
@@ -126,11 +134,17 @@ private struct DashboardWindowGuard: NSViewRepresentable {
         }
 
         @objc private func showWindow() {
+            preferences.setDashboardVisible(true)
             window?.makeKeyAndOrderFront(nil)
+        }
+
+        func windowDidBecomeKey(_ notification: Notification) {
+            preferences.setDashboardVisible(true)
         }
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
             sender.orderOut(nil)
+            preferences.setDashboardVisible(false)
             return false
         }
 
@@ -172,9 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var menuBarVisibility: AnyCancellable?
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Menu bar is the persistent surface. Closing the dashboard window should
-        // leave the status item + daemon bridge alive regardless of the dock
-        // icon preference; quit only happens via the menu's "Quit Recall" item.
+        // Closing the dashboard leaves Recall and its daemon bridge alive,
+        // including when both persistent icons are disabled.
         return false
     }
 
@@ -337,6 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Actions
 
     @objc private func openDashboard() {
+        preferences.setDashboardVisible(true)
         NSApp.activate(ignoringOtherApps: true)
         // Fast path: window already materialized (WindowOpener observer is live).
         if NSApp.windows.contains(where: { $0.identifier?.rawValue.contains("dashboard") == true || $0.title == "Recall" }) {

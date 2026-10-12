@@ -12,6 +12,7 @@ final class AppPreferences: ObservableObject {
     private let dockKey = "showDockIcon"
     private let menuBarKey = "showMenuBarIcon"
     private let launchAtLoginKey = "launchAtLogin"
+    private var dashboardVisible = false
 
     init() {
         self.showDockIcon = defaults.object(forKey: dockKey) as? Bool ?? false
@@ -25,6 +26,12 @@ final class AppPreferences: ObservableObject {
     func setShowDockIcon(_ enabled: Bool) {
         showDockIcon = enabled
         defaults.set(enabled, forKey: dockKey)
+        applyActivationPolicy()
+    }
+
+    func setDashboardVisible(_ visible: Bool) {
+        guard dashboardVisible != visible else { return }
+        dashboardVisible = visible
         applyActivationPolicy()
     }
 
@@ -95,9 +102,9 @@ final class AppPreferences: ObservableObject {
 
     func applyActivationPolicy() {
         Self.applyBundledAppIcon()
-        let policy: NSApplication.ActivationPolicy = showDockIcon ? .regular : .accessory
+        let policy: NSApplication.ActivationPolicy = showDockIcon || dashboardVisible ? .regular : .accessory
         NSApp.setActivationPolicy(policy)
-        if showDockIcon {
+        if showDockIcon || dashboardVisible {
             NSApp.activate(ignoringOtherApps: true)
         }
     }

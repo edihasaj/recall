@@ -12,9 +12,9 @@ struct UpdatesTab: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
                     Label(updates.isAvailable ? "UPDATE READY" :
-                          (updates.latestVersion == nil ? "CHECK RELEASES" : "RECALL IS CURRENT"),
+                          (updates.checkFailed || updates.latestVersion == nil ? "CHECK RELEASES" : "RECALL IS CURRENT"),
                           systemImage: updates.isAvailable ? "arrow.down.circle.fill" :
-                          (updates.latestVersion == nil ? "arrow.clockwise.circle.fill" : "checkmark.circle.fill"))
+                          (updates.checkFailed || updates.latestVersion == nil ? "arrow.clockwise.circle.fill" : "checkmark.circle.fill"))
                         .font(.custom("AvenirNext-DemiBold", size: 11))
                         .tracking(1.6)
                         .foregroundStyle(amber)
@@ -27,14 +27,15 @@ struct UpdatesTab: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(updates.isAvailable ? "A new Recall is ready." :
-                         (updates.latestVersion == nil ? "Let's check for updates." : "You're up to date."))
+                         (updates.checkFailed ? "Couldn't check for updates." :
+                          (updates.latestVersion == nil ? "Let's check for updates." : "You're up to date.")))
                         .font(.custom("AvenirNext-Bold", size: 30))
                         .foregroundStyle(.white)
                     Text(updates.isAvailable
                          ? (updates.canInstallInApp
                             ? "Install the latest release here. Your local memories stay in place."
                             : "Download the latest release and replace this copy. Your local memories stay in place.")
-                         : (updates.latestVersion == nil
+                         : (updates.checkFailed || updates.latestVersion == nil
                             ? "Recall will show a release here once it can reach the update service."
                             : "We'll let you know when the next complete release arrives."))
                         .font(.system(size: 13))

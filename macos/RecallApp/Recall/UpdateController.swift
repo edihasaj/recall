@@ -9,6 +9,7 @@ final class UpdateController: ObservableObject {
     @Published private(set) var installing = false
     @Published private(set) var phase = ""
     @Published var lastError: String?
+    @Published private(set) var checkFailed = false
 
     let installedVersion: String
     private var pollingTask: Task<Void, Never>?
@@ -73,11 +74,13 @@ final class UpdateController: ObservableObject {
                 throw UpdateFailure.checkFailed
             }
             let report = try JSONDecoder().decode(UpdateReport.self, from: data)
-            if report.error != nil { throw UpdateFailure.checkFailed }
             latestVersion = report.latest_version
             ready = report.ready
+            if report.error != nil { throw UpdateFailure.checkFailed }
+            checkFailed = false
             if !hasFailedUpdateResult { lastError = nil }
         } catch {
+            checkFailed = true
             if !hasFailedUpdateResult {
                 lastError = "Couldn’t check for updates. Try again in a moment."
             }

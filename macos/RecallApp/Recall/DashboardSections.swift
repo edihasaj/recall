@@ -316,7 +316,7 @@ struct PreferencesTab: View {
                     )) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Show Dock Icon")
-                            Text("Off by default. Enable only when you want Recall in the Dock.")
+                            Text("Keep the Dock icon after closing Recall. It appears temporarily while the window is open.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -361,7 +361,7 @@ struct SettingsView: View {
                 get: { preferences.showDockIcon },
                 set: { preferences.setShowDockIcon($0) }
             ))
-            Text("Recall stays menu bar only by default. Turn this on only if you want Dock presence.")
+            Text("Keep Recall in the Dock after closing its window. The Dock icon appears while Recall is open.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
