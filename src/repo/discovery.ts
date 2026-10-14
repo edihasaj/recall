@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { RecallDb } from "../db/client.js";
 import { queryMemories } from "../models/memory.js";
 import { derivedScan, scanAndStore, scanDiffersFromStore, scanRepo } from "../scanner/repo.js";
+import { findGitRoot, readOriginUrl } from "./git-root.js";
 
 const repoPathCache = new Map<string, string | null>();
 
@@ -168,6 +169,15 @@ export function inferRepoSlugFromPath(repoPath?: string | null): string | null {
   const root = normalizeRepoPathHint(repoPath);
   if (!root) return null;
 
+  // Read the origin from the checkout's own config first. Hooks run with a
+  // minimal PATH; when `git` was missing the slug degraded to the directory
+  // basename on that host only, so one checkout was stored as `oktapod` on
+  // one device and `edihasaj/oktapod` on another.
+  const info = findGitRoot(root);
+  const configured = info ? readOriginUrl(info) : null;
+  const fromConfig = configured ? extractRepoSlugFromRemote(configured) : null;
+  if (fromConfig) return fromConfig;
+
   try {
     const remote = runGit(["-C", root, "remote", "get-url", "origin"]);
     return extractRepoSlugFromRemote(remote);
@@ -219,8 +229,9 @@ function normalizeRepoPathHint(repoPath?: string | null): string | null {
     const root = runGit(["-C", expanded, "rev-parse", "--show-toplevel"]);
     return root || null;
   } catch {
-    const resolved = resolve(expanded);
-    return existsSync(join(resolved, ".git")) ? resolved : null;
+    // Without `git`, walk up like `rev-parse --show-toplevel` would, so a
+    // subdirectory or a linked worktree still resolves to its checkout.
+    return findGitRoot(resolve(expanded))?.root ?? null;
   }
 }
 
