@@ -1,6 +1,5 @@
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { hasNonDurableProvenance } from "../capture/provenance.js";
 import type { RecallDb } from "../db/client.js";
 import {
   feedbackEvents,
@@ -12,9 +11,16 @@ import { getMemory, queryMemories } from "../models/memory.js";
 import { memoryDedupeKey } from "../models/dedupe.js";
 import { recordAuditWithSnapshot } from "../audit/trail.js";
 import { checkContradiction } from "../contradictions/detector.js";
-import { isDestructiveRisky } from "../capture/correction.js";
 import { isNonUserCaptureContext } from "../capture/context.js";
 import { isGenericScannedToolingMemory } from "../scanner/signal.js";
+import {
+  applyPromoteRepeat,
+  formatPromoteLine,
+  planPromotions,
+  type PromoteRepeatPlan,
+} from "./promote.js";
+
+export type { PromoteRepeatPlan } from "./promote.js";
 
 const SUPPRESS_INJECTION_FLOOR = 50;
 const GLOBALIZE_REPO_FLOOR = 3;
@@ -22,7 +28,7 @@ const GLOBALIZE_REPO_FLOOR = 3;
 // Phase-1 deterministic, LLM-free cleanup. Three actions:
 //   * dedupeExact            — merge memories with identical normalized text within scope
 //   * rejectFragmentCandidates — reject low-quality voice/typing-fragment captures
-//   * promoteRepeatCorrections — auto-promote candidates with strong rule-shape text
+//   * promoteRepeatCorrections — promote candidates on repetition or evidence score (promote.ts)
 //
 // All actions write to maintenance_cleanup_log so they can be reviewed and
 // reverted later. Dry-run produces the same plan without mutating the DB.
@@ -57,13 +63,6 @@ export interface RejectFragmentPlan {
   memory_id: string;
   text: string;
   reasons: string[];
-}
-
-export interface PromoteRepeatPlan {
-  kind: "promote_repeat_correction";
-  memory_id: string;
-  text: string;
-  matched_pattern: "repetition" | "rule_shape";
 }
 
 export interface SuppressCommandPlan {
@@ -853,79 +852,12 @@ function applyRejectGenericScannedTooling(db: RecallDb, runId: string, plan: Rej
 
 // --- promoteRepeatCorrections --------------------------------------------
 
-// Promotion gate: candidate user_corrections only auto-promote on repetition
-// signal (≥2 distinct sessions producing the same correction). Shape alone
-// (e.g. starting with "always") is NOT enough — that produced false-positive
-// active rules from voice-transcript fragments. Promote-by-shape is gone.
-// Manual `recall confirm` remains the other promotion path. Feedback on
-// sibling memories is not evidence that a brand-new rule is true.
-export function planPromoteRepeats(db: RecallDb): PromoteRepeatPlan[] {
-  const rows = db.select({
-    id: memories.id,
-    text: memories.text,
-    repetition_count: memories.repetition_count,
-    source: memories.source,
-    status: memories.status,
-    scope: memories.scope,
-  })
-    .from(memories)
-    .where(and(eq(memories.status, "candidate"), eq(memories.source, "user_correction")))
-    .all();
-
-  const out: PromoteRepeatPlan[] = [];
-  for (const row of rows) {
-    const text = row.text.trim();
-    const memory = getMemory(db, row.id);
-    if (!memory || hasNonDurableProvenance(memory)) continue;
-    if (row.scope === "session") continue;
-    // Skip rows that the fragment filter would also match — let it reject them
-    // first so we don't flip-flop.
-    if (qualityReasons(text).length > 0) continue;
-    // Phase F: destructive verbs paired with high-risk targets never
-    // auto-promote. They require explicit `recall confirm`.
-    if (isDestructiveRisky(text)) continue;
-
-    if (row.repetition_count >= 2) {
-      out.push({ kind: "promote_repeat_correction", memory_id: row.id, text, matched_pattern: "repetition" });
-    }
-  }
-  return out;
-}
-
-function applyPromoteRepeat(db: RecallDb, runId: string, plan: PromoteRepeatPlan) {
-  const before = getMemory(db, plan.memory_id);
-  if (!before || before.status !== "candidate" || hasNonDurableProvenance(before)) return;
-
-  const now = new Date().toISOString();
-  db.update(memories)
-    .set({ status: "active", confidence: Math.max(before.confidence, 0.7), updated_at: now, last_validated_at: now })
-    .where(eq(memories.id, plan.memory_id))
-    .run();
-
-  const after = getMemory(db, plan.memory_id);
-  recordAuditWithSnapshot(
-    db,
-    plan.memory_id,
-    "promoted",
-    DEFAULT_ACTOR,
-    `cleanup_promote:${plan.matched_pattern}:run:${runId}`,
-    before,
-    after ?? null,
-  );
-
-  db.insert(maintenanceCleanupLog).values({
-    id: randomUUID(),
-    run_id: runId,
-    action: "promote_repeat_correction",
-    memory_id: plan.memory_id,
-    related_memory_id: null,
-    before_snapshot: before as unknown as any,
-    after_snapshot: after as unknown as any,
-    details: { matched_pattern: plan.matched_pattern } as any,
-    reverted: false,
-    reverted_at: null,
-    created_at: now,
-  }).run();
+// Logic lives in promote.ts (repetition path unchanged + evidence_score path).
+// The fragment filter is injected so rows rejectFragmentCandidates would
+// reject never promote first (no flip-flop), and promote.ts never imports
+// this file. Manual `recall confirm` remains the other promotion path.
+export function planPromoteRepeats(db: RecallDb, opts: { now?: Date } = {}): PromoteRepeatPlan[] {
+  return planPromotions(db, { fragmentReasons: qualityReasons, now: opts.now });
 }
 
 // --- suppressUnproductiveCommands ----------------------------------------
@@ -1349,7 +1281,7 @@ export function formatCleanupReport(report: CleanupReport): string {
       lines.push(`  reject: ${item.memory_id.slice(0, 8)}  reasons=${item.reasons.join(",")}`);
       lines.push(`          "${truncate(item.text, 80)}"`);
     } else if (item.kind === "promote_repeat_correction") {
-      lines.push(`  promote: ${item.memory_id.slice(0, 8)}  via=${item.matched_pattern}`);
+      lines.push(formatPromoteLine(item));
       lines.push(`           "${truncate(item.text, 80)}"`);
     } else if (item.kind === "suppress_unproductive_command") {
       lines.push(`  suppress: ${item.memory_id.slice(0, 8)}  inj=${item.injection_count}  followed=${item.followed_count}`);
