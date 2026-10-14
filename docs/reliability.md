@@ -18,6 +18,12 @@ it. The reliability report keeps these stages separate:
 4. `resolved outcome`: later tool or correction evidence marked the memory as
    followed, overridden, contradicted, or ignored.
 
+Daemon HTTP feedback, hooks, and MCP now write the same canonical injection
+outcome and value-event records. The separate device sync client exports
+followed outcomes only for distinct resolved sessions whose original compiler
+text snapshot matches the current memory. Reconstructed history and unresolved
+delivery provide no positive proof; later negative evidence wins.
+
 Run the report over the default 14-day window:
 
 ```bash

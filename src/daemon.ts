@@ -10,7 +10,6 @@ import {
   confirmMemory,
   rejectMemory,
   queryMemories,
-  recordFeedback,
   getMemory,
 } from "./models/memory.js";
 import { scanAndStore } from "./scanner/repo.js";
@@ -23,6 +22,7 @@ import { pruneMemories } from "./pruning/pruner.js";
 import { getAuditTrail, getRecentAudit, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
 import { createActivityEvent, listActivityEvents, listActivitySessions } from "./models/activity.js";
+import { signalOutcomeFallback } from "./mcp/fallback.js";
 import { ensureRepoBootstrapped, inferRepoSlugFromPath } from "./repo/discovery.js";
 import { getEmbeddingModelInfo, getEmbeddingUnavailableReason, loadEmbeddingConfigFromEnv } from "./embeddings/embeddings.js";
 import {
@@ -922,21 +922,12 @@ const server = createServer(async (req, res) => {
     // Record feedback
     if (path === "/feedback" && method === "POST") {
       const body = await parseBody(req);
-      const id = recordFeedback(
-        db,
-        body.memory_id,
-        body.session_id,
-        body.injected,
-        body.outcome,
-      );
-      createActivityEvent(db, {
+      const { feedback_id: id } = signalOutcomeFallback(db, {
+        memory_id: body.memory_id,
         session_id: body.session_id,
-        source: "daemon",
-        event_type: "feedback",
-        memory_ids: [body.memory_id],
-        request: { injected: body.injected, outcome: body.outcome },
-        result: { feedback_id: id },
-      });
+        injected: Boolean(body.injected),
+        outcome: body.outcome,
+      }, "daemon");
       emitEvent("feedback.recorded", {
         memory_id: body.memory_id,
         session_id: body.session_id,

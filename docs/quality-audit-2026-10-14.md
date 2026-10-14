@@ -73,10 +73,14 @@ All mutation probes used disposable stores. No live memory was confirmed or
 restored, no installed signed app was replaced, and these commits were not
 pushed or deployed. Oktapod supplied design patterns only.
 
-Cloud outcome counters remain authenticated-device assertions; the current
-client does not push followed counts. Keep cloud promotion in shadow until
-that evidence and its trust boundary have been evaluated. This pass does not
-measure rewrite fidelity, real-agent compliance, or multi-year retrieval
+Cloud outcome counters remain authenticated-device assertions. The follow-up
+sync client now exports followed counts from distinct resolved sessions with
+an original compiler snapshot matching the current memory; it does not turn
+unresolved injections, observed use, or reconstructed history into proof.
+Outcome-only updates participate in incremental sync, while legacy stores
+without the ledgers omit the unmeasured field. Cloud promotion remains in
+shadow until that evidence and its trust boundary have been evaluated. This pass
+does not measure rewrite fidelity, real-agent compliance, or multi-year retrieval
 quality. An isolated successful canary proves its exercised path, not those
 broader properties.
 

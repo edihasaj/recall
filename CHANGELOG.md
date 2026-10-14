@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Daemon HTTP feedback resolves the same canonical injection and value
+  evidence as hooks and MCP, instead of updating only a confidence counter.
 - Daily cleanup can promote candidates from resolved outcomes, observed use,
   and explicit feedback, with scored explanations and reversible audit logs.
   Delivery without a followed outcome and repeated repository scans do not
