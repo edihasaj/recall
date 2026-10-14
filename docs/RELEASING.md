@@ -8,6 +8,9 @@ read_when:
 
 # Releasing Recall
 
+For the Mac App Store runtime proof and required installer changes, see
+[mac-app-store.md](mac-app-store.md).
+
 Release artifacts are produced from tags named `vX.Y.Z`.
 
 ## Prerequisites
