@@ -33,6 +33,7 @@ import {
   recordCompletionUseValueEventsSemantic,
 } from "../models/memory-value.js";
 import { textMatches } from "../text/match.js";
+import { resolveCodexSessionIdOrExit } from "./hook-codex-payload.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 15_000;
@@ -975,11 +976,16 @@ async function readSessionStartInputFromStdin(agent: "claude-code" | "codex"): P
 async function readSessionEndInputFromStdin(agent: "claude-code" | "codex"): Promise<SessionEndHookInput> {
   const payload = await readClaudeCodeHookPayloadFromStdin();
   const codexPayload = payload as ClaudeCodeHookPayload & { last_assistant_message?: string };
+  // Codex: alternate id keys, the rollout transcript_path, or the single
+  // unambiguous open session for cwd; otherwise exit 0 with a debug note.
+  const sessionId = agent === "codex"
+    ? resolveCodexSessionIdOrExit(payload, { agent, getDb: () => initDb() })
+    : requireNonEmpty(payload.session_id ?? "", "session_id");
   return {
     agent,
     path: extractClaudeToolPath(payload.tool_input),
     repo_path: payload.cwd,
-    session_id: requireNonEmpty(payload.session_id ?? "", "session_id"),
+    session_id: sessionId,
     last_assistant_turn: codexPayload.last_assistant_message,
   };
 }
