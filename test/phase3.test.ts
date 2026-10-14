@@ -18,7 +18,7 @@ import { pruneMemories, formatPruneReport } from "../src/pruning/pruner.js";
 import { recordAudit, getAuditTrail, getRecentAudit, formatAuditTrail, diffSnapshots, rollbackMemory, recordAuditWithSnapshot } from "../src/audit/trail.js";
 import { recordSignal } from "../src/feedback/implicit.js";
 import { eq } from "drizzle-orm";
-import { contradictions, feedbackEvents, memories } from "../src/db/schema.js";
+import { contradictions, feedbackEvents, memories, memoryInjections } from "../src/db/schema.js";
 
 let dbCounter = 0;
 
@@ -389,6 +389,18 @@ describe("pruning", () => {
     db.update(memories).set({ created_at: oldDate, updated_at: oldDate })
       .where(eq(memories.id, memId)).run();
 
+    // The candidate was measurable: other rules were delivered throughout the
+    // repository's retention window, without selecting this one.
+    const carrier = makeMemory(db, { text: "Use strict TypeScript checks", confidence: 0.9 });
+    for (const daysAgo of [29, 23, 17, 11, 5, 0]) {
+      db.insert(memoryInjections).values({
+        id: `covered-${daysAgo}`,
+        memory_id: carrier,
+        session_id: `retention-${daysAgo}`,
+        repo: "test/repo",
+        injected_at: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+      }).run();
+    }
     const preview = pruneMemories(db, { candidate_unconfirmed_days: 30, dry_run: true });
     expect(preview.unconfirmed_archived).toEqual([memId]);
     expect(getMemory(db, memId)?.auto_inject).toBe(true);

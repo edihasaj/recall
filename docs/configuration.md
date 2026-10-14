@@ -68,6 +68,13 @@ Doctor reports resolved and unknown outcomes together. A followed rate among
 resolved rows must not be interpreted as compliance across all sessions.
 Invocation and selection do not constitute model-receipt acknowledgements.
 
+Codex Stop payloads normally include `session_id`. Recall also accepts known
+alternate id fields and a rollout transcript's session id. If all are absent,
+it uses a recent open Codex session only when the same working directory has
+one unambiguous match; otherwise it skips with a diagnostic rather than
+attributing outcomes to the wrong session. This fallback does not infer that
+upstream Codex normally omits its session id.
+
 `RECALL_RUNTIME_DIR` pins CLI/MCP/hook setup to an explicitly deployed runtime
 directory containing `bin/node` and `dist`. The launcher sets it to its own
 runtime so repair installations do not silently rewire to an older app bundle.

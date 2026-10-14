@@ -27,9 +27,17 @@ recall reliability --repo owner/repo
 recall reliability --since 2026-09-01T00:00:00Z
 ```
 
-The report treats sessions at a workspace root or temporary test directory as
-unscoped. They do not lower repository-attribution coverage because no repository
-memory could apply there.
+The report treats existing directories without a Git checkout, such as
+organization folders under `~/Projects`, as unscoped. They do not lower
+repository-attribution coverage because no repository identity is established.
+`session_scope_coverage` separately warns when fewer than half of recorded
+sessions are scoped, and lists their common working directories. A perfect
+attribution rate among a small scoped minority is not proof of broad delivery.
+
+Repository discovery reads Git metadata directly, including worktree `.git`
+files and `commondir`. It does not depend on `git` being available on a hook's
+PATH. Deleted directories retain conservative path-based uncertainty rather
+than automatically becoming unscoped.
 
 ## Reliability targets
 
@@ -38,6 +46,7 @@ The report starts with these operating targets:
 | Signal | Target |
 | --- | --- |
 | Repository attribution for scoped sessions | at least 95% |
+| Sessions with repository scope | at least 50% (warning only) |
 | Selected memories emitted by the hook | at least 99% |
 | Emitted memories with a resolved outcome | at least 80% |
 | Used or missed retrieval observations per 14 days | at least 20 |
