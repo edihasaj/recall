@@ -12,6 +12,9 @@ The bundle identifier remains `com.edihasaj.recall`, registered ID `ZYP72V89B5`,
 team `T8J48M4QVY`. The initial store version is **2.0.7 (1)** for Apple Silicon
 and macOS 15+. Pricing is free in all 175 territories, including future
 territories. App Privacy is published as **Data Not Collected**.
+Version **2.0.7 (1)** was submitted on **14 October 2026**. Apple's review API
+reports **WAITING_FOR_REVIEW**, and the processed Mac build is `VALID`.
+The release is configured to publish automatically after approval.
 
 ## Architecture
 

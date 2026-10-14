@@ -58,7 +58,9 @@ The MiniLM row isolates the system contribution (same embedding model agentmemor
 
 ### Mac App Store edition
 
-The sandboxed store edition is being prepared as **Recall: Coding Memory**.
+The sandboxed store edition, **Recall: Coding Memory 2.0.7 (1)**, was submitted
+to Apple on 14 October 2026 and is **Waiting for Review**. It will be free and
+publish automatically after approval.
 It includes its own runtime and connects agents through local HTTP. Memory is
 stored in the app container, and repository access is granted through a folder
 picker. See [store release and connection details](docs/mac-app-store.md).
