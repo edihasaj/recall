@@ -40,6 +40,8 @@ There is no LaunchAgent, external CLI installation, Homebrew updater, or
 background process left running after Quit. Launch at login defaults to off
 and uses `SMAppService.mainApp` when enabled by the user. Developer-owned
 telemetry and cloud dispatch are not enabled in this edition.
+LLM-based correction capture and forked background reliability probes are
+disabled; the local capture path and in-process maintenance remain available.
 
 Repositories are selected through `NSOpenPanel`, with read-only security-scoped
 bookmarks restored at startup. Changing the selected folders restarts the child

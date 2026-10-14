@@ -10,6 +10,7 @@ import {
   type HookResult,
 } from "../cli/hook.js";
 import { toolOutcomeFromPayload } from "../feedback/tool-outcomes.js";
+import { extractCodexSessionId, resolveCodexSessionEndSessionId } from "../cli/hook-codex-payload.js";
 
 export const HTTP_HOOK_EVENTS = [
   "SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure", "Stop", "SessionEnd",
@@ -28,7 +29,13 @@ export async function handleAgentHttpHook(
   event: HttpHookEvent,
   payload: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const session = text(payload, "session_id");
+  let session = agent === "codex"
+    ? extractCodexSessionId(payload)?.session_id : text(payload, "session_id");
+  if (!session && agent === "codex" && (event === "Stop" || event === "SessionEnd")) {
+    const resolved = resolveCodexSessionEndSessionId(payload, { agent, getDb: () => db });
+    if (resolved.status === "unresolved") return {};
+    session = resolved.session_id;
+  }
   if (!session) throw new Error("session_id required");
   const common = { agent, session_id: session, repo: text(payload, "repo"), repo_path: text(payload, "cwd") };
   let result: HookResult;

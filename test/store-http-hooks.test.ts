@@ -55,6 +55,12 @@ describe("store HTTP integration", () => {
     await expect(handleAgentHttpHook(db, "codex", "SessionStart", {}))
       .rejects.toThrow("session_id required");
   });
+  it("accepts Codex alternate session IDs and safely skips unattributable Stops", async () => {
+    await expect(handleAgentHttpHook(db, "codex", "Stop", { thread_id: "store-alternate" }))
+      .resolves.toEqual({});
+    await expect(handleAgentHttpHook(db, "codex", "Stop", { turn_id: "not-a-session" }))
+      .resolves.toEqual({});
+  });
   it("keeps embedding models at the explicit container path", () => {
     process.env.RECALL_EMBEDDING_CACHE_DIR = join(directory, "Models");
     expect(getEmbeddingCacheRoot()).toBe(join(directory, "Models"));

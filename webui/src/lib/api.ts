@@ -1,7 +1,6 @@
 /**
- * Daemon REST client. Always talks to :7890 (the daemon's REST port),
- * never to :7891 (the WebUI's own port — that one only serves bytes
- * and the WebSocket bridge).
+ * Daemon REST client. Uses the owning daemon's port from dashboard metadata,
+ * never the WebUI listener, which only serves bytes and the WebSocket bridge.
  *
  * In `vite dev`, this is proxied via the dev server (`/api/*`).
  * In a production build, it points at the daemon directly.

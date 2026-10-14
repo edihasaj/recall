@@ -29,7 +29,9 @@ if [[ "${RECALL_MAS_SKIP_STAGE:-0}" != 1 ]]; then
   fi
   if [[ -f "$stage/bin/node" ]]; then chmod u+w "$stage/bin/node"; fi
   cp "$runtime_node" "$stage/bin/node"
-  rsync -a --delete dist/ "$stage/dist/"
+  rsync -a --delete --exclude=cli.js --exclude=cli.js.map \
+    --exclude=mcp.js --exclude=mcp.js.map --exclude=sync-server.js \
+    --exclude=sync-server.js.map dist/ "$stage/dist/"
   rsync -a --delete drizzle/ "$stage/drizzle/"
   cp package.json package-lock.json "$stage/"
   npm ci --omit=dev --prefix "$stage" --no-audit --no-fund
@@ -55,6 +57,9 @@ for path in stage.rglob("*"):
 PY
 codesign --force --sign "$identity" --keychain "$keychain" --options runtime \
   --entitlements macos/RecallApp/AppStore/Node.entitlements "$stage/bin/node"
+for entry in cli.js cli.js.map mcp.js mcp.js.map sync-server.js sync-server.js.map; do
+  if [[ -f "$stage/dist/$entry" ]]; then trash "$stage/dist/$entry"; fi
+done
 xcodegen generate --spec macos/RecallApp/project-app-store.yml
 xcodebuild -project macos/RecallApp/RecallAppStore.xcodeproj -scheme Recall \
   -configuration "$configuration" -destination generic/platform=macOS \

@@ -59,6 +59,9 @@ final class StoreRuntime: ObservableObject {
                 "RECALL_PORT": "\(port)", "RECALL_WEBUI_PORT": "\(webPort)",
                 "RECALL_INSTANCE_ID": identifier, "RECALL_DISTRIBUTION": "mac-app-store",
                 "RECALL_DISPATCHER_ENABLED": "false",
+                "RECALL_LLM_CAPTURE_DISABLED": "true",
+                "RECALL_RELIABILITY_PROBE_ENABLED": "false",
+                "RECALL_REPO_ROOTS": folders.map(\.path).joined(separator: ","),
             ]
             process.standardOutput = log
             process.standardError = log
