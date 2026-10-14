@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { planPrebuilds, writePlan } from "../plan-native-prebuilds.mjs";
+
+test("defaults request one Linux Node 22 x64 job, never a Mac", () => {
+  assert.deepEqual(planPrebuilds(), {
+    include: [{ os: "linux", arch: "x64", runner: "ubuntu-22.04", node: 22 }],
+  });
+});
+
+test("one Apple architecture and ABI allocate only one selected Mac", () => {
+  assert.deepEqual(planPrebuilds({ platform: "macos", architecture: "arm64" }), {
+    include: [{ os: "darwin", arch: "arm64", runner: "macos-14", node: 22 }],
+  });
+});
+
+test("all supported targets remain available, but only through explicit selectors", () => {
+  const rows = planPrebuilds({
+    nodeVersions: "20,22,24", platform: "all", architecture: "all",
+  }).include;
+  assert.equal(rows.length, 18);
+  assert.equal(rows.filter((row) => row.os === "darwin").length, 6);
+  assert.equal(new Set(rows.map((row) => `${row.os}/${row.arch}/${row.node}`)).size, 18);
+});
+
+test("platform selection prevents Windows builds from ever using a Mac", () => {
+  for (const platform of ["linux", "windows"]) {
+    const rows = planPrebuilds({ platform, architecture: "all", nodeVersions: "22,24" }).include;
+    assert.equal(rows.length, 4);
+    assert.ok(rows.every((row) => !row.runner.startsWith("macos")));
+  }
+});
+
+test("CSV selection is honored and duplicate ABIs cannot multiply spend", () => {
+  const rows = planPrebuilds({ nodeVersions: "22, 24,22" }).include;
+  assert.deepEqual(rows.map((row) => row.node), [22, 24]);
+});
+
+test("invalid selectors fail before writing matrix output", () => {
+  for (const options of [
+    { nodeVersions: "" }, { nodeVersions: "22," }, { nodeVersions: "26" },
+    { nodeVersions: "22\nmatrix=untrusted" }, { nodeVersions: "22, $(touch injected)" },
+    { nodeVersions: null }, { platform: "macos-latest" }, { architecture: "amd64" },
+  ]) assert.throws(() => planPrebuilds(options));
+  const dir = mkdtempSync(join(tmpdir(), "recall-prebuild-plan-"));
+  try {
+    const output = join(dir, "output");
+    assert.throws(() => writePlan({ NODE_VERSIONS: "unsupported", GITHUB_OUTPUT: output }));
+    assert.equal(existsSync(output), false);
+    writePlan({ GITHUB_OUTPUT: output });
+    const lines = readFileSync(output, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    assert.deepEqual(JSON.parse(lines[0].slice("matrix=".length)), planPrebuilds());
+  } finally {
+    rmSync(dir, { recursive: true, force: true }); // This test owns only its fixture.
+  }
+});

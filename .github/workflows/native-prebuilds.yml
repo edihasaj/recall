@@ -7,9 +7,8 @@ name: native-prebuilds
 # build that needs Python + MSVC — the exact reason recall was effectively
 # unshippable on Windows ARM.
 #
-# Triggers: tag push (real release), manual dispatch (dev iteration). The
-# job is split into two stages so a failed Windows ARM build doesn't block
-# the other artifacts.
+# Manual production requests only. Select exact targets before allocating
+# build runners; the default selection is one Linux Node 22 x64 ABI.
 
 on:
   workflow_dispatch:
@@ -19,9 +18,19 @@ on:
         type: boolean
         default: false
       node_versions:
-        description: "Comma-separated node majors (default: 20,22,24)"
-        default: "20,22,24"
+        description: "Comma-separated supported node majors; defaults to the bundled runtime (22)"
+        default: "22"
         required: false
+      platform:
+        description: "Build only this OS; all is an explicit full-matrix request"
+        type: choice
+        default: linux
+        options: [linux, windows, macos, all]
+      architecture:
+        description: "Build only this architecture"
+        type: choice
+        default: x64
+        options: [x64, arm64, all]
       dry_run:
         description: "Build but do not upload artifacts to a release"
         type: boolean
@@ -31,36 +40,35 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.run_native == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - id: plan
+        env:
+          NODE_VERSIONS: ${{ inputs.node_versions }}
+          TARGET_PLATFORM: ${{ inputs.platform }}
+          TARGET_ARCHITECTURE: ${{ inputs.architecture }}
+        run: node scripts/plan-native-prebuilds.mjs
+
   prebuild:
+    needs: plan
+    timeout-minutes: 15
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.run_native == true
     name: prebuild ${{ matrix.os }} ${{ matrix.arch }} node${{ matrix.node }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # macOS
-          - { os: darwin,  arch: x64,   runner: macos-15-intel,     node: 20 }
-          - { os: darwin,  arch: x64,   runner: macos-15-intel,     node: 22 }
-          - { os: darwin,  arch: x64,   runner: macos-15-intel,     node: 24 }
-          - { os: darwin,  arch: arm64, runner: macos-14,           node: 20 }
-          - { os: darwin,  arch: arm64, runner: macos-14,           node: 22 }
-          - { os: darwin,  arch: arm64, runner: macos-14,           node: 24 }
-          # Linux
-          - { os: linux,   arch: x64,   runner: ubuntu-22.04,       node: 20 }
-          - { os: linux,   arch: x64,   runner: ubuntu-22.04,       node: 22 }
-          - { os: linux,   arch: x64,   runner: ubuntu-22.04,       node: 24 }
-          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm,   node: 20 }
-          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm,   node: 22 }
-          - { os: linux,   arch: arm64, runner: ubuntu-22.04-arm,   node: 24 }
-          # Windows
-          - { os: win32,   arch: x64,   runner: windows-2022,       node: 20 }
-          - { os: win32,   arch: x64,   runner: windows-2022,       node: 22 }
-          - { os: win32,   arch: x64,   runner: windows-2022,       node: 24 }
-          # ← THE one that's missing upstream and bites all our Windows-ARM users.
-          - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 20 }
-          - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 22 }
-          - { os: win32,   arch: arm64, runner: windows-11-arm,     node: 24 }
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -125,7 +133,7 @@ jobs:
           name: prebuild-${{ matrix.os }}-${{ matrix.arch }}-node${{ matrix.node }}
           path: prebuilds-out/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   publish:
     name: publish to edihasaj/recall-prebuilds

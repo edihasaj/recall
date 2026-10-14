@@ -33,8 +33,9 @@ and host them in a sibling repo that `prebuild-install` can resolve.
 
 ## How it works
 
-1. **CI matrix builds prebuilds** in `edihasaj/recall` for every (os, arch,
-   node-major) combo we care about:
+1. **Explicit production CI builds selected prebuilds** in `edihasaj/recall`.
+   The default selection is one Linux x64 Node 22 ABI, not the full matrix.
+   Select an OS, architecture, and `node_versions` deliberately. Supported targets remain:
    - darwin x64, darwin arm64
    - linux x64, linux arm64
    - win32 x64, **win32 arm64** ← the previously missing one

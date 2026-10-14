@@ -40,7 +40,7 @@ Dir.glob(File.join(ROOT, ".github/workflows/*.{yml,yaml}")).each do |path|
     runner = job["runs-on"]
     matrix = job.dig("strategy", "matrix")
     labels = [runner, matrix].join(" ")
-    next unless labels.match?(/macos|xcode/i)
+    next unless labels.match?(/macos|xcode/i) || (runner.is_a?(String) && runner.include?("${{") && matrix.is_a?(String))
     count += 1
     context = {"github" => {"repository" => REPOSITORY, "event_name" => "workflow_dispatch", "ref" => "refs/heads/production", "ref_name" => "production", "base_ref" => "production", "actor" => "owner", "ref_protected" => true, "event" => {"inputs" => defaults}}, "inputs" => defaults, "needs" => {}}
     scenarios = %w[push pull_request schedule merge_group workflow_run].product(%w[refs/heads/main refs/heads/production refs/tags/v9.9.9]).map { |event, ref| [event, ref, {}] }
