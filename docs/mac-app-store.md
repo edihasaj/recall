@@ -101,7 +101,8 @@ port so test, store, and direct installations do not connect to each other.
    and creates a signed PKG for Release. It never replaces an installed app.
 4. Generate the store project and run `RecallStoreTests` in the signed Debug
    host. The external MCP test requires the matching standalone SDK client
-   while its fixture service is listening. See the private release runbook.
+   while its fixture service is listening: run `node scripts/verify-store-mcp.mjs`
+   alongside that test. The client targets only the fixture port 37902.
 5. Export native XCTest screenshot attachments, frame them with
    `scripts/frame-store-screenshots.py`, and inspect the pixels. Listing text
    and 1440×900 images live under `macos/RecallApp/AppStore/listing`.
@@ -115,7 +116,7 @@ Distribution, not Developer ID notarization. The shared keychain is
 
 ## Verification on 14 October 2026
 
-- TypeScript checks, CLI/dashboard builds, and **915 JavaScript tests** passed;
+- TypeScript checks, CLI/dashboard builds, and **1,040 JavaScript tests** passed;
   three existing optional tests were skipped.
 - Four signed sandbox desktop tests passed: window close/reopen, an external
   MCP client retrieving a stored rule, native dashboard rendering, and memory
@@ -128,6 +129,13 @@ Distribution, not Developer ID notarization. The shared keychain is
 Evidence is under `/tmp/recall-mas-proof`. These checks do not establish
 read access to every external repository or a real ONNX inference benchmark.
 The installed direct-download app and its daemon on port 7890 remain separate.
+
+The distribution package from public source `79e16bd` passed Apple's
+`altool --validate-app` without errors. GitHub CI, Pages, and CodeQL also
+passed on that source revision. The signed archive has the expected application
+identifier and App Sandbox entitlement, with debug access absent.
+Apple upload completed without errors, delivery UUID
+`c8ab7938-052a-4472-8837-ae7e1f110337`.
 
 The public privacy policy is [privacy.md](privacy.md). It explains that connected
 agents receive selected context and may process it under their own settings.
