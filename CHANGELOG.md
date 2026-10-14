@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- Daily cleanup can promote candidates from resolved outcomes, observed use,
+  and explicit feedback, with scored explanations and reversible audit logs.
+  Delivery without a followed outcome and repeated repository scans do not
+  establish positive evidence.
+- Candidate archival requires repository injection coverage. The new
+  `prune --restore-unmeasured` command reverses only proven auto-pruner
+  archival; deliberate opt-outs and foreign-device quarantine stay intact.
+- Repositories without active memories keep the baseline confidence gate.
+  Reliability reports expose unscoped sessions separately, and repository
+  discovery supports worktrees without requiring Git on the hook's PATH.
+- The daemon persists a daily reliability verdict and reports sustained
+  observed failures through health, doctor, and bounded notifications.
+  Missing observation days reset the failure streak.
+- Codex Stop hooks safely resolve alternate session-id formats and skip
+  ambiguous fallback matches.
+- Cloud diagnostic note segments are excluded from search, embeddings, and
+  re-ranking while user applicability notes remain available.
+
 ## 2.0.7 - 2026-10-12
 
 ### Fixed
