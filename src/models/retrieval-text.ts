@@ -6,9 +6,15 @@
  *
  * The " Affects: " join matches the format the relevance models were trained
  * on; keep it stable, because the embedding content hash covers it.
+ * Cloud-sync diagnostics may remain in a rejected memory's stored note after
+ * reactivation, but their reserved segments must never become retrieval text.
  */
 export function retrievalText(memory: { text: string; note?: string | null }): string {
-  const note = normalizeNote(memory.note);
+  const note = normalizeNote(memory.note)
+    ?.split(" | ")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && !segment.startsWith("cloud-dreaming:"))
+    .join(" | ");
   return note ? `${memory.text} Affects: ${note}` : memory.text;
 }
 
