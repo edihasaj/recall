@@ -122,6 +122,61 @@ Check the listener:
 lsof -nP -iTCP:7890 -sTCP:LISTEN
 ```
 
+## Reliability Verdict
+
+`recall reliability` measures repo attribution, emission and outcome coverage,
+retrieval observations, and the candidate backlog over the last 14 days. The
+daemon now runs the same report about two minutes after it starts and then once
+every 24 hours. It saves the result so that a failure lasting for weeks is
+visible without anyone running the command.
+
+The verdict is stored in `~/.recall/reliability-verdict.json`, next to
+`recall.db`, so it follows `RECALL_DATA_DIR`. The file is written atomically
+with owner-only permissions. A missing or corrupt file is treated as "no
+verdict yet".
+
+| Field | Meaning |
+| --- | --- |
+| `computed_at` | When the daemon measured the 14-day window. |
+| `overall` | `pass`, `warn`, or `fail`; any failing check fails the verdict. |
+| `checks` | Each check's `name`, `status`, measured `value`, and `target`. |
+| `first_fail_at` | Start of the current run of `fail` verdicts, or `null`. |
+| `consecutive_fail_days` | Number of UTC calendar days with a `fail` verdict in the current run. |
+| `sustained_fail` | `true` once `first_fail_at` is at least 7 days old. |
+| `last_notified_at` | Last macOS notification about a sustained failure. |
+
+A `fail` that follows a `fail` keeps the earlier `first_fail_at`. Any `pass` or
+`warn` resets the run.
+
+Read the latest verdict from the daemon or from doctor:
+
+```bash
+curl -s http://localhost:7890/health | jq .reliability_verdict
+recall doctor
+```
+
+`recall doctor` prints a `## Reliability` section with the overall result, how
+long it has failed (for example `FAIL since 2026-10-10 (3 days)`), and every
+failing or warning check with its value, target, and a hint about the likely
+cause. A verdict older than 48 hours is marked `STALE`, which usually means the
+daemon is not running.
+
+When a failure has lasted 7 days or more, every daemon run writes
+`[recall] reliability FAIL for N days: <failing checks>` to
+`daemon.stderr.log`. On macOS the daemon also shows one notification titled
+"Recall", at most once every 24 hours. If `osascript` is missing or fails, the
+daemon skips the notification and tries again on the next run.
+
+Environment flags:
+
+- `RECALL_RELIABILITY_VERDICT_ENABLED=false` stops the daily computation.
+  `/health` and doctor still show the last saved verdict.
+- `RECALL_RELIABILITY_VERDICT_NOTIFY=false` keeps the log line but disables the
+  macOS notification. Notifications are always off under a test runner.
+- `RECALL_RELIABILITY_VERDICT_DELAY_SECONDS` (default 120) and
+  `RECALL_RELIABILITY_VERDICT_INTERVAL_SECONDS` (default 86400, minimum 300)
+  change the timing.
+
 ## Open Logs
 
 Tail daemon logs:
