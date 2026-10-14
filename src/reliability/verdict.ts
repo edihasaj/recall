@@ -63,7 +63,8 @@ export function computeReliabilityVerdict(
 /**
  * Carry-over rule: a FAIL that follows a FAIL keeps the earlier
  * `first_fail_at` and counts one more day only when the UTC calendar day
- * changed. Any PASS or WARN resets the streak.
+ * changed. Any PASS, WARN, clock reversal, or missed UTC day resets the streak:
+ * downtime is missing evidence, not an observed sustained failure.
  */
 export function deriveReliabilityVerdict(
   measured: { overall: ReliabilityStatus; checks: ReadonlyArray<ReliabilityVerdictCheck> },
@@ -75,10 +76,13 @@ export function deriveReliabilityVerdict(
   let firstFailAt: string | null = null;
   let consecutiveFailDays = 0;
   if (measured.overall === "fail") {
-    if (previous?.overall === "fail" && previous.first_fail_at) {
+    const dayGap = previous
+      ? (Date.parse(utcDay(computedAt)) - Date.parse(utcDay(previous.computed_at))) / DAY_MS
+      : Number.NaN;
+    if (previous?.overall === "fail" && previous.first_fail_at
+      && now.getTime() >= Date.parse(previous.computed_at) && dayGap >= 0 && dayGap <= 1) {
       firstFailAt = previous.first_fail_at;
-      const dayChanged = utcDay(computedAt) > utcDay(previous.computed_at);
-      consecutiveFailDays = Math.max(1, previous.consecutive_fail_days) + (dayChanged ? 1 : 0);
+      consecutiveFailDays = Math.max(1, previous.consecutive_fail_days) + dayGap;
     } else {
       firstFailAt = computedAt;
       consecutiveFailDays = 1;
@@ -205,7 +209,7 @@ export function loadReliabilityVerdictConfigFromEnv(
 const CHECK_HINTS: Record<string, string> = {
   repo_attribution: "sessions start outside a recognized repo or hooks are missing — see ## Agents",
   session_scope_coverage: "most sessions start outside a repo (home, /tmp, ~/Projects) and cannot receive repo memory",
-  retrieval_observations: "no agent asked Recall for memory in 14 d (query/compile never called)",
+  retrieval_observations: "too few used/missed retrieval observations in 14 d — inspect query and hook telemetry",
   emission_coverage: "memories selected but the hook did not emit them",
   outcome_coverage: "emitted memories never resolved — check session-end hooks",
   candidate_backlog: "run `recall maintenance cleanup` (a dry run unless you pass --apply)",

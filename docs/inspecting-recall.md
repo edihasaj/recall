@@ -142,8 +142,11 @@ verdict yet".
 | `checks` | Each check's `name`, `status`, measured `value`, and `target`. |
 | `first_fail_at` | Start of the current run of `fail` verdicts, or `null`. |
 | `consecutive_fail_days` | Number of UTC calendar days with a `fail` verdict in the current run. |
-| `sustained_fail` | `true` once `first_fail_at` is at least 7 days old. |
+| `sustained_fail` | `true` once consecutive observed failures span at least 7 days. |
 | `last_notified_at` | Last macOS notification about a sustained failure. |
+
+A missed UTC day or a backward clock change starts a new failure streak.
+Daemon downtime is missing evidence and cannot establish sustained failure.
 
 A `fail` that follows a `fail` keeps the earlier `first_fail_at`. Any `pass` or
 `warn` resets the run.

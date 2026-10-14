@@ -105,11 +105,33 @@ describe("reliability verdict carry-over", () => {
   });
 
   it("flips sustained_fail exactly at 7 days since first_fail_at", () => {
-    const first = deriveReliabilityVerdict(failing, { now: at(0) });
-    const before = deriveReliabilityVerdict(failing, { now: at(7 * DAY - 1), previous: first });
-    const atSeven = deriveReliabilityVerdict(failing, { now: at(7 * DAY), previous: first });
+    let previous = deriveReliabilityVerdict(failing, { now: at(0) });
+    for (let day = 1; day <= 6; day++) {
+      previous = deriveReliabilityVerdict(failing, { now: at(day * DAY), previous });
+    }
+    const before = deriveReliabilityVerdict(failing, { now: at(7 * DAY - 1), previous });
+    const atSeven = deriveReliabilityVerdict(failing, { now: at(7 * DAY), previous: before });
     expect(before.sustained_fail).toBe(false);
     expect(atSeven.sustained_fail).toBe(true);
+  });
+
+  it("does not treat a daemon outage as consecutive observed failures", () => {
+    const previous = sustainedVerdict();
+    const resumed = deriveReliabilityVerdict(failing, { now: at(30 * DAY), previous });
+    expect(resumed).toMatchObject({
+      first_fail_at: at(30 * DAY).toISOString(),
+      consecutive_fail_days: 1,
+      sustained_fail: false,
+    });
+  });
+
+  it("resets observed failure history after the clock moves backward", () => {
+    const resumed = deriveReliabilityVerdict(failing, { now: at(DAY), previous: sustainedVerdict() });
+    expect(resumed).toMatchObject({
+      first_fail_at: at(DAY).toISOString(),
+      consecutive_fail_days: 1,
+      sustained_fail: false,
+    });
   });
 
   it("carries last_notified_at forward for the 24 h notification gate", () => {
@@ -257,7 +279,7 @@ describe("doctor ## Reliability section", () => {
     expect(text).toContain("FAIL repo_attribution: 11.2% (target >=95%)");
     expect(text).toContain("sessions start outside a recognized repo or hooks are missing — see ## Agents");
     expect(text).toContain("FAIL retrieval_observations: 0 (target >=20)");
-    expect(text).toContain("no agent asked Recall for memory in 14 d");
+    expect(text).toContain("too few used/missed retrieval observations in 14 d");
     expect(text).not.toContain("candidate_backlog");
   });
 
