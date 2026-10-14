@@ -19,6 +19,7 @@ on:
         default: false
       node_versions:
         description: "Comma-separated supported node majors; defaults to the bundled runtime (22)"
+        type: string
         default: "22"
         required: false
       platform:

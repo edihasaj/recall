@@ -3,7 +3,32 @@ import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import { planPrebuilds, writePlan } from "../plan-native-prebuilds.mjs";
+
+test("workflow wires the validated plan before allocating selected build runners", () => {
+  const file = new URL("../../.github/workflows/native-prebuilds.yml", import.meta.url);
+  const document = JSON.parse(execFileSync("ruby", ["-ryaml", "-rjson", "-e",
+    "d=YAML.safe_load(File.read(ARGV[0]),aliases:true);d['on']=d.delete(true);puts JSON.generate(d)",
+    file.pathname], { encoding: "utf8" }));
+  const schema = document.on.workflow_dispatch.inputs;
+  assert.equal(schema.node_versions.default, "22");
+  assert.equal(schema.node_versions.type, "string");
+  assert.equal(schema.platform.default, "linux");
+  assert.equal(schema.architecture.default, "x64");
+  assert.equal(schema.run_native.default, false);
+  assert.equal(schema.dry_run.default, true);
+  assert.equal(document.jobs.plan["runs-on"], "ubuntu-24.04");
+  assert.equal(document.jobs.prebuild.needs, "plan");
+  assert.equal(document.jobs.prebuild.strategy.matrix, "${{ fromJSON(needs.plan.outputs.matrix) }}");
+  const step = document.jobs.plan.steps.find((item) => item.id === "plan");
+  assert.deepEqual(step.env, {
+    NODE_VERSIONS: "${{ inputs.node_versions }}",
+    TARGET_PLATFORM: "${{ inputs.platform }}",
+    TARGET_ARCHITECTURE: "${{ inputs.architecture }}",
+  });
+  assert.equal(step.run, "node scripts/plan-native-prebuilds.mjs");
+});
 
 test("defaults request one Linux Node 22 x64 job, never a Mac", () => {
   assert.deepEqual(planPrebuilds(), {

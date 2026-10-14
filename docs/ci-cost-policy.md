@@ -24,7 +24,15 @@ rerun old paid jobs, or enable a workflow merely to check its configuration.
 Release/package workflows remain disabled after this change. Explicit native
 builds still incur normal GitHub charges; this is not a zero-dollar account cap.
 
-Auto Release is now a manual production tag-preparation action, not a main-push trigger, and cannot dispatch native workflows. Native prebuilds are manual-only and dry-run by default. An explicit native matrix still builds all supported ABI combinations; do not launch it for unrelated changes. npm publication also requires explicit `publish=true`.
+Auto Release is a manual production tag-preparation action and cannot dispatch
+native workflows. Native prebuilds require explicit production opt-in and default
+to dry-run. Their selection defaults to **one Linux x64 Node 22 ABI**, not all
+18 combinations. `node_versions` is honored and duplicate majors cannot multiply
+builds. Choose `platform=macos` and the required architecture only for Apple
+bindings. All legacy targets remain available; building all 18 requires
+`platform=all`, `architecture=all`, and `node_versions=20,22,24`.
+Temporary prebuild artifacts expire after one day. npm publication separately
+requires explicit `publish=true`.
 
 ## Local verification
 

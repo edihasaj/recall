@@ -43,6 +43,12 @@ Both flags default off. Native ABI prebuilds require a separate `run_native=true
 production request and default to dry-run. Keep supported ABI combinations; do
 not launch the matrix for unrelated changes. See [CI cost policy](ci-cost-policy.md).
 
+The prebuild selection defaults to one Linux x64 Node 22 job. Request exactly
+the required OS, architecture and comma-separated `node_versions`; the planner
+validates them on Linux before allocating a build runner. An Apple arm64 Node
+22 request selects one Mac, not all six Darwin ABI combinations. All supported
+Node 20/22/24 and x64/arm64 targets remain available through explicit selectors.
+
 All workflow actions remain pinned. Signing is still native Apple work, while
 Windows builds remain on Windows and npm publication runs on Linux.
 
