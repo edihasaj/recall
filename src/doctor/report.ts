@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { getDbPath, getDbUserVersion, RECALL_DB_USER_VERSION } from "../db/client.js";
 import { getEmbeddingModelInfo } from "../embeddings/embeddings.js";
@@ -13,6 +13,11 @@ import { isHooklessAgent, listAgentNames, resolveAdapter } from "../agents/index
 import type { AgentName, RulesStatus } from "../agents/types.js";
 import { readHookActivity, missingCodexTrustKeys, type HookActivity } from "./hook-activity.js";
 import type { CodexTrustReport } from "./codex-trust.js";
+import {
+  formatReliabilityVerdictSection,
+  readReliabilityVerdict,
+  type ReliabilityVerdict,
+} from "../reliability/verdict.js";
 
 export interface AgentDoctorEntry {
   agent: AgentName;
@@ -80,6 +85,8 @@ export interface DoctorReport {
   cleanup: CleanupHealth | null;
   dispatcher: DispatcherHealth | null;
   app_registrations: AppRegistrationReport;
+  /** Daily verdict persisted by the daemon; null when none exists yet. */
+  reliability_verdict?: ReliabilityVerdict | null;
 }
 
 /** Fast local status for desktop clients; omit CLI-only database and OS audits. */
@@ -136,6 +143,7 @@ export function getDoctorReport(): DoctorReport {
     cleanup: readCleanupHealth(dbPath),
     dispatcher: readDispatcherHealth(dbPath),
     app_registrations: inspectAppRegistrations(),
+    reliability_verdict: readReliabilityVerdict(dirname(dbPath)),
   };
 }
 
@@ -556,6 +564,11 @@ export function formatDoctorReport(report: DoctorReport): string {
     for (const note of agent.notes) {
       lines.push(`             - ${note}`);
     }
+  }
+
+  // Absent (undefined) only in reports from older Recall versions or fixtures.
+  if (report.reliability_verdict !== undefined) {
+    lines.push("", "## Reliability", ...formatReliabilityVerdictSection(report.reliability_verdict));
   }
 
   if (report.cleanup) {

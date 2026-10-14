@@ -87,6 +87,14 @@ import { authorizeLocalRequest } from "./daemon/http-security.js";
 import { JsonBodyError, parseJsonBody } from "./daemon/body.js";
 import { recallBuildInfo } from "./runtime/build.js";
 import type { ReliabilityProbeResult } from "./reliability/probe.js";
+import {
+  loadReliabilityVerdictConfigFromEnv,
+  notifyMacOS,
+  readReliabilityVerdict,
+  reliabilityVerdictDataDir,
+  runReliabilityVerdictCycle,
+  type ReliabilityVerdict,
+} from "./reliability/verdict.js";
 import { getDoctorStatusReport } from "./doctor/report.js";
 import { releaseChecker } from "./updates/check.js";
 
@@ -375,6 +383,37 @@ function scheduleReliabilityProbeLoop() {
   timer.unref?.();
 }
 
+let lastReliabilityVerdict: ReliabilityVerdict | null = null;
+let reliabilityVerdictRunning = false;
+
+// Persists the measured 14-day reliability verdict daily so a FAIL that lasts
+// for weeks is surfaced (stderr, /health, doctor, macOS notification).
+function scheduleReliabilityVerdictLoop() {
+  const config = loadReliabilityVerdictConfigFromEnv();
+  const dataDir = reliabilityVerdictDataDir();
+  lastReliabilityVerdict = readReliabilityVerdict(dataDir);
+  if (!config.enabled) return;
+  const run = async () => {
+    if (reliabilityVerdictRunning) return;
+    reliabilityVerdictRunning = true;
+    try {
+      lastReliabilityVerdict = await runReliabilityVerdictCycle(db, dataDir, {
+        notify: config.notify ? notifyMacOS : undefined,
+      });
+      console.log(
+        `[recall] reliability verdict overall=${lastReliabilityVerdict.overall} fail_days=${lastReliabilityVerdict.consecutive_fail_days} sustained=${lastReliabilityVerdict.sustained_fail}`,
+      );
+    } catch (error) {
+      console.error(`[recall] reliability verdict failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      reliabilityVerdictRunning = false;
+    }
+  };
+  setTimeout(() => void run(), config.delayMs).unref?.();
+  const timer = setInterval(() => void run(), config.intervalMs);
+  timer.unref?.();
+}
+
 function runReliabilityProbeSubprocess(realEmbeddings: boolean): Promise<ReliabilityProbeResult> {
   const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url));
   const args = [cliPath, "reliability", "--probe"];
@@ -429,6 +468,7 @@ const server = createServer(async (req, res) => {
         version: pkg.version,
         build: recallBuildInfo,
         reliability_probe: lastReliabilityProbe,
+        reliability_verdict: lastReliabilityVerdict,
         embeddings: getEmbeddingModelInfo(),
         retrieval_mode: loadEmbeddingConfigFromEnv() ? "hybrid" : "lexical",
         embedding_unavailable_reason: getEmbeddingUnavailableReason(),
@@ -1298,6 +1338,7 @@ async function startDaemon() {
     scheduleCleanupLoop();
     scheduleQualitySnapshotLoop();
     scheduleReliabilityProbeLoop();
+    scheduleReliabilityVerdictLoop();
 
   });
 }
