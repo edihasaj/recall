@@ -84,12 +84,41 @@ them from automatic prompt injection after 30 days when they have never been
 selected and have no second-session repetition. It does not reject or delete
 them. Explicit confirmation restores automatic injection.
 
+"Never selected" only counts as evidence when selection was possible. Recall
+archives a candidate only when the injection ledger (`memory_injections`)
+covers the whole window for the candidate's repository, with no stretch longer
+than seven days without an injection. A global candidate counts injections in
+any repository. When the daemon was not running, hooks were missing, or the
+repository was not used, the candidate was unmeasured: the prune report lists
+it under `Unconfirmed skipped (loop inactive)` and leaves it in rotation. The
+same guard applies to stale candidates (`Stale skipped (loop inactive)`);
+stale active memories are still archived. A candidate the compiler selected
+but no agent reported an outcome for is excluded from the never-selected rule.
+
 Preview or apply the same rule manually:
 
 ```bash
 recall prune --candidate-days 30 --dry-run
 recall prune --candidate-days 30
 ```
+
+Restore candidates that were archived while the loop could not select them:
+
+```bash
+recall prune --restore-unmeasured --dry-run
+recall prune --restore-unmeasured [--min-confidence 0.6] [--lookback-days 30]
+```
+
+This restores archived candidates at or above the restoration threshold (default
+`0.60`) that were never injected and whose repository lacked injection coverage
+both at archival time and during the current lookback window. Restoration
+requires a matching auto-pruner archival audit whose after-snapshot still
+matches the current memory. Foreign-sync quarantine, deliberate opt-outs,
+missing archival history, and changes since archival remain untouched and
+appear under `No pruner proof`. It skips destructive or trigger-shaped rules and
+memories backed only by generated or non-user context; those need
+`recall confirm`. Each restore is audited as `policy_applied` by
+`auto-pruner`, and a second run restores nothing.
 
 Set `RECALL_CANDIDATE_UNCONFIRMED_DAYS` to change the daemon maintenance limit.
 

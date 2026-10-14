@@ -46,6 +46,7 @@ import { createPolicy, listPolicies, togglePolicy, deletePolicy, evaluatePolicy,
 import { computeHealthScore, computeAllHealthScores, formatHealthReport } from "./health/scoring.js";
 import { detectContradictions, resolveContradiction, autoResolveContradictions, listContradictions } from "./contradictions/detector.js";
 import { pruneMemories, formatPruneReport } from "./pruning/pruner.js";
+import { restoreUnmeasuredCandidates, formatRestoreReport } from "./pruning/restore.js";
 import { unregisterStrayApps } from "./doctor/app-registrations.js";
 import { getAuditTrail, getRecentAudit, formatAuditTrail, recordAudit, rollbackMemory } from "./audit/trail.js";
 import { getRepoQualityProfile } from "./repo/quality.js";
@@ -1749,7 +1750,30 @@ program
   .option("--transient-days <n>", "Days before deleting transient memories", "7")
   .option("--min-health <n>", "Min health score for active memories", "0.2")
   .option("--dry-run", "Preview without making changes")
+  .option("--restore-unmeasured", "Restore candidates with audited auto-pruner archival during an inactive injection loop (runs instead of pruning)")
+  .option("--min-confidence <n>", "With --restore-unmeasured: lowest confidence to restore (default: 0.60)")
+  .option("--lookback-days <n>", "With --restore-unmeasured: injection-coverage window in days", "30")
   .action((opts) => {
+    if (opts.restoreUnmeasured) {
+      const minConfidence = opts.minConfidence === undefined ? undefined : Number(opts.minConfidence);
+      const lookbackDays = Number(opts.lookbackDays);
+      if (minConfidence !== undefined && !(Number.isFinite(minConfidence) && minConfidence >= 0 && minConfidence <= 1)) {
+        console.error("--min-confidence must be a number between 0 and 1.");
+        process.exit(1);
+      }
+      if (!(Number.isFinite(lookbackDays) && lookbackDays > 0)) {
+        console.error("--lookback-days must be a positive number.");
+        process.exit(1);
+      }
+      const restored = restoreUnmeasuredCandidates(initDb(), {
+        repo: opts.repo,
+        minConfidence,
+        lookbackDays,
+        dryRun: opts.dryRun ?? false,
+      });
+      console.log(formatRestoreReport(restored));
+      return;
+    }
     const db = initDb();
     const result = pruneMemories(db, {
       repo: opts.repo,

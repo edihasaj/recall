@@ -82,6 +82,12 @@ export function getRepoQualityProfile(
   } else if (score > 0.8) {
     compileConfidenceThreshold -= 0.03;
   }
+  // A repo cannot "mature" on candidates and rejections alone. With nothing
+  // active, the health/override signals describe memories that were never
+  // injected, so they are not evidence for a stricter gate.
+  if (activeCount === 0) {
+    compileConfidenceThreshold = CONFIDENCE.ACTIVE_MIN;
+  }
 
   let dedupSimilarityThreshold = stage === "cold"
     ? 0.85

@@ -24,6 +24,11 @@ import { queryMemories } from "../models/memory.js";
 import { computeHealthScore } from "../health/scoring.js";
 import { recordAudit } from "../audit/trail.js";
 import type { PruneConfig } from "../types.js";
+import {
+  createLoopCoverageCache,
+  loadInjectedMemoryIds,
+  loopRepoForMemory,
+} from "./loop-activity.js";
 
 const DEFAULT_CONFIG: PruneConfig = {
   candidate_unconfirmed_days: 30,
@@ -37,8 +42,16 @@ const DEFAULT_CONFIG: PruneConfig = {
 export interface PruneResult {
   /** Unconfirmed, never-used candidates archived from automatic injection. */
   unconfirmed_archived: string[];
+  /**
+   * Unconfirmed candidates kept in automatic injection because the injection
+   * loop did not cover the window for their repo: selection opportunity is
+   * unproven, so "never selected" is unmeasured. Not counted in `total`.
+   */
+  unconfirmed_skipped_loop_inactive: string[];
   /** Stale memories archived out of auto-injection (still active + retrievable). */
   stale_archived: string[];
+  /** Stale candidates kept for the same reason. Active rows are never skipped. Not counted in `total`. */
+  stale_skipped_loop_inactive: string[];
   rejected_pruned: string[];
   transient_pruned: string[];
   unhealthy_demoted: string[];
@@ -61,20 +74,30 @@ export function pruneMemories(
 
   const result: PruneResult = {
     unconfirmed_archived: [],
+    unconfirmed_skipped_loop_inactive: [],
     stale_archived: [],
+    stale_skipped_loop_inactive: [],
     rejected_pruned: [],
     transient_pruned: [],
     unhealthy_demoted: [],
     total: 0,
   };
+  const nowIso = new Date(now).toISOString();
+  const loopCovered = createLoopCoverageCache(db);
 
   // 1. Archive candidates that never earned a second-session signal and were
   // never selected. Keep the row searchable and confirmable; only remove it
   // from automatic prompt injection. This bounds provisional memory growth
   // without treating uncertainty as rejection.
+  //
+  // "Never selected" is only evidence when selection was possible: the
+  // injection loop must have covered the whole window for the memory's repo.
+  // A memory the compiler did select (a ledger row) without any reported
+  // outcome is unmeasured too, not unused.
   const unconfirmedCutoff = new Date(
     now - cfg.candidate_unconfirmed_days * dayMs,
   ).toISOString();
+  const selected = loadInjectedMemoryIds(db);
   const unconfirmed = queryMemories(db, {
     repo: cfg.repo,
     status: "candidate",
@@ -82,9 +105,16 @@ export function pruneMemories(
   }).filter((mem) =>
     mem.created_at < unconfirmedCutoff &&
     mem.repetition_count < 2 &&
-    mem.injection_count === 0
+    mem.injection_count === 0 &&
+    !selected.has(mem.id)
   );
+  const skippedLoopInactive = new Set<string>();
   for (const mem of unconfirmed) {
+    if (!loopCovered(loopRepoForMemory(mem), unconfirmedCutoff, nowIso)) {
+      result.unconfirmed_skipped_loop_inactive.push(mem.id);
+      skippedLoopInactive.add(mem.id);
+      continue;
+    }
     if (!cfg.dry_run) {
       db.update(memories)
         .set({ auto_inject: false, updated_at: new Date().toISOString() })
@@ -122,10 +152,20 @@ export function pruneMemories(
 
   for (const mem of staleCandidates) {
     if (result.unconfirmed_archived.includes(mem.id)) continue;
+    if (skippedLoopInactive.has(mem.id)) continue;
     const lastActivity =
       mem.last_validated_at ?? mem.last_injected_at ?? mem.updated_at;
 
     if (lastActivity < staleCutoff && mem.auto_inject) {
+      // Same guard as step 1, for candidates only: an active rule earned its
+      // place, so disuse alone still retires it from ambient injection.
+      if (
+        mem.status === "candidate" &&
+        !loopCovered(loopRepoForMemory(mem), staleCutoff, nowIso)
+      ) {
+        result.stale_skipped_loop_inactive.push(mem.id);
+        continue;
+      }
       if (!cfg.dry_run) {
         db.update(memories)
           .set({ auto_inject: false, updated_at: new Date().toISOString() })
@@ -244,7 +284,9 @@ export function formatPruneReport(result: PruneResult, dryRun: boolean): string 
     `${prefix}Prune Report`,
     ``,
     `Unconfirmed archived:${String(result.unconfirmed_archived.length).padStart(5)}`,
+    `Unconfirmed skipped (loop inactive): ${result.unconfirmed_skipped_loop_inactive?.length ?? 0}`,
     `Stale archived:    ${result.stale_archived.length}`,
+    `Stale skipped (loop inactive): ${result.stale_skipped_loop_inactive?.length ?? 0}`,
     `Rejected pruned:   ${result.rejected_pruned.length}`,
     `Transient pruned:  ${result.transient_pruned.length}`,
     `Unhealthy demoted: ${result.unhealthy_demoted.length}`,
