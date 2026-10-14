@@ -115,7 +115,13 @@ export function scorePromotionCandidate(e: PromotionEvidence): PromotionScore {
     explanation.push(`${label}:${points > 0 ? "+" : ""}${points}`);
   };
 
-  if (e.repetition_count >= 2) add(`repetition=${e.repetition_count}`, W.repetition);
+  if (e.repetition_count >= 2) {
+    if (e.source === "repo_scan" || e.source === "config_parse") {
+      explanation.push("scan_repetition_unscored");
+    } else {
+      add(`repetition=${e.repetition_count}`, W.repetition);
+    }
+  }
   if (e.followed > 0) add(`followed=${e.followed}`, Math.min(e.followed * W.followed, W.followedCap));
   if (e.used > 0) add(`used=${e.used}`, Math.min(e.used * W.used, W.usedCap));
   // Diversity bonuses are corroboration of followed outcomes, never proof

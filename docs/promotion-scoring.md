@@ -18,6 +18,10 @@ Confidence is the separate injection gate and does not earn score points.
 Promotion raises confidence to at least `0.7` and preserves `auto_inject`,
 including deliberate opt-outs or sync quarantine.
 
+Repeated `repo_scan` or `config_parse` captures earn no repetition points:
+rescanning the same file is not a new confirmation. Those sources need
+positive outcome, observed-use, or explicit feedback evidence.
+
 ## Evidence weights
 
 | Evidence | Points | Maximum |

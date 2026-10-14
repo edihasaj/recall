@@ -307,6 +307,23 @@ describe("promotion — evidence_score path", () => {
     expect(getMemory(db, id)?.status).toBe("active");
   });
 
+  it("repeated repo scans and config parses cannot earn promotion without positive evidence", () => {
+    const db = freshDb();
+    for (const source of ["repo_scan", "config_parse"] as const) {
+      const id = createMemory(db, {
+        type: "command", text: `Run ${source} checks`, scope: "repo", repo: "r", source, confidence: 0.5,
+      });
+      db.update(memories).set({ repetition_count: 20 }).where(eq(memories.id, id)).run();
+      const evidence = collectPromotionEvidence(db, id)!;
+      expect(scorePromotionCandidate(evidence)).toMatchObject({
+        score: 0,
+        decision: "needs_more_evidence",
+        explanation: expect.arrayContaining(["scan_repetition_unscored"]),
+      });
+    }
+    expect(planPromoteRepeats(db)).toHaveLength(0);
+  });
+
   it("user_correction fragments are suppressed so the fragment filter wins", () => {
     const db = freshDb();
     const id = candidate(db, "must stay");
