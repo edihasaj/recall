@@ -2,6 +2,12 @@
 
 Everything Recall reads at runtime from the environment, plus how to wire up LLM-assisted memory maintenance.
 
+The [Mac App Store edition](mac-app-store.md) uses an app-owned service and
+local HTTP connections. Its Connect Agents screen provides connection commands
+and optional hook JSON. It does not install a CLI or rewrite global agent settings.
+`RECALL_EMBEDDING_CACHE_DIR` selects an explicit model-cache directory; the
+store service sets it inside its container.
+
 ## Hook injection
 
 Once `recall setup --yes` has installed hooks for supported detected runtimes, the daemon injects a compact repo memory pack on `SessionStart` (once per session). Startup injection is capped at three memory lines and does not emit history-only context, so stale session summaries do not flood new agent sessions. `UserPromptSubmit` also runs per-prompt relevance injection by default; hybrid retrieval scores the prompt against repo memory and only emits matches above the relevance floor (with per-session dedup so already-delivered memories don't repeat). For attachment-heavy prompts, Recall distills the short leading request into content-bearing terms, excluding issue IDs and URLs, instead of allowing an appended PR body, issue description, or transcript to dilute retrieval. Set `RECALL_HOOK_INJECT_PROMPT=false` to opt out and keep prompts silent after SessionStart.

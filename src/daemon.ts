@@ -11,6 +11,7 @@ import {
   rejectMemory,
   queryMemories,
   getMemory,
+  createMemory,
 } from "./models/memory.js";
 import { scanAndStore } from "./scanner/repo.js";
 import { computeMetrics, formatMetricsReport, startEvalSession, endEvalSession, incrementEvalCounter } from "./eval/harness.js";
@@ -97,6 +98,9 @@ import {
 } from "./reliability/verdict.js";
 import { getDoctorStatusReport } from "./doctor/report.js";
 import { releaseChecker } from "./updates/check.js";
+import {
+  handleAgentHttpHook, HTTP_HOOK_EVENTS, type HttpHookAgent, type HttpHookEvent,
+} from "./hooks/http-agent.js";
 
 let db: RecallDb;
 const PORT = parseInt(process.env.RECALL_PORT ?? "7890", 10);
@@ -466,6 +470,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, {
         status: "ok",
         version: pkg.version,
+        instance_id: process.env.RECALL_INSTANCE_ID ?? null,
         build: recallBuildInfo,
         reliability_probe: lastReliabilityProbe,
         reliability_verdict: lastReliabilityVerdict,
@@ -484,7 +489,46 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === "/update" && method === "GET") {
+      if (process.env.RECALL_DISTRIBUTION === "mac-app-store") {
+        return send(res, 200, {
+          current_version: pkg.version, update_available: false, managed_by: "mac-app-store",
+        });
+      }
       return send(res, 200, await releaseChecker.check(pkg.version, url.searchParams.get("refresh") === "1"));
+    }
+
+    if (path === "/store/memory" && method === "POST"
+        && process.env.RECALL_DISTRIBUTION === "mac-app-store") {
+      const body = await parseBody(req);
+      if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 8192) {
+        return send(res, 400, { error: "A memory must contain 1 to 8192 characters." });
+      }
+      const repo = typeof body.repo === "string" && body.repo.trim() ? body.repo.trim() : null;
+      const id = createMemory(db, {
+        text: body.text.trim(), type: "rule", scope: repo ? "repo" : "global", repo,
+        source: "user_correction", confidence: 1,
+      });
+      safeIngestMemory(id);
+      emitEvent("memory.created", { memory_id: id, repo, source: "manual" });
+      return send(res, 201, { id });
+    }
+
+    if (path.startsWith("/hook/agent/") && method === "POST") {
+      const segments = path.split("/");
+      const agent = segments[3];
+      const event = segments[4];
+      if (segments.length !== 5 || (agent !== "codex" && agent !== "claude-code")
+          || !HTTP_HOOK_EVENTS.includes(event as HttpHookEvent)) {
+        return send(res, 400, { error: "unsupported agent or hook event" });
+      }
+      const body = await parseBody(req);
+      try {
+        return send(res, 200, await handleAgentHttpHook(
+          db, agent as HttpHookAgent, event as HttpHookEvent, body,
+        ));
+      } catch (error: unknown) {
+        return send(res, 400, { error: error instanceof Error ? error.message : "invalid hook" });
+      }
     }
 
     // Compile context (hook injection endpoint)

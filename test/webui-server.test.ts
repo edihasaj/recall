@@ -70,6 +70,23 @@ describe("webui server", () => {
     }
   });
 
+  it("connects the dashboard to its owning daemon's port", async () => {
+    const port = await pickPort();
+    const tmp = mkdtempSync(join(tmpdir(), "recall-webui-port-"));
+    const previous = process.env.RECALL_PORT;
+    process.env.RECALL_PORT = "37902";
+    writeFileSync(join(tmp, "index.html"), "<html><head></head><body>memory</body></html>");
+    try {
+      await start({ port, distDir: tmp });
+      const response = await fetch(`http://127.0.0.1:${port}/`);
+      expect(await response.text()).toContain('content="http://127.0.0.1:37902"');
+    } finally {
+      if (previous === undefined) delete process.env.RECALL_PORT;
+      else process.env.RECALL_PORT = previous;
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("falls back to index.html for unknown paths (SPA routing)", async () => {
     const port = await pickPort();
     const tmp = mkdtempSync(join(tmpdir(), "recall-webui-"));

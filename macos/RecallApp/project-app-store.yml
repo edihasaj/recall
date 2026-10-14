@@ -1,0 +1,65 @@
+name: RecallAppStore
+options:
+  minimumXcodeGenVersion: 2.38.0
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    DEVELOPMENT_TEAM: T8J48M4QVY
+    CODE_SIGN_STYLE: Manual
+    ENABLE_HARDENED_RUNTIME: YES
+    ARCHS: arm64
+    MARKETING_VERSION: "2.0.7"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Recall:
+    type: application
+    platform: macOS
+    sources:
+      - path: AppStore
+        excludes: [listing]
+      - path: Recall/Assets.xcassets
+      - path: Generated/StoreRuntime
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.edihasaj.recall
+        PRODUCT_NAME: Recall
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Recall
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: Copyright © Edi Hasaj
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: AppStore/Recall.entitlements
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: Mac Developer
+          PROVISIONING_PROFILE_SPECIFIER: Recall Mac Development 2026-10
+        Release:
+          CODE_SIGN_IDENTITY: 3rd Party Mac Developer Application
+          PROVISIONING_PROFILE_SPECIFIER: Recall Mac App Store 2026-10
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+  RecallStoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: StoreTests
+    dependencies:
+      - target: Recall
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.edihasaj.recall.store-tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: Mac Developer
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Recall.app/Contents/MacOS/Recall
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  Recall:
+    build:
+      targets:
+        Recall: all
+        RecallStoreTests: [test]
+    test:
+      targets: [RecallStoreTests]

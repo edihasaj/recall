@@ -1,0 +1,14 @@
+{
+  "appInfoLocalization": {
+    "name": "Recall: Coding Memory",
+    "subtitle": "Local memory for your agents",
+    "privacyPolicyUrl": "https://github.com/edihasaj/recall/blob/main/docs/privacy.md"
+  },
+  "appStoreVersionLocalization": {
+    "description": "Keep the rules your coding agent should remember.\n\nRecall stores project preferences, corrections, and decisions on your Mac, then makes the relevant context available to connected coding agents.\n\n• Save rules yourself or capture corrections through optional agent hooks.\n• Connect Codex, Claude Code, and compatible MCP clients through local HTTP.\n• Review and confirm what Recall has learned.\n• Explore memories and their relationships in a knowledge graph.\n• Inspect agent sessions, activity, and conflicting rules.\n• Choose repository folders for read-only context access.\n• Keep your memory database and embedding models in local storage.\n\nThe app includes its own runtime. No separate Node installation or Recall CLI is required. Keep Recall open while your agents use it; quitting the app stops the local memory service.\n\nYour connected agents receive selected context and may process it according to their own settings. Recall does not send your memory to a developer-operated cloud service and has no advertising or tracking.\n\nFree and open source. Requires an Apple Silicon Mac with macOS 15 or later. Downloading local embedding models requires an internet connection.",
+    "keywords": "coding,agent,memory,MCP,developer,context,preferences,knowledge,local,AI",
+    "supportUrl": "https://github.com/edihasaj/recall/issues",
+    "marketingUrl": "https://recallmemory.dev",
+    "promotionalText": "A local memory workspace for coding agents. Keep project rules, review corrections, and connect your agents through MCP."
+  }
+}

@@ -1,6 +1,6 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { RecallDb } from "../db/client.js";
 import { queryMemories } from "../models/memory.js";
 import { derivedScan, scanAndStore, scanDiffersFromStore, scanRepo } from "../scanner/repo.js";
@@ -168,6 +168,25 @@ export function refreshKnownRepoScan(
 export function inferRepoSlugFromPath(repoPath?: string | null): string | null {
   const root = normalizeRepoPathHint(repoPath);
   if (!root) return null;
+  if (process.env.RECALL_DISTRIBUTION === "mac-app-store") {
+    try {
+      let config = join(root, ".git", "config");
+      if (statSync(join(root, ".git")).isFile()) {
+        const pointer = readFileSync(join(root, ".git"), "utf8").match(/^gitdir:\s*(.+)$/m)?.[1];
+        if (pointer) {
+          const gitDir = resolve(root, pointer);
+          const common = readFileSync(join(gitDir, "commondir"), "utf8").trim();
+          config = join(resolve(gitDir, common), "config");
+        }
+      }
+      const contents = readFileSync(config, "utf8");
+      const origin = contents.match(/\[remote\s+"origin"\]([\s\S]*?)(?=\n\s*\[|$)/)?.[1];
+      const remote = origin?.match(/^\s*url\s*=\s*(.+)$/m)?.[1];
+      return remote ? extractRepoSlugFromRemote(remote) : root.split("/").at(-1) ?? null;
+    } catch {
+      return root.split("/").at(-1) ?? null;
+    }
+  }
 
   // Read the origin from the checkout's own config first. Hooks run with a
   // minimal PATH; when `git` was missing the slug degraded to the directory
@@ -225,6 +244,15 @@ function normalizeRepoSlug(repo?: string | null): string | null {
 function normalizeRepoPathHint(repoPath?: string | null): string | null {
   if (!repoPath) return null;
   const expanded = repoPath.trim().replace(/^~(?=\/)/, process.env.HOME ?? "~");
+  if (process.env.RECALL_DISTRIBUTION === "mac-app-store") {
+    let candidate = resolve(expanded);
+    while (true) {
+      if (existsSync(join(candidate, ".git"))) return candidate;
+      const parent = dirname(candidate);
+      if (parent === candidate) return null;
+      candidate = parent;
+    }
+  }
   try {
     const root = runGit(["-C", expanded, "rev-parse", "--show-toplevel"]);
     return root || null;

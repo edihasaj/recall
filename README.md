@@ -56,6 +56,13 @@ The MiniLM row isolates the system contribution (same embedding model agentmemor
 
 ## Install
 
+### Mac App Store edition
+
+The sandboxed store edition is being prepared as **Recall: Coding Memory**.
+It includes its own runtime and connects agents through local HTTP. Memory is
+stored in the app container, and repository access is granted through a folder
+picker. See [store release and connection details](docs/mac-app-store.md).
+
 ### Homebrew (macOS)
 
 ```bash

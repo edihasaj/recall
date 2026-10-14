@@ -8,7 +8,10 @@
  */
 
 const DAEMON_BASE =
-  import.meta.env.DEV ? "/api" : (import.meta.env.VITE_RECALL_DAEMON_URL ?? "http://127.0.0.1:7890");
+  import.meta.env.DEV ? "/api" : (
+    document.querySelector('meta[name="recall-daemon-url"]')?.getAttribute("content")
+    ?? import.meta.env.VITE_RECALL_DAEMON_URL ?? "http://127.0.0.1:7890"
+  );
 
 export interface MemoryItem {
   id: string;

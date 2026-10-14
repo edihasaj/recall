@@ -9,7 +9,7 @@
  * is read-mostly: it only forwards bus events and serves bytes.
  */
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Socket } from "node:net";
@@ -236,6 +236,20 @@ function serveFile(res: ServerResponse, file: string, head = false): void {
   if (head) {
     res.end();
     return;
+  }
+  if (extname(file).toLowerCase() === ".html" && process.env.RECALL_PORT) {
+    const port = Number(process.env.RECALL_PORT);
+    if (Number.isInteger(port) && port > 0 && port <= 65535) {
+      try {
+        const html = readFileSync(file, "utf8");
+        const meta = `<meta name="recall-daemon-url" content="http://127.0.0.1:${port}">`;
+        res.end(html.replace(/<head(?:\s[^>]*)?>/i, (head) => head + meta));
+      } catch {
+        res.statusCode = 503;
+        res.end("Dashboard asset unavailable.");
+      }
+      return;
+    }
   }
   const stream = createReadStream(file);
   const abort = () => stream.destroy();

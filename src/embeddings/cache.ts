@@ -4,6 +4,9 @@ import { join } from "node:path";
 import type { EmbeddingConfig } from "../types.js";
 
 export function getEmbeddingCacheRoot(): string {
+  if (process.env.RECALL_EMBEDDING_CACHE_DIR) {
+    return process.env.RECALL_EMBEDDING_CACHE_DIR;
+  }
   if (process.platform === "linux" && process.env.XDG_CACHE_HOME) {
     return join(process.env.XDG_CACHE_HOME, "recall", "models");
   }
