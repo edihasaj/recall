@@ -29,16 +29,22 @@ Release artifacts are produced from tags named `vX.Y.Z`.
   the `applifyer` 1Password vault. The macOS release job uses the shared
   `apple-codesign` helper pinned to a reviewed commit.
 
-## Automatic Release
+## Explicit production release
 
-On pushes to `main`, `.github/workflows/auto-release.yml` watches `CHANGELOG.md`, `package.json`, and `package-lock.json`.
+Mac-capable release/prebuild workflows and the old automatic release trigger
+are paused. Main pushes no longer create tags or dispatch native builds.
+`Auto Release` can only prepare a tag through an explicit production request
+with `publish=true`; it never dispatches release workflows.
 
-When the current `package.json` version has no matching `vX.Y.Z` tag and `CHANGELOG.md` contains a matching `## X.Y.Z` section, the workflow creates the tag and dispatches `.github/workflows/release.yml` plus `.github/workflows/windows-tray.yml`.
+Promote the reviewed release workflow to production, then explicitly select an
+existing tag matching the exact production and dispatch SHA. `release.yml`
+requires `publish=true`; Apple packaging additionally requires `run_native=true`.
+Both flags default off. Native ABI prebuilds require a separate `run_native=true`
+production request and default to dry-run. Keep supported ABI combinations; do
+not launch the matrix for unrelated changes. See [CI cost policy](ci-cost-policy.md).
 
-All workflow actions are pinned to immutable commits. Checkouts do not persist
-GitHub credentials, native prebuilds have read-only repository permission, and
-manual release dispatches fail unless the requested tag is an existing
-`vX.Y.Z` tag. Keep those controls intact when changing release automation.
+All workflow actions remain pinned. Signing is still native Apple work, while
+Windows builds remain on Windows and npm publication runs on Linux.
 
 ## Checklist
 
@@ -57,7 +63,7 @@ node dist/cli.js reliability --canary
 node dist/cli.js reliability --canary --real-embeddings
 ```
 
-4. Push to `main`; the auto-release workflow creates the tag and dispatches `.github/workflows/release.yml`.
+4. Promote the reviewed release commit to `production` and create its matching version tag. Only enable and dispatch the paused workflows after an explicit release request.
 
 ## What CI Publishes
 

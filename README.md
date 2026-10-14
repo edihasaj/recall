@@ -1,5 +1,7 @@
 # Recall
 
+For paused native builds and explicit production requests, see [CI cost policy](docs/ci-cost-policy.md).
+
 Cross-tool coding memory + instruction compiler.
 
 [![CI](https://github.com/edihasaj/recall/actions/workflows/ci.yml/badge.svg)](https://github.com/edihasaj/recall/actions/workflows/ci.yml)

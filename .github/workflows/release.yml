@@ -1,11 +1,16 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
+      run_native:
+        description: Explicitly authorize the paid Apple release job
+        type: boolean
+        default: false
+      publish:
+        description: Explicitly publish production npm and Apple packages
+        type: boolean
+        default: false
       tag:
         description: "Tag to release, for example v0.5.0"
         required: true
@@ -15,7 +20,29 @@ permissions:
   contents: read
 
 jobs:
+  validate-production:
+    permissions:
+      contents: read
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.publish == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      sha: ${{ steps.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate exact production tag before allocating a Mac
+        id: validate
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: bash scripts/validate-production-release.sh
+
   npm:
+    needs: validate-production
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.publish == true
     name: Publish to npm
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -25,12 +52,13 @@ jobs:
       # short-lived publish credential, so no long-lived NPM_TOKEN is needed.
       id-token: write
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ needs.validate-production.outputs.tag }}
     steps:
       - name: Check out
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.validate-production.outputs.sha }}
           persist-credentials: false
 
       - name: Validate and select release tag
@@ -91,13 +119,15 @@ jobs:
           npm publish
 
   macos-app:
+    needs: [validate-production, npm]
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.publish == true && inputs.run_native == true
     name: Build and publish macOS app
     runs-on: macos-15
     timeout-minutes: 60
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ needs.validate-production.outputs.tag }}
       # Both taps stay in sync. `homebrew-tap` is the canonical multi-cask tap
       # used in install instructions (`brew install --cask edihasaj/tap/recall`).
       # `homebrew-recall` is the project-specific mirror so the shorter
@@ -108,6 +138,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.validate-production.outputs.sha }}
           persist-credentials: false
 
       - name: Validate and select release tag

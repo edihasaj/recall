@@ -12,11 +12,12 @@ name: native-prebuilds
 # the other artifacts.
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
+      run_native:
+        description: Explicitly authorize the native ABI matrix from production
+        type: boolean
+        default: false
       node_versions:
         description: "Comma-separated node majors (default: 20,22,24)"
         default: "20,22,24"
@@ -24,13 +25,14 @@ on:
       dry_run:
         description: "Build but do not upload artifacts to a release"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   prebuild:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.run_native == true
     name: prebuild ${{ matrix.os }} ${{ matrix.arch }} node${{ matrix.node }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -128,7 +130,7 @@ jobs:
   publish:
     name: publish to edihasaj/recall-prebuilds
     needs: prebuild
-    if: ${{ !inputs.dry_run && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/production' && inputs.run_native == true && !inputs.dry_run }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
