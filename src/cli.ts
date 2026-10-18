@@ -1,6 +1,7 @@
 // Sentry error reporting first (no-op unless SENTRY_DSN is set).
 import "./observability/instrument.js";
 import { Command } from "commander";
+import { registerHarness2Commands } from "./cli/harness2.js";
 import { resolve } from "node:path";
 import { writeFileSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -111,6 +112,8 @@ program
   .name("recall")
   .description("Cross-tool coding memory and instruction compiler")
   .version(pkg.version);
+
+registerHarness2Commands(program);
 
 // --- init ---
 
