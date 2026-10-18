@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // scripts/tests uses Node's test runner; Vitest owns the TypeScript suite.
+    include: ["test/**/*.test.ts"],
     // Avoid overloading SQLite and child-process integration tests on large
     // developer machines. CI runners already stay below this ceiling.
     maxWorkers: 4,
