@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- macOS releases keep an app-specific bundled Node signing identity and associate
+  the app-owned daemon with Recall when installing or starting its LaunchAgent.
 - Daemon HTTP feedback resolves the same canonical injection and value
   evidence as hooks and MCP, instead of updating only a confidence counter.
 - Daily cleanup can promote candidates from resolved outcomes, observed use,

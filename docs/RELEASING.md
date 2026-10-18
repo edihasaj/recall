@@ -94,6 +94,20 @@ before uploading assets. The Windows workflow reads its Go toolchain version
 from `windows/tray/go.mod`. The macOS and Windows UIs both display `vX.Y.Z`;
 the macOS build number stays in `CFBundleVersion` for diagnostics.
 
+### macOS runtime identity
+
+The release signing step signs `Recall.app/Contents/Resources/Runtime/bin/node`
+with the stable identifier `com.edihasaj.recall.runtime.node`, hardened runtime,
+and the existing `allow-jit` entitlement. The nested signing script verifies the
+identifier after signing and fails the release if it differs. Do not replace this
+with an ad-hoc identifier: launchd association and runtime diagnostics depend on
+the stable value.
+
+For an already-installed LaunchAgent, writing its app association changes only
+the on-disk plist. It becomes active after a normal `bootout`/`bootstrap` reload,
+not after a KeepAlive respawn; macOS can request first approval after that
+identity migration.
+
 The package job uploads `edihasaj-recall-X.Y.Z.tgz` and its `.sha256` file before
 attempting npm publication. The Windows installer verifies that checksum and
 uses the same release tag for the CLI and tray. A registry authentication

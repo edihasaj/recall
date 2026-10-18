@@ -94,6 +94,37 @@ check launchd for a respawn throttle:
   --predicate 'process == "launchd" AND subsystem CONTAINS "com.recall.daemon"' |
   grep -E "throttle|Successfully spawned"
 ```
+
+## App-associated launchd identity
+
+Recall associates its LaunchAgent with `com.edihasaj.recall` only when both the
+canonical Node binary and daemon script resolve inside the same
+`Recall.app/Contents/Resources/Runtime` and that app's `Info.plist` has the
+expected bundle ID. A custom Node path, custom daemon script, external runtime,
+or a bundle with another ID is intentionally not associated.
+
+To migrate a pre-association plist after installing a current Recall.app, run
+one explicit command:
+
+```bash
+/Applications/Recall.app/Contents/Resources/Runtime/bin/recall daemon start
+# or, when the service is not loaded:
+/Applications/Recall.app/Contents/Resources/Runtime/bin/recall daemon install \
+  --node-path /Applications/Recall.app/Contents/Resources/Runtime/bin/node \
+  --daemon-script /Applications/Recall.app/Contents/Resources/Runtime/dist/daemon.js
+```
+
+`daemon start` updates only the static plist metadata and preserves its existing
+label, environment, and other settings. It does not unload or reload an already
+loaded daemon. `daemon install` is explicit configuration: it rewrites the
+plist and reloads it, so pass any custom port, data directory, runtime, or other
+desired settings again. The association becomes active after the next planned
+reload; that can be this explicit install or a later normal
+`bootout`/`bootstrap` update. macOS may ask for first approval again after that
+identity migration, and macOS may require initial approval at that point.
+Recall.app also reuses a healthy daemon without invoking the CLI; opening the
+app alone is therefore not a migration command.
+
 Windows updates run in a separate PowerShell window and back up the database
 under `%USERPROFILE%\.recall\backups\` before replacing the tray.
 

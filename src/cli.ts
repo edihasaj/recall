@@ -1978,7 +1978,7 @@ daemonCmd
       nodePath: opts.nodePath,
       daemonScript: opts.daemonScript,
     });
-    console.log(getServiceInfo(status.label));
+    console.log(getServiceInfo(opts.label));
   });
 
 daemonCmd
@@ -1987,7 +1987,7 @@ daemonCmd
   .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
     const status = startService(opts.label);
-    console.log(getServiceInfo(status.label));
+    console.log(getServiceInfo(opts.label));
   });
 
 daemonCmd
@@ -1996,7 +1996,7 @@ daemonCmd
   .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
     const status = stopService(opts.label);
-    console.log(getServiceInfo(status.label));
+    console.log(getServiceInfo(opts.label));
   });
 
 daemonCmd
@@ -2006,7 +2006,7 @@ daemonCmd
   .action((opts) => {
     stopService(opts.label);
     const status = startService(opts.label);
-    console.log(getServiceInfo(status.label));
+    console.log(getServiceInfo(opts.label));
   });
 
 daemonCmd
@@ -2023,7 +2023,7 @@ daemonCmd
   .option("--label <label>", "Service label", defaultLabel)
   .action((opts) => {
     const status = uninstallService(opts.label);
-    console.log(getServiceInfo(status.label));
+    console.log(getServiceInfo(opts.label));
   });
 
 // --- ui (WebUI dashboard) ---

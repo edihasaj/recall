@@ -1,8 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ensureLaunchdStarted } from "./launchd-start.js";
+import {
+  associatedBundleIdentifiers,
+  findRecallAppIdentity,
+  launchdPlistIdentity,
+} from "./macos-app-identity.js";
 import {
   readDaemonProviderEnvironment,
   resolveDaemonProviderEnvironment,
@@ -36,13 +41,23 @@ export interface LaunchdStatus {
 export function installLaunchAgent(opts: LaunchdOptions = {}): LaunchdStatus {
   assertDarwin();
 
-  const cfg = resolveConfig(opts);
-  mkdirSync(dirname(cfg.plistPath), { recursive: true });
-  mkdirSync(dirname(cfg.stdoutPath), { recursive: true });
+  const plistPath = launchAgentPlistPath(opts.label);
+  mkdirSync(dirname(plistPath), { recursive: true });
+  const cfg = withLaunchAgentWriteLock(plistPath, () => {
+    // Resolve after acquiring the lock so a second explicit install does not
+    // render an older snapshot of the existing plist's inherited settings.
+    // An explicit install owns its requested label and runtime settings, even
+    // when it reuses a plist whose current Label differs from its filename.
+    const cfg = resolveConfig(opts, { preferRequestedLabel: true });
+    mkdirSync(dirname(cfg.stdoutPath), { recursive: true });
+    writeFileSync(cfg.plistPath, renderPlist(cfg), { mode: 0o600 });
+    chmodSync(cfg.plistPath, 0o600);
+    return cfg;
+  });
 
-  writeFileSync(cfg.plistPath, renderPlist(cfg), { mode: 0o600 });
-  chmodSync(cfg.plistPath, 0o600);
-
+  // `install` is explicit configuration: reload even an existing job so the
+  // requested runtime and options take effect. Metadata-only migration is
+  // intentionally confined to `startLaunchAgent` below.
   tryRun("launchctl", ["bootout", domainTarget(), cfg.plistPath]);
   execFileSync("launchctl", ["bootstrap", domainTarget(), cfg.plistPath], stdioOpts());
   execFileSync("launchctl", ["enable", `${domainTarget()}/${cfg.label}`], stdioOpts());
@@ -50,10 +65,10 @@ export function installLaunchAgent(opts: LaunchdOptions = {}): LaunchdStatus {
   // launchd's 10-second respawn throttle.
   execFileSync("launchctl", ["kickstart", `${domainTarget()}/${cfg.label}`], stdioOpts());
 
-  return getLaunchAgentStatus(cfg.label);
+  return getLaunchAgentStatusForConfig(cfg);
 }
 
-export function uninstallLaunchAgent(label = DEFAULT_LABEL): LaunchdStatus {
+export function uninstallLaunchAgent(label?: string): LaunchdStatus {
   assertDarwin();
 
   const cfg = resolveConfig({ label });
@@ -61,33 +76,40 @@ export function uninstallLaunchAgent(label = DEFAULT_LABEL): LaunchdStatus {
   tryRun("launchctl", ["disable", `${domainTarget()}/${cfg.label}`]);
   rmSync(cfg.plistPath, { force: true });
 
-  return getLaunchAgentStatus(cfg.label);
+  return getLaunchAgentStatusForConfig(cfg);
 }
 
-export function startLaunchAgent(label = DEFAULT_LABEL): LaunchdStatus {
+export function startLaunchAgent(label?: string): LaunchdStatus {
   assertDarwin();
   const cfg = resolveConfig({ label });
   if (!exists(cfg.plistPath)) {
     throw new Error(`LaunchAgent not installed: ${cfg.plistPath}`);
   }
+  persistAppAssociation(cfg);
+  // Static plist metadata needs a later reload. Starting a loaded-but-stopped
+  // job still needs a non-killing kickstart, though.
   execFileSync("launchctl", ["enable", `${domainTarget()}/${cfg.label}`], stdioOpts());
   ensureLaunchdStarted(domainTarget(), cfg.label, cfg.plistPath);
-  return getLaunchAgentStatus(cfg.label);
+  return getLaunchAgentStatusForConfig(cfg);
 }
 
-export function stopLaunchAgent(label = DEFAULT_LABEL): LaunchdStatus {
+export function stopLaunchAgent(label?: string): LaunchdStatus {
   assertDarwin();
   const cfg = resolveConfig({ label });
   if (exists(cfg.plistPath)) {
     tryRun("launchctl", ["bootout", domainTarget(), cfg.plistPath]);
   }
-  return getLaunchAgentStatus(cfg.label);
+  return getLaunchAgentStatusForConfig(cfg);
 }
 
-export function getLaunchAgentStatus(label = DEFAULT_LABEL): LaunchdStatus {
+export function getLaunchAgentStatus(label?: string): LaunchdStatus {
   assertDarwin();
 
   const cfg = resolveConfig({ label });
+  return getLaunchAgentStatusForConfig(cfg);
+}
+
+function getLaunchAgentStatusForConfig(cfg: ReturnType<typeof resolveConfig>): LaunchdStatus {
   const installed = exists(cfg.plistPath);
   const output = tryOutput("launchctl", ["print", `${domainTarget()}/${cfg.label}`]);
 
@@ -100,11 +122,11 @@ export function getLaunchAgentStatus(label = DEFAULT_LABEL): LaunchdStatus {
   };
 }
 
-export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
+export function getLaunchAgentInfo(label?: string): string {
   assertDarwin();
 
   const cfg = resolveConfig({ label });
-  const status = getLaunchAgentStatus(label);
+  const status = getLaunchAgentStatusForConfig(cfg);
   const installed = readInstalledConfig(cfg.plistPath);
   const lines = [
     `Label:      ${status.label}`,
@@ -143,8 +165,13 @@ export function getLaunchAgentInfo(label = DEFAULT_LABEL): string {
   return lines.join("\n");
 }
 
-function resolveConfig(opts: LaunchdOptions) {
-  const label = opts.label ?? DEFAULT_LABEL;
+function resolveConfig(
+  opts: LaunchdOptions,
+  { preferRequestedLabel = false }: { preferRequestedLabel?: boolean } = {},
+) {
+  // `label` selects a plist filename. Its stored Label is launchd's service
+  // identity and can legitimately differ from that filename.
+  const plistLabel = opts.label ?? DEFAULT_LABEL;
   const home = homedir();
   const port = opts.port ?? parseInt(process.env.RECALL_PORT ?? "7890", 10);
   const maintenanceIntervalSeconds =
@@ -159,12 +186,14 @@ function resolveConfig(opts: LaunchdOptions) {
   const daemonScript = resolve(
     opts.daemonScript ?? join(process.cwd(), "dist", "daemon.js"),
   );
-  const plistPath = join(home, "Library", "LaunchAgents", `${label}.plist`);
+  const plistPath = launchAgentPlistPath(plistLabel, home);
   const logDir = join(dataDir, "logs");
   const installed = readInstalledConfig(plistPath);
 
   return {
-    label,
+    label: preferRequestedLabel
+      ? opts.label ?? installed?.label ?? plistLabel
+      : installed?.label ?? plistLabel,
     port,
     maintenanceIntervalSeconds,
     dataDir,
@@ -182,6 +211,7 @@ function resolveConfig(opts: LaunchdOptions) {
       process.env,
       installed?.providerEnvironment,
     ),
+    installed,
   };
 }
 
@@ -214,6 +244,7 @@ function renderPlist(cfg: ReturnType<typeof resolveConfig>): string {
     <string>${escapeXml(cfg.nodePath)}</string>
     <string>${escapeXml(cfg.daemonScript)}</string>
   </array>
+${renderAssociatedBundleIdentifiers(cfg)}
   <key>EnvironmentVariables</key>
   <dict>
 ${environmentXml}
@@ -231,6 +262,34 @@ ${environmentXml}
 </dict>
 </plist>
 `;
+}
+
+function renderAssociatedBundleIdentifiers(cfg: ReturnType<typeof resolveConfig>): string {
+  const identity = findRecallAppIdentity(cfg.nodePath, cfg.daemonScript);
+  if (!identity) return "";
+  return `  <key>AssociatedBundleIdentifiers</key>
+  <array>
+    <string>${escapeXml(identity.bundleIdentifier)}</string>
+  </array>
+`;
+}
+
+function persistAppAssociation(cfg: ReturnType<typeof resolveConfig>): void {
+  withLaunchAgentWriteLock(cfg.plistPath, () => {
+    // Read after acquiring the lock: another CLI invocation might just have
+    // added an association that a stale config snapshot would overwrite.
+    const installed = readInstalledConfig(cfg.plistPath);
+    if (!installed?.nodePath || !installed.daemonScript) return;
+    const identity = findRecallAppIdentity(installed.nodePath, installed.daemonScript);
+    if (!identity) return;
+
+    const identifiers = associatedBundleIdentifiers(installed.associatedBundleIdentifiers);
+    if (sameIdentifiers(identifiers, installed.associatedBundleIdentifiers)) return;
+    const value = `<array>${identifiers.map((identifier) => `<string>${escapeXml(identifier)}</string>`).join("")}</array>`;
+    const operation = installed.hasAssociatedBundleIdentifiers ? "-replace" : "-insert";
+    execFileSync("plutil", [operation, "AssociatedBundleIdentifiers", "-xml", value, cfg.plistPath], stdioOpts());
+    chmodSync(cfg.plistPath, 0o600);
+  });
 }
 
 function domainTarget(): string {
@@ -271,6 +330,7 @@ function tryOutput(cmd: string, args: string[]) {
 }
 
 function readInstalledConfig(plistPath: string): {
+  label?: string;
   nodePath?: string;
   daemonScript?: string;
       port?: string;
@@ -284,6 +344,8 @@ function readInstalledConfig(plistPath: string): {
       providerEnvironment?: DaemonProviderEnvironment;
       stdoutPath?: string;
       stderrPath?: string;
+      associatedBundleIdentifiers: unknown;
+      hasAssociatedBundleIdentifiers: boolean;
 } | null {
   if (!exists(plistPath)) return null;
 
@@ -293,9 +355,11 @@ function readInstalledConfig(plistPath: string): {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const parsed = JSON.parse(raw);
+    const identity = launchdPlistIdentity(parsed);
     return {
-      nodePath: parsed?.ProgramArguments?.[0],
-      daemonScript: parsed?.ProgramArguments?.[1],
+      label: identity.label,
+      nodePath: identity.nodePath,
+      daemonScript: identity.daemonScript,
       port: parsed?.EnvironmentVariables?.RECALL_PORT,
       maintenanceIntervalSeconds: parsed?.EnvironmentVariables?.RECALL_MAINTENANCE_INTERVAL_SECONDS,
       dataDir: parsed?.EnvironmentVariables?.RECALL_DATA_DIR,
@@ -309,9 +373,52 @@ function readInstalledConfig(plistPath: string): {
       ),
       stdoutPath: parsed?.StandardOutPath,
       stderrPath: parsed?.StandardErrorPath,
+      associatedBundleIdentifiers: identity.associatedBundleIdentifiers,
+      hasAssociatedBundleIdentifiers: identity.hasAssociatedBundleIdentifiers,
     };
   } catch {
     return null;
+  }
+}
+
+function sameIdentifiers(next: string[], existing: unknown): boolean {
+  const current = typeof existing === "string"
+    ? [existing]
+    : Array.isArray(existing)
+      ? existing.filter((value): value is string => typeof value === "string")
+      : [];
+  return next.length === current.length && next.every((value, index) => value === current[index]);
+}
+
+function launchAgentPlistPath(label = DEFAULT_LABEL, home = homedir()): string {
+  return join(home, "Library", "LaunchAgents", `${label}.plist`);
+}
+
+function withLaunchAgentWriteLock<T>(plistPath: string, action: () => T): T {
+  const lockPath = `${plistPath}.recall-identity.lock`;
+  const deadline = Date.now() + 5_000;
+  let descriptor: number | undefined;
+  while (descriptor === undefined) {
+    try {
+      descriptor = openSync(lockPath, "wx", 0o600);
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      try {
+        if (Date.now() - statSync(lockPath).mtimeMs > 30_000) unlinkSync(lockPath);
+      } catch (statError: any) {
+        if (statError?.code !== "ENOENT") throw statError;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting to update launchd plist: ${plistPath}`);
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try {
+    return action();
+  } finally {
+    closeSync(descriptor);
+    unlinkSync(lockPath);
   }
 }
 
