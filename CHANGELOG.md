@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.0.8 - 2026-10-18
+
+- Prepared the sandboxed Mac App Store edition with an app-owned daemon and
+  local HTTP agent connections. It remains separate from the direct-download
+  Developer ID edition; this does not publish the App Store edition.
 - macOS releases keep an app-specific bundled Node signing identity and associate
   the app-owned daemon with Recall when installing or starting its LaunchAgent.
 - Daemon HTTP feedback resolves the same canonical injection and value
