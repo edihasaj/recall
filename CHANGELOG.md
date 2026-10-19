@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.0.9 - 2026-10-20
+
+- Preserve complete UMP records and their validity dates through direct writes,
+  historical queries, revisions, forgetting, and database restarts.
+- Expose temporal query fields and configured owner hints to MCP agents.
+- Keep direct UMP source records out of automatic instruction injection and
+  Cloud sync until those paths support their full source and validity contract.
+- Persist the local UMP operator identity with private, atomic key creation.
+
 ## 2.0.8 - 2026-10-18
 
 - Prepared the sandboxed Mac App Store edition with an app-owned daemon and

@@ -50,7 +50,7 @@ export function createRecallUmpServer(
   const owner = key.did;
   const server = new UmpServer({
     name: "recall",
-    version: "ump-1.0.3",
+    version: "ump-1.0.4",
     conformance: "L1",
     store: new RecallStore(makeRecallBackend(db, owner), { owner, smart: opts.smart }),
     key,
