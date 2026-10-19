@@ -211,6 +211,7 @@ jobs:
           scripts/sign-macos-nested.sh "$app_path" "$identity"
           uv run --quiet /tmp/recall-agent-codesign/skills/apple-codesign/scripts/apple_codesign.py run "$app_path"
           codesign --verify --deep --strict --verbose=2 "$app_path"
+          scripts/staple-macos-release.sh "$app_path"
           xcrun stapler validate "$app_path"
           spctl --assess --type execute --verbose=2 "$app_path"
 

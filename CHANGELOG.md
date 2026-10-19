@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.0.10 - 2026-10-20
+
+- Include the complete temporal UMP integration from 2.0.9 in the macOS release.
+- Allow the real database restart integration check to finish under CI load.
+- Retry delayed Apple notarization-ticket stapling while retaining strict
+  ticket validation and Gatekeeper checks before publishing the app.
+
 ## 2.0.9 - 2026-10-20
 
 - Preserve complete UMP records and their validity dates through direct writes,
