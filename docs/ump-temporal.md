@@ -64,6 +64,8 @@ database backup when moving or restoring the server; the database-only daily
 snapshot does not include the separate identity file. Record exports do not
 contain private key material.
 
-The MCP server advertises this DID in initialization instructions only. Clients
-must still set `scope.owner` explicitly; the server does not fill or relax scope
+The MCP server advertises this DID in initialization instructions, tool-schema
+hints, and the MCP capability response's `scope_hint`. This supports hosts
+that do not forward initialization instructions to their models. Clients must
+still set `scope.owner` explicitly; the server does not fill or relax scope
 fields on their behalf.
