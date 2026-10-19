@@ -1,7 +1,7 @@
 ---
 summary: Validation evidence for explicit UMP temporal queries and agent discovery.
 read_when:
-  - Reviewing the UMP 1.0.4 integration or Recall 2.0.9 release
+  - Reviewing the UMP 1.0.4 integration or Recall 2.0.10 release
   - Interpreting the temporal agent smoke and its limits
 ---
 
@@ -10,6 +10,25 @@ read_when:
 The SDK and Recall integration preserve dated UMP records and expose their
 query fields to MCP agents. This does not enable automatic conversational
 capture or establish a change in the earlier 434-question accuracy result.
+
+## Published releases
+
+[Recall 2.0.10](https://github.com/edihasaj/recall/releases/tag/v2.0.10)
+is published on npm and includes the CLI, macOS app and both Windows tray
+architectures. Its final local gate passed 1,075 tests, with three skipped,
+plus typecheck, documentation and build checks. Production CI and release
+jobs passed. The macOS app passed notarization, stapled-ticket validation,
+strict signature verification and Gatekeeper before upload.
+
+The downloaded CLI and macOS archives passed their published SHA-256 checks.
+Real MCP calls through the downloaded CLI discovered the owner and returned
+Azure for February and Cloudflare for the current validity window, using only
+an isolated synthetic database.
+
+[UMP 1.0.4](https://github.com/edihasaj/universal-memory-protocol/releases/tag/v1.0.4)
+is available as a checksummed GitHub package archive. SDK npm publication remains
+blocked by registry authentication; Recall pins the released GitHub archive
+with lockfile integrity.
 
 ## Code and backend checks
 
