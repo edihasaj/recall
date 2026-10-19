@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MemoryRecord } from "@universalmemoryprotocol/core";
 
 // --- Enums ---
 
@@ -90,6 +91,16 @@ export const CaptureContext = z.object({
   repo: z.string().nullable().optional(),
   path: z.string().nullable().optional(),
   agent: z.string().optional(),
+  ump_kind: z.string().optional(),
+  /**
+   * The original UMP record for a direct UMP write. This is deliberately kept
+   * in capture context rather than the ordinary-memory columns: UMP carries
+   * structured bodies, validity, provenance, relations, and scope fields that
+   * Recall's legacy row shape cannot represent without a migration.
+   */
+  // UMP performs its own strict record validation at its API boundary. This
+  // typed escape hatch preserves the complete validated record in JSON.
+  ump_record: z.custom<MemoryRecord>().optional(),
 });
 export type CaptureContext = z.infer<typeof CaptureContext>;
 

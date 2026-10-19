@@ -23,7 +23,21 @@ export function isTaskLimitedRule(text: string): boolean {
 }
 
 export function hasNonDurableProvenance(memory: MemoryItem): boolean {
-  return hasOnlyGeneratedEvidence(memory) || isTaskLimitedRule(memory.text);
+  return isUmpSourceRecord(memory)
+    || hasOnlyGeneratedEvidence(memory)
+    || isTaskLimitedRule(memory.text);
+}
+
+/**
+ * Faithful UMP writes are source assertions for the UMP query surface. They
+ * are not ordinary Recall instructions, even when their native status is
+ * active. A present record marker is fail-closed: an interrupted or corrupted
+ * direct write must not become an ordinary instruction just because the
+ * record can no longer be decoded. `ump_kind` alone remains legacy metadata.
+ */
+export function isUmpSourceRecord(memory: MemoryItem): boolean {
+  const context = memory.capture_context;
+  return context != null && Object.prototype.hasOwnProperty.call(context, "ump_record");
 }
 
 export function hasOnlyGeneratedEvidence(memory: MemoryItem): boolean {

@@ -10,9 +10,9 @@
 
 import {
   UmpServer,
-  generateKeyPair,
   createHttpServer,
   createMcpServer,
+  type KeyPair,
 } from "@universalmemoryprotocol/core";
 import { RecallStore, fromAmpId } from "@universalmemoryprotocol/core/adapters/recall";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -23,6 +23,7 @@ import {
   bootstrapEmbeddings,
 } from "../embeddings/embeddings.js";
 import { makeRecallBackend } from "./backend.js";
+import { loadPersistedUmpOperatorKey } from "./identity.js";
 import { signalOutcomeFallback } from "../mcp/fallback.js";
 import type { RecallDb } from "../db/client.js";
 
@@ -33,19 +34,25 @@ export interface UmpServeOptions {
   stdio?: boolean;
   /** Route writes through Recall's capture/judgement pipeline instead of storing directly. */
   smart?: boolean;
+  /** Test-only or embedding override. Production loads the persisted operator key. */
+  key?: KeyPair;
 }
 
 export function createRecallUmpServer(
   db: RecallDb,
-  opts: Pick<UmpServeOptions, "smart"> = {},
+  opts: Pick<UmpServeOptions, "smart" | "key"> = {},
 ): { server: UmpServer; owner: string } {
-  const key = generateKeyPair();
+  const dbPath = db.$client.name;
+  if (!opts.key && (!dbPath || dbPath === ":memory:" || dbPath.startsWith("file::memory:"))) {
+    throw new Error("In-memory Recall UMP servers require an injected operator key");
+  }
+  const key = opts.key ?? loadPersistedUmpOperatorKey(dbPath);
   const owner = key.did;
   const server = new UmpServer({
     name: "recall",
-    version: "ump-0.1",
+    version: "ump-1.0.3",
     conformance: "L1",
-    store: new RecallStore(makeRecallBackend(db), { owner, smart: opts.smart }),
+    store: new RecallStore(makeRecallBackend(db, owner), { owner, smart: opts.smart }),
     key,
     onFeedback: async (req) => {
       signalOutcomeFallback(db, {
@@ -91,7 +98,7 @@ export async function runUmpServer(opts: UmpServeOptions = {}): Promise<void> {
   }
 
   if (opts.stdio ?? !opts.http) {
-    await createMcpServer(server).connect(new StdioServerTransport());
+    await createMcpServer(server, { owner }).connect(new StdioServerTransport());
     process.stderr.write(`[recall ump] MCP binding on stdio (owner ${owner})\n`);
   }
 }

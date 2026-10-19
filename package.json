@@ -54,7 +54,7 @@
     "@huggingface/transformers": "4.2.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@sentry/node": "10.65.0",
-    "@universalmemoryprotocol/core": "0.1.0",
+    "@universalmemoryprotocol/core": "https://github.com/edihasaj/universal-memory-protocol/releases/download/v1.0.3/universalmemoryprotocol-core-1.0.3.tgz",
     "better-sqlite3": "11.10.0",
     "commander": "13.1.0",
     "drizzle-orm": "0.45.2",

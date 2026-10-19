@@ -1,6 +1,6 @@
 import { eq, and, gte, inArray, like, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { hasNonDurableProvenance } from "../capture/provenance.js";
+import { hasNonDurableProvenance, isUmpSourceRecord } from "../capture/provenance.js";
 import type { RecallDb } from "../db/client.js";
 import { memories, feedbackEvents } from "../db/schema.js";
 import { memoryDedupeKey } from "./dedupe.js";
@@ -39,6 +39,8 @@ export interface CreateMemoryInput {
   capture_context?: CaptureContext | null;
   supersedes?: string | null;
   dedupe?: boolean;
+  /** Whether this row can enter automatic instruction compilation. */
+  auto_inject?: boolean;
   /** What this memory affects; see memories.note. */
   note?: string | null;
 }
@@ -113,6 +115,7 @@ export function createMemory(db: RecallDb, input: CreateMemoryInput): string {
       injection_count: 0,
       override_count: 0,
       repetition_count: 0,
+      auto_inject: input.auto_inject ?? true,
     })
     .onConflictDoNothing({ target: memories.dedupe_key })
     .run();
@@ -220,6 +223,9 @@ export function promoteMemory(
   const mem = getMemory(db, id);
   if (!mem) return false;
   if (mem.status === "rejected") return false; // must use reactivate
+  // Full UMP records are source assertions. Confirming their evidence must not
+  // silently turn them into automatic coding instructions.
+  if (isUmpSourceRecord(mem)) return false;
   if (reason !== "explicit_confirm" && hasNonDurableProvenance(mem)) return false;
 
   let newConfidence: number;

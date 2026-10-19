@@ -1,23 +1,47 @@
 /**
- * Recall backend for the Universal Memory Protocol adapter (@universalmemoryprotocol/core).
+ * Recall backend for the Universal Memory Protocol adapter.
  *
- * Bridges Recall's native modules to the UMP `RecallBackend` interface so a
- * `recall ump` server can serve UMP over Recall's engine. Reads map faithfully;
- * writes flow into Recall's capture pipeline (text -> candidate memory).
+ * Direct UMP records retain their complete protocol representation in capture
+ * context. Recall's ordinary columns stay in sync for FTS/vector retrieval,
+ * but are never allowed to discard temporal, scope, provenance, or relation
+ * fields.
  */
 
+import { eq } from "drizzle-orm";
+import type { MemoryRecord, RecallRequest } from "@universalmemoryprotocol/core";
+import {
+  fromAmpId,
+  kindToRecallType,
+  recallMemoryToRecord,
+  toUmpId,
+  type RecallBackend,
+  type RecallMemory,
+} from "@universalmemoryprotocol/core/adapters/recall";
 import type { RecallDb } from "../db/client.js";
-import { createMemory, getMemory, queryMemories, rejectMemory } from "../models/memory.js";
-import { flushEmbeddingJobs, semanticSearch, loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
+import { memories } from "../db/schema.js";
+import {
+  createMemory,
+  getMemory,
+  queryMemories,
+  rejectMemory,
+} from "../models/memory.js";
+import {
+  flushEmbeddingJobs,
+  loadEmbeddingConfigFromEnv,
+  semanticSearch,
+} from "../embeddings/embeddings.js";
 import { searchMemoryFtsIndex } from "../vector/sqlite-fts.js";
 import { processCorrection } from "../capture/correction.js";
+import type { CaptureContext, MemoryItem, MemoryScope } from "../types.js";
+import {
+  canonicalizeStoredRecord,
+  storedUmpRecord,
+} from "./records.js";
 
-// Lower than Recall's dedup threshold (0.8): retrieval wants paraphrase recall,
-// not exact-duplicate precision. Tune with UMP_RECALL_MIN_SIM.
 const SEARCH_MIN_SIM = parseFloat(process.env.UMP_RECALL_MIN_SIM ?? "0.3");
 const RRF_K = 60;
-import type { MemoryItem } from "../types.js";
-import type { RecallBackend, RecallMemory } from "@universalmemoryprotocol/core/adapters/recall";
+
+type UmpCompileRequest = Parameters<RecallBackend["compileHybrid"]>[0];
 
 function toRecallMemory(m: MemoryItem): RecallMemory {
   return {
@@ -38,74 +62,278 @@ function toRecallMemory(m: MemoryItem): RecallMemory {
       ref: (e as { ref?: string }).ref,
       context: (e as { context?: string }).context,
     })),
-    capture_context: (m.capture_context as { ump_kind?: string } | null) ?? null,
+    capture_context: m.capture_context ?? null,
   };
 }
 
 function tokenOverlap(query: string, text: string): number {
-  const q = new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1));
-  if (q.size === 0) return 0;
-  const t = text.toLowerCase();
+  const queryTokens = new Set(query.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1));
+  if (queryTokens.size === 0) return 0;
+  const candidate = text.toLowerCase();
   let hits = 0;
-  for (const w of q) if (t.includes(w)) hits++;
-  return hits / q.size;
+  for (const word of queryTokens) if (candidate.includes(word)) hits++;
+  return hits / queryTokens.size;
 }
 
-export function makeRecallBackend(db: RecallDb): RecallBackend {
+function statusForNative(memory: MemoryItem): "active" | "candidate" | "tombstoned" {
+  // A manual/native rejection must always win over an older UMP active status.
+  if (memory.status === "rejected") return "tombstoned";
+  const saved = storedUmpRecord(memory.capture_context?.ump_record);
+  if (saved?.lifecycle?.status === "tombstoned") return "tombstoned";
+  return memory.status === "active" ? "active" : "candidate";
+}
+
+function recordForMemory(memory: MemoryItem, owner: string): MemoryRecord {
+  const saved = storedUmpRecord(memory.capture_context?.ump_record);
+  if (saved) {
+    return {
+      ...saved,
+      id: toUmpId(memory.id),
+      integrity: undefined,
+      lifecycle: {
+        ...saved.lifecycle,
+        status: statusForNative(memory),
+      },
+    };
+  }
+  // Legacy Recall rows retain the SDK's native mapping.
+  return recallMemoryToRecord(toRecallMemory(memory), owner);
+}
+
+function matchesScope(
+  record: MemoryRecord,
+  requested?: Partial<MemoryRecord["scope"]>,
+): boolean {
+  if (!requested) return true;
+  return (Object.keys(requested) as Array<keyof MemoryRecord["scope"]>)
+    .every((key) => requested[key] === undefined || record.scope[key] === requested[key]);
+}
+
+function matchesFilter(record: MemoryRecord, filter?: RecallRequest["filter"]): boolean {
+  if (!filter) return true;
+  const status = record.lifecycle?.status ?? "active";
+  if (filter.status && !filter.status.includes(status)) return false;
+  if (filter.kind && !filter.kind.includes(record.kind)) return false;
+  if (filter.valid_at) {
+    const at = Date.parse(filter.valid_at);
+    const from = Date.parse(record.time.valid_from ?? record.time.created);
+    const to = record.time.valid_to == null ? Number.POSITIVE_INFINITY : Date.parse(record.time.valid_to);
+    // UMP validates API timestamps. Invalid persisted legacy data is excluded.
+    if (!Number.isFinite(at) || !Number.isFinite(from) || Number.isNaN(to)) return false;
+    if (at < from || at > to) return false;
+  }
+  return true;
+}
+
+function candidateMatches(
+  memory: MemoryItem,
+  owner: string,
+  request: UmpCompileRequest,
+): boolean {
+  const record = recordForMemory(memory, owner);
+  if (statusForNative(memory) === "tombstoned") return false;
+  // A Recall UMP server serves one persisted operator identity. A record for
+  // another owner must not become searchable just because it shares a project.
+  if (record.scope.owner !== owner) return false;
+  return matchesScope(record, request.scope) && matchesFilter(record, request.filter);
+}
+
+function asTemporalScope(record: MemoryRecord): {
+  scope: MemoryScope;
+  repo: string | null;
+  path: string | null;
+} {
+  if (record.scope.project) {
+    return { scope: "repo", repo: record.scope.project, path: null };
+  }
+  return { scope: "global", repo: null, path: null };
+}
+
+function confidenceFor(record: MemoryRecord): number {
+  const confidence = record.lifecycle?.confidence ?? 0.8;
+  return record.lifecycle?.status === "candidate"
+    ? Math.min(confidence, 0.59)
+    : Math.max(confidence, 0.6);
+}
+
+function captureContextFor(
+  record: MemoryRecord,
+  canonicalId: string,
+  previous: MemoryItem | undefined,
+): CaptureContext {
+  const prior = storedUmpRecord(previous?.capture_context?.ump_record);
+  return {
+    ...(previous?.capture_context ?? {}),
+    ump_kind: record.kind,
+    ump_record: canonicalizeStoredRecord(record, canonicalId, prior),
+  };
+}
+
+function putUmpRecord(
+  db: RecallDb,
+  record: MemoryRecord,
+  existingId?: string,
+): string {
+  const targetId = existingId ?? (
+    record.id.startsWith("urn:ump:") ? safeRecallId(record.id) : undefined
+  );
+  const existing = targetId ? getMemory(db, targetId) : undefined;
+
+  if (existing) {
+    const captureContext = captureContextFor(record, toUmpId(existing.id), existing);
+    const scope = asTemporalScope(record);
+    const tombstoned = record.lifecycle?.status === "tombstoned";
+    const nativeStatus = existing.status === "rejected"
+      ? "rejected"
+      : record.lifecycle?.status === "candidate"
+        ? "candidate"
+        : "active";
+
+    db.update(memories)
+      .set({
+        text: record.body.text,
+        type: kindToRecallType(record.kind),
+        scope: scope.scope,
+        repo: scope.repo,
+        path_scope: scope.path,
+        confidence: confidenceFor(record),
+        status: nativeStatus,
+        capture_context: captureContext as never,
+        // A UMP record can carry validity, source, and structured semantics
+        // that the instruction compiler does not understand. Keep all direct
+        // UMP writes out of automatic instructions until that path is proven.
+        auto_inject: false,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(memories.id, existing.id))
+      .run();
+
+    // Supersession only closes the UMP interval. It must not reject the prior:
+    // historical recalls still need that predecessor. Forget is tombstoning.
+    if (tombstoned && existing.status !== "rejected") {
+      rejectMemory(db, existing.id, "ump");
+    }
+    return existing.id;
+  }
+
+  const scope = asTemporalScope(record);
+  const id = db.$client.transaction(() => {
+    // Store a complete source marker in the INSERT itself. If canonical-id
+    // finalization ever fails, a crash cannot leave an active ordinary row
+    // eligible for query-time instruction reinjection.
+    const initialContext: CaptureContext = {
+      ump_kind: record.kind,
+      ump_record: canonicalizeStoredRecord(record, record.id, undefined),
+    };
+    const createdId = createMemory(db, {
+      type: kindToRecallType(record.kind),
+      text: record.body.text,
+      scope: scope.scope,
+      repo: scope.repo,
+      path_scope: scope.path,
+      source: "user_correction",
+      confidence: confidenceFor(record),
+      // Equal text with distinct validity windows is intentional.
+      dedupe: false,
+      auto_inject: false,
+      capture_context: initialContext,
+    });
+    db.update(memories)
+      .set({
+        capture_context: captureContextFor(record, toUmpId(createdId), undefined) as never,
+        auto_inject: false,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(memories.id, createdId))
+      .run();
+    return createdId;
+  })();
+  if (record.lifecycle?.status === "tombstoned") rejectMemory(db, id, "ump");
+  return id;
+}
+
+function safeRecallId(umpId: string): string | undefined {
+  try {
+    return fromAmpId(umpId);
+  } catch {
+    return undefined;
+  }
+}
+
+export function makeRecallBackend(db: RecallDb, owner: string): RecallBackend {
   const umpSessionId = `ump:${process.pid}:${Date.now().toString(36)}`;
   return {
-    queryMemories: (f) => queryMemories(db, { repo: f.repo }).map(toRecallMemory),
+    queryMemories: (filter) => queryMemories(db, { repo: filter.repo }).map(toRecallMemory),
 
     getMemory: (id) => {
-      const m = getMemory(db, id);
-      return m ? toRecallMemory(m) : undefined;
+      const memory = getMemory(db, id);
+      return memory ? toRecallMemory(memory) : undefined;
     },
 
-    compileHybrid: async ({ query, repo, limit }) => {
-      const cap = limit ?? 8;
-      const window = Math.max(cap * 5, 30);
-      // Reciprocal-rank fusion of a semantic arm (vector index, paraphrase-aware)
-      // and a lexical arm (BM25 FTS). Both are index-backed, so this scales.
-      const rrf = new Map<string, number>();
-      const add = (id: string, rank: number) => rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + rank));
+    compileHybrid: async (request) => {
+      const cap = request.limit ?? 8;
+      // Fetch the complete indexed population before protocol filters. A
+      // cap×5 window loses an eligible dated/private record behind noise.
+      const totalCandidates = queryMemories(db, {}).length;
+      const window = Math.max(totalCandidates, cap);
+      const scores = new Map<string, number>();
+      const add = (id: string, rank: number) =>
+        scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + rank));
 
-      const cfg = loadEmbeddingConfigFromEnv();
-      if (cfg) {
+      const config = loadEmbeddingConfigFromEnv();
+      if (config && window > 0) {
         try {
-          const sem = await semanticSearch(
+          const semantic = await semanticSearch(
             db,
-            query,
-            { ...cfg, similarity_threshold: SEARCH_MIN_SIM },
-            { repo, limit: window },
+            request.query,
+            { ...config, similarity_threshold: SEARCH_MIN_SIM },
+            { repo: request.repo, limit: window },
           );
-          sem.forEach((s, i) => add(s.memory.id, i));
-        } catch { /* embeddings unavailable; lexical still applies */ }
-      }
-      try {
-        searchMemoryFtsIndex(db, query, { repo, limit: window }).forEach((l, i) => add(l.memory_id, i));
-      } catch { /* fts unavailable */ }
-
-      if (rrf.size > 0) {
-        const out: Array<{ memory: RecallMemory; score: number }> = [];
-        for (const [id, score] of [...rrf.entries()].sort((a, b) => b[1] - a[1])) {
-          const m = getMemory(db, id);
-          if (m && (m.status === "active" || m.status === "candidate")) {
-            out.push({ memory: toRecallMemory(m), score });
-            if (out.length >= cap) break;
-          }
+          semantic.forEach((result, index) => add(result.memory.id, index));
+        } catch {
+          // Embeddings are optional; FTS and exhaustive fallback still work.
         }
-        if (out.length > 0) return out;
+      }
+      if (window > 0) {
+        try {
+          searchMemoryFtsIndex(db, request.query, { repo: request.repo, limit: window })
+            .forEach((result, index) => add(result.memory_id, index));
+        } catch {
+          // The FTS table may not be initialized in a standalone test DB.
+        }
       }
 
-      // Last-resort lexical scan (e.g. embeddings + FTS both empty).
-      return queryMemories(db, {})
-        .filter((m) => m.status === "active" || m.status === "candidate")
-        .map((m) => ({ memory: toRecallMemory(m), score: tokenOverlap(query, m.text) }))
-        .filter((r) => r.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, cap);
+      const ranked: Array<{ memory: RecallMemory; score: number }> = [];
+      for (const [id, score] of [...scores.entries()].sort((a, b) => b[1] - a[1])) {
+        const memory = getMemory(db, id);
+        if (!memory || !candidateMatches(memory, owner, request)) continue;
+        ranked.push({ memory: toRecallMemory(memory), score });
+        if (ranked.length >= cap) return ranked;
+      }
+
+      // Index arms can have no textual hit for an otherwise eligible structured
+      // record. Exhaustively score all remaining rows after filtering.
+      const rankedIds = new Set(scores.keys());
+      const fallback = queryMemories(db, {})
+        .filter((memory) => !rankedIds.has(memory.id))
+        .filter((memory) => candidateMatches(memory, owner, request))
+        .map((memory) => ({ memory, score: tokenOverlap(request.query, memory.text) }))
+        .sort((a, b) => b.score - a.score);
+      for (const result of fallback) {
+        ranked.push({ memory: toRecallMemory(result.memory), score: result.score });
+        if (ranked.length >= cap) break;
+      }
+      return ranked;
     },
 
+    putRecord: async (record, existingId) => {
+      const id = putUmpRecord(db, record, existingId);
+      await flushEmbeddingJobs();
+      return id;
+    },
+
+    // SDK 1.0.2 compatibility only. SDK 1.0.3 uses putRecord for all direct
+    // writes, including lifecycle revisions and tombstones.
     storeDirect: async ({ text, type, scope, repo, confidence, kind }) => {
       const id = createMemory(db, {
         type,
@@ -114,10 +342,9 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
         repo: repo ?? null,
         source: "user_correction",
         confidence,
-        capture_context: { ump_kind: kind } as never,
+        dedupe: false,
+        capture_context: { ump_kind: kind } as CaptureContext,
       });
-      // createMemory queues the embedding sync; flush so the new memory is
-      // immediately retrievable by semantic (vector) search.
       await flushEmbeddingJobs();
       return id;
     },
@@ -125,17 +352,14 @@ export function makeRecallBackend(db: RecallDb): RecallBackend {
     tombstone: (id) => rejectMemory(db, id, "ump"),
 
     capture: async ({ text, repo, path }) => {
-      const res = await processCorrection(db, text, {
-        // Unique per server process: a constant "ump" session id made
-        // stablePromptId() dedupe identical rule text forever, so a rule
-        // re-sent in a later UMP session was silently never re-extracted.
+      const result = await processCorrection(db, text, {
         sessionId: umpSessionId,
         repo,
         path,
         agent: "ump",
         force_semantic_capture: true,
       });
-      return { ids: res.ids ?? [] };
+      return { ids: result.ids ?? [] };
     },
   };
 }

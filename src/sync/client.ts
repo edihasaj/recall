@@ -81,7 +81,27 @@ export async function pushMemories(
     return { pushed: 0, version: state.last_push_version };
   }
 
-  const payload = localMemories.map((m) => ({
+  const syncableMemories = localMemories.filter(
+    (memory) => !hasUmpRecordMarker(memory.capture_context),
+  );
+  const pushedThroughVersion = Math.max(
+    ...localMemories.map((memory) => memory.sync_version),
+  );
+
+  // UMP source assertions are local-only until the Cloud protocol can retain
+  // their complete record and source boundary. Advance the local cursor even
+  // when every changed row is excluded, otherwise every sync retries them.
+  if (syncableMemories.length === 0) {
+    updateSyncState(db, {
+      remote_url: remoteUrl,
+      team_id: config.team_id,
+      last_push_at: new Date().toISOString(),
+      last_push_version: pushedThroughVersion,
+    });
+    return { pushed: 0, version: pushedThroughVersion };
+  }
+
+  const payload = syncableMemories.map((m) => ({
     ...m,
     origin_id: m.id,
     evidence: typeof m.evidence === "string" ? JSON.parse(m.evidence as string) : m.evidence,
@@ -110,9 +130,7 @@ export async function pushMemories(
     remote_url: remoteUrl,
     team_id: config.team_id,
     last_push_at: new Date().toISOString(),
-    last_push_version: Math.max(
-      ...localMemories.map((m) => m.sync_version),
-    ),
+    last_push_version: pushedThroughVersion,
   });
 
   return result;
@@ -153,6 +171,10 @@ export async function pullMemories(
   let conflicts = 0;
 
   for (const remote of data.memories) {
+    // A full UMP source record is never a Cloud memory. Fail closed for both
+    // future Cloud payloads that retain this marker and existing local rows,
+    // so a pull cannot overwrite or reinterpret it as an ordinary instruction.
+    if (hasUmpRecordMarker(remote.capture_context)) continue;
     const localMem = db
       .select()
       .from(memories)
@@ -160,6 +182,7 @@ export async function pullMemories(
       .get();
 
     if (localMem) {
+      if (hasUmpRecordMarker(localMem.capture_context)) continue;
       // Conflict resolution: last-write-wins by updated_at
       if (remote.updated_at > localMem.updated_at) {
         db.update(memories)
@@ -210,6 +233,25 @@ export async function pullMemories(
   });
 
   return { pulled, conflicts };
+}
+
+function hasUmpRecordMarker(captureContext: unknown): boolean {
+  const context = parseCaptureContext(captureContext);
+  return context !== null && Object.prototype.hasOwnProperty.call(context, "ump_record");
+}
+
+function parseCaptureContext(value: unknown): Record<string, unknown> | null {
+  let context = value;
+  if (typeof context === "string") {
+    try {
+      context = JSON.parse(context);
+    } catch {
+      return null;
+    }
+  }
+  return context !== null && typeof context === "object" && !Array.isArray(context)
+    ? context as Record<string, unknown>
+    : null;
 }
 
 // --- Full sync ---
