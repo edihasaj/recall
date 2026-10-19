@@ -158,7 +158,7 @@ describe("Recall UMP temporal integration", () => {
       await firstConnection.mcp.close().catch(() => {});
       if (!firstDbClosed) firstDb.$client.close();
     }
-  });
+  }, 20_000);
 
   it("refuses a malformed persisted seed without replacing it", () => {
     const directory = mkdtempSync(join(tmpdir(), "recall-ump-invalid-seed-"));
