@@ -23,6 +23,11 @@ if [[ "${RECALL_MAS_SKIP_STAGE:-0}" != 1 ]]; then
     echo "Set RECALL_NODE_PATH to a standalone Node 22 executable." >&2
     exit 1
   fi
+  required_node_version="$(tr -d '[:space:]' < "$root/.nvmrc")"
+  if [[ "$("$runtime_node" -p 'process.versions.node')" != "$required_node_version" ]]; then
+    echo "Set RECALL_NODE_PATH to the standalone patched Node $required_node_version from .nvmrc." >&2
+    exit 1
+  fi
   if otool -L "$runtime_node" | rg -q '@rpath/libnode|/opt/homebrew'; then
     echo "The selected Node executable depends on Homebrew libraries; use a standalone build." >&2
     exit 1

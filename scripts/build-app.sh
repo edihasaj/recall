@@ -31,6 +31,14 @@ if [[ "$node_major" != "22" ]]; then
   exit 1
 fi
 
+required_node_version="$(tr -d '[:space:]' < "$root_dir/.nvmrc")"
+actual_node_version="$("$node_bin" -p 'process.versions.node')"
+if [[ "$actual_node_version" != "$required_node_version" ]]; then
+  echo "Recall.app must embed the pinned patched Node $required_node_version; got $actual_node_version." >&2
+  echo "Set RECALL_NODE_PATH to the standalone runtime specified by .nvmrc." >&2
+  exit 1
+fi
+
 cd "$root_dir"
 
 # Xcode writes a full Recall.app into build/DerivedData.noindex. Spotlight indexes it,

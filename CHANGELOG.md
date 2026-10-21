@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.0.11 - 2026-10-21
+
+- Bundle Node.js 22.23.4 in the macOS app to include the October security fixes.
+- Require the patched Node runtime when building the macOS app and use the same
+  release version in CI.
+
 ## 2.0.10 - 2026-10-20
 
 - Include the complete temporal UMP integration from 2.0.9 in the macOS release.
