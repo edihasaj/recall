@@ -257,7 +257,8 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
     if (hasCalls) {
       if (options.provider !== "qwen-local") throw new Error("Supplemental evidence requires qwen-local");
       if (options.requestMode !== "robust" || options.evidencePolicy !== "system") throw new Error("Supplemental evidence calls require robust requests and system evidence policy");
-      if (options.reasoningEffort !== "adaptive" || options.maxOutputTokens !== 16384) throw new Error("Supplemental evidence calls require adaptive reasoning and a 16384-token answer budget");
+      if (options.reasoningEffort !== "adaptive" && options.reasoningEffort !== "high") throw new Error("Supplemental evidence calls require adaptive or explicit high reasoning");
+      if (options.maxOutputTokens !== 16384) throw new Error("Supplemental evidence calls require a 16384-token answer budget");
     }
   }
   if (options.evidenceLedger === "quoted" || options.evidenceLedger === "units" || options.evidenceLedger === "packed") {

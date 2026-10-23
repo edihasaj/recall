@@ -184,6 +184,14 @@ paths must remain visible in any comparison.
 
 ## Local harness
 
+The [paired answer-effort pilot](../benchmark/LONGMEMEVAL-EFFORT-PILOT-PROTOCOL.md)
+tests explicit high initial answer reasoning against the adaptive policy on
+24 hash-selected questions that previously used low effort. Supplemental
+evidence permits `--reasoning-effort high` as an experimental alternative to
+`adaptive`, retaining the 16,384-token budget and all other input and transport
+requirements. Defaults are unchanged. This pilot is exploratory, uses fresh
+control answers, and cannot replace a full-corpus result.
+
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
 inspection. It does not import or execute the external Python implementation.

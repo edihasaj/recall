@@ -152,6 +152,28 @@ describe("LongMemEval supplemental QA", () => {
     });
   });
 
+  it("accepts explicit high supplemental reasoning and records it in the invocation", async () => {
+    expect(parseArgs([
+      "--out", "result.json", "--evidence", "supplemental", "--reasoning-effort", "high",
+    ]).reasoningEffort).toBe("high");
+    const options = supplementalOptions({ reasoningEffort: "high" });
+    const kinds: string[] = [];
+    const report = await runEvaluation(options, async (kind) => {
+      kinds.push(kind);
+      return kind === "answer"
+        ? call('{"reasoning":"quoted evidence","answer":"pottery"}')
+        : call('{"correct":true,"reason":"matches"}');
+    });
+
+    expect(kinds).toEqual(["answer", "judge"]);
+    expect(report.results[0]!.correct).toBe(true);
+    const written = JSON.parse(readFileSync(options.out, "utf8")) as { invocation: Options };
+    expect(written.invocation).toMatchObject({
+      reasoningEffort: "high",
+      maxOutputTokens: 16_384,
+    });
+  });
+
   it("retains all source metadata and budget omissions at the primary boundary", async () => {
     const ranked = cachedRank(case20.sessions, ids, 20, occurrences);
     const unrestricted = buildHighlightedEvidence(ranked.slice(0, 10), question, 20_000, false);
@@ -233,7 +255,9 @@ describe("LongMemEval supplemental QA", () => {
       supplementalOptions({ provider: undefined }),
       supplementalOptions({ requestMode: "standard" }),
       supplementalOptions({ evidencePolicy: "inline" }),
-      supplementalOptions({ reasoningEffort: "high" }),
+      supplementalOptions({ reasoningEffort: "none" }),
+      supplementalOptions({ reasoningEffort: "low" }),
+      supplementalOptions({ reasoningEffort: "medium" }),
       supplementalOptions({ maxOutputTokens: 4_096 }),
     ];
     for (const options of invalid) {
