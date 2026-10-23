@@ -3,8 +3,9 @@
 
 See LONGMEMEVAL-EFFORT-PILOT-PROTOCOL.md. The default mode only prepares the
 frozen selection, block inputs, schedule and digest inventory (no model calls).
-`--live` runs the 16 sequential stages through `dgx run`. No retries, no
-rejudging. DGX_KEY_FILE is inherited from the environment and required only for
+`--live` runs the sequential stages through `dgx run`. No retries, no
+rejudging. `--selection-policy temporal` (LONGMEMEVAL-TEMPORAL-EFFORT-PROTOCOL.md)
+runs the whole temporal-routing cohort derived from the frozen source router. DGX_KEY_FILE is inherited from the environment and required only for
 live runs.
 """
 from __future__ import annotations
@@ -18,6 +19,15 @@ from typing import Any, Callable
 SEED = "recall-longmemeval-effort-2026-10-23-v1"
 BASELINE_SHA = "9cba4555cad8031eec9e404d96ae4f7065c302cbacfa8a87f1232c0b9e0105f0"
 EXPECTED_LOW, SIZE, BLOCK = 321, 24, 3
+TSEED, TEMPORAL_COUNT = "recall-longmemeval-temporal-2026-10-23-v1", 74
+ROUTING, POLICY_TS = "benchmark/longmemeval-temporal-routing.ts", "benchmark/longmemeval-inference-policy.ts"
+PROTOCOLS = {"effort": "LONGMEMEVAL-EFFORT-PILOT-PROTOCOL.md", "temporal": "LONGMEMEVAL-TEMPORAL-EFFORT-PROTOCOL.md"}
+ROUTER_JS = """import {readFileSync} from "node:fs"; import {resolve} from "node:path"; import {pathToFileURL} from "node:url";
+const load = f => import(pathToFileURL(resolve(f)).href);
+const [{resolveReasoningEffort: adaptive}, {resolveTemporalReasoningEffort: temporal}] = await Promise.all([load(%r), load(%r)]);
+const rows = JSON.parse(readFileSync(0, "utf8"));
+console.log(JSON.stringify(rows.filter(r => adaptive("adaptive", r.question) === "low" && temporal(r.question) === "high").map(r => r.id)));
+""" % (POLICY_TS, ROUTING)
 BASELINE = "longmemeval-full500-longer-timeout-2026-10-23.json"
 INPUT = "longmemeval-amb-input-2026-10-19.json"
 RANKINGS = "longmemeval-fresh-e5-full500-exact-2026-10-20.json"
@@ -83,11 +93,26 @@ def derive_selection(rows: list[dict], seed: str | None = None, size: int | None
     return sorted(low, key=lambda q: hashlib.sha256(seed.encode() + b"\0" + q.encode()).hexdigest())[:size]
 
 
-def schedule(ids: list[str]) -> list[dict]:
-    """Eight blocks; even blocks control then candidate, odd blocks candidate then control."""
-    if len(ids) != SIZE or len(set(ids)) != SIZE: raise Failure("bad_selection_size", 2)
+def router_ids(a: argparse.Namespace, cases: list[dict]) -> list[str]:
+    """IDs whose original question is adaptive-low and temporal-high, derived by the frozen source router, in seed order."""
+    rows = [{"id": c["question_id"], "question": c["question"]} for c in cases]
+    if len({r["id"] for r in rows}) != len(rows): raise Failure("duplicate_input_ids", 2)
+    try:
+        r = subprocess.run([str(a.node), "--import", "tsx", "--input-type=module", "-e", ROUTER_JS], cwd=a.source_root,
+                           input=json.dumps(rows), capture_output=True, text=True, timeout=300)
+        got = json.loads(r.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError) as e: raise Failure("router_derivation_failed", 2, repr(e))
+    if r.returncode or not isinstance(got, list) or len(set(map(str, got))) != len(got) or not set(got) <= {x["id"] for x in rows}:
+        raise Failure("router_derivation_failed", 2, {"exit": r.returncode, "stderr": r.stderr[-500:]})
+    return sorted(got, key=lambda q: hashlib.sha256(TSEED.encode() + b"\0" + q.encode()).hexdigest())
+
+
+def schedule(ids: list[str], size: int | None = None) -> list[dict]:
+    """Blocks of at most BLOCK (final one may be partial); even blocks control then candidate, odd blocks candidate then control."""
+    size = SIZE if size is None else size
+    if len(ids) != size or len(set(ids)) != size: raise Failure("bad_selection_size", 2)
     stages: list[dict] = []
-    for b in range(SIZE // BLOCK):
+    for b in range(-(-size // BLOCK)):
         for arm in (("control", "candidate") if b % 2 == 0 else ("candidate", "control")):
             stages.append({"index": len(stages), "block": b, "arm": arm, "ids": ids[b * BLOCK:(b + 1) * BLOCK]})
     return stages
@@ -338,22 +363,33 @@ def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: R
     out = a.out_dir
     if a.out_dir.is_relative_to(a.source_root): raise Failure("out_dir_inside_source_root", 2)
     sel, baseline = load(a.selection), load(a.data_dir / BASELINE)
-    if sha(a.data_dir / BASELINE) != BASELINE_SHA or sel.get("baseline_sha256") != BASELINE_SHA or sel.get("seed") != SEED:
+    temporal = a.selection_policy == "temporal"
+    if sha(a.data_dir / BASELINE) != BASELINE_SHA or sel.get("baseline_sha256") != BASELINE_SHA or sel.get("seed") != (TSEED if temporal else SEED):
         raise Failure("baseline_or_selection_mismatch", 2)
-    ids = derive_selection(baseline["results"])
+
+    def bound_inputs():
+        in_sha, rank_sha = sha(a.data_dir / INPUT), sha(a.data_dir / RANKINGS)
+        bound = baseline.get("hashes") or {}  # the baseline run recorded the exact input and rankings it consumed
+        if in_sha != bound.get("input") or rank_sha != bound.get("rankings"):
+            raise Failure("input_or_rankings_not_baseline_bound", 2, {"input": in_sha, "rankings": rank_sha, "baseline": {k: bound.get(k) for k in ("input", "rankings")}})
+        return in_sha, rank_sha, load(a.data_dir / INPUT), load(a.data_dir / RANKINGS)
+
+    if temporal:
+        in_sha, rank_sha, inp, rank = bound_inputs()
+        routing_sha = sha(a.source_root / ROUTING) if (a.source_root / ROUTING).is_file() else None
+        if routing_sha is None or sel.get("routing_sha256") != routing_sha: raise Failure("routing_sha_mismatch", 2, {"found": routing_sha})
+        ids = router_ids(a, inp["cases"])
+        if len(ids) != TEMPORAL_COUNT: raise Failure("temporal_count_mismatch", 2, {"found": len(ids), "expected": TEMPORAL_COUNT})
+    else: ids = derive_selection(baseline["results"])
     if sel.get("selected_question_ids") != ids: raise Failure("selection_not_reproduced", 2, {"derived": ids})
-    in_sha, rank_sha = sha(a.data_dir / INPUT), sha(a.data_dir / RANKINGS)
-    bound = baseline.get("hashes") or {}  # the baseline run recorded the exact input and rankings it consumed
-    if in_sha != bound.get("input") or rank_sha != bound.get("rankings"):
-        raise Failure("input_or_rankings_not_baseline_bound", 2, {"input": in_sha, "rankings": rank_sha, "baseline": {k: bound.get(k) for k in ("input", "rankings")}})
-    inp, rank = load(a.data_dir / INPUT), load(a.data_dir / RANKINGS)
+    if not temporal: in_sha, rank_sha, inp, rank = bound_inputs()
     wanted = set(ids)
     if not wanted <= {c["question_id"] for c in inp["cases"]} or not wanted <= {r["question_id"] for r in rank["results"]}:
         raise Failure("selected_ids_missing_from_inputs", 2)
     abs_ids = {c["question_id"] for c in inp["cases"] if c.get("is_abstention") and c["question_id"] in wanted}
-    stages = schedule(ids)
+    stages = schedule(ids, TEMPORAL_COUNT if temporal else None)
     (out / "blocks").mkdir()
-    for b in range(SIZE // BLOCK):
+    for b in range(len(stages) // 2):
         block_ids, d = ids[b * BLOCK:(b + 1) * BLOCK], out / "blocks" / f"block-{b}"
         d.mkdir()
         write_json(d / "input.json", subset_input(inp, block_ids, in_sha), True)
@@ -367,7 +403,10 @@ def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: R
               hashes={k: inv[k] for k in ("supervisor", "protocol", "selection", "baseline", "input", "rankings", "node", "python")},
               block_sha256={k: v for k, v in inv.items() if k.startswith("block:")},
               schedule=[{k: s[k] for k in ("index", "block", "arm")} for s in stages], stages={},
-              claim="Exploratory 24-question paired pilot only; not a full500 score.")
+              selection_policy=a.selection_policy, cohort_size=len(ids),
+              claim=f"Exploratory {len(ids)}-question paired temporal-routing cohort screen only; not a full500 score." if temporal
+              else "Exploratory 24-question paired pilot only; not a full500 score.")
+    if temporal: st.update(routing_sha256=routing_sha, router_derived_ids=True)
     if not a.live:
         st.update(status="prepared", finished_at=now(), planned_commands=[s["cmd"] for s in stages])
         save()
@@ -396,9 +435,15 @@ def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: R
 def parse(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     for flag in ("source-root", "data-dir", "node", "selection", "out-dir"): p.add_argument("--" + flag, type=Path, required=True)
-    p.add_argument("--protocol", type=Path, default=Path(__file__).resolve().parent / "LONGMEMEVAL-EFFORT-PILOT-PROTOCOL.md")
+    p.add_argument("--protocol", type=Path, default=None)
+    p.add_argument("--selection-policy", choices=("effort", "temporal"), default="effort")
     p.add_argument("--live", action="store_true", default=False)
     a = p.parse_args(argv)
+    if a.protocol is None:
+        if a.selection_policy == "temporal": p.error("--selection-policy temporal requires an explicit --protocol " + PROTOCOLS["temporal"])
+        a.protocol = Path(__file__).resolve().parent / PROTOCOLS["effort"]
+    elif (a.protocol.name == PROTOCOLS["temporal"]) != (a.selection_policy == "temporal"):
+        p.error(f"--protocol {a.protocol.name} does not belong to --selection-policy {a.selection_policy}")
     for k in ("source_root", "data_dir", "node", "selection", "out_dir", "protocol"): setattr(a, k, getattr(a, k).absolute())
     return a
 

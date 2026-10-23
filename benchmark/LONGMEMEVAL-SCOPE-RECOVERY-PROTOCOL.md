@@ -59,3 +59,36 @@ errors, and passes independent source review of every paired gain and any
 changed abstention. Report unsupported claims and genuine ambiguity without
 changing the fixed judge's score. A pass only permits planning a fresh
 full-corpus validation; it cannot replace the public **472/500 (94.4%)** claim.
+
+## Results
+
+Both fresh arms completed all 29 reviews and judges without errors, retries or
+unknown usage. Each scored **27/29** on the reviewed cohort and **475/500** in
+the mixed replay, which reuses 471 historical answers. The valid pair has zero
+accuracy gains or losses between arms. Both gained four historical answers
+and lost the same historically correct abstention. Both fail advancement:
+475 is below 476, and the historical abstention loss violates the safety gate.
+The scope instruction does not advance to a full-corpus experiment.
+
+Source review found a useful biography cleanup in the occupation answer, but
+no paired accuracy gain. Both arms still acknowledge an unsupported manager
+role and then answer using team counts for a different role. Both also give
+alternative arithmetic after acknowledging unsupported Google employment,
+despite the scope instruction expressly forbidding it. The fixed judge now
+accepts both Google answers; an earlier replay rejected a near-equivalent
+answer. This variation does not establish scope compliance. The novel-page
+case remains wrong in both arms, with unresolved links between books and the
+requested months. Do not force the reference total to resolve that ambiguity.
+
+The run took 44.24 minutes including supervision. Control recorded 1,126,030
+tokens and scope recorded 1,130,680, across 58 calls each. Each arm ran one
+pipeline in the same cohort order; cases were not counterbalanced. The frozen
+18,273-entry source/input/dependency inventory remained unchanged. The source
+overlay archive has SHA-256
+`a306d7af96642a00943fb75b4b8b7031be3061f0ffb92b7467e9e5fff9be32e4`;
+its private manifest binds the complete parent runtime/dependency archive.
+
+The reports, pair, source audits and final decision are retained under
+`benchmark/data/longmemeval-scope-recovery-*2026-10-23*`. These are development
+artifacts, not a fresh full500 score. The public **472/500 (94.4%)** stays
+unchanged.

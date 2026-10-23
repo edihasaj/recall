@@ -201,6 +201,20 @@ answers and two lost abstentions. It also fails advancement and is not a fresh
 full500 result. The public **472/500** remains unchanged. Both reports retain
 source-grounding caveats and fixed judge verdicts.
 
+The fresh paired [scope-recovery trial](../benchmark/LONGMEMEVAL-SCOPE-RECOVERY-PROTOCOL.md)
+finished **27/29 in both arms**, with no paired accuracy difference. Each arm
+produced a **475/500 mixed replay**, reusing 471 historical answers and losing
+one historically correct abstention. Scope instructions cleaned up one
+biography answer but did not prevent substituted-role answers. Both arms fail
+advancement; neither changes the public score.
+
+The next [selective temporal-effort experiment](../benchmark/LONGMEMEVAL-TEMPORAL-EFFORT-PROTOCOL.md)
+selects all 74 questions whose original text changes from adaptive-low to
+temporal-high under a fixed English heuristic. It compares fresh low and high
+answers with unchanged evidence. Historical diagnostics show 72/74 correct,
+so this is a contribution screen rather than a sufficient route past 95%.
+The helper does not change application defaults or public score claims.
+
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
 inspection. It does not import or execute the external Python implementation.
