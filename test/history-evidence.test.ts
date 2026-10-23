@@ -292,6 +292,126 @@ describe("history evidence renderer", () => {
     expect(result.text).not.toContain("[authorized]");
   });
 
+  describe("reserve_speaker_units", () => {
+    const query = "Where do Sora workers live?";
+    const assistantAdvice = [
+      "assistant: Sora workers live near the harbor for ideas.",
+      "assistant: Sora workers live by the harbor with options.",
+      "assistant: Sora workers live near the harbor while planning.",
+    ];
+    const render = (text: string, extra: Partial<Parameters<typeof renderEvidenceSources>[1]> = {}) =>
+      renderEvidenceSources([{ text }], {
+        query, max_chars: 400, per_source_chars: 130, preferred_speaker: "user", ...extra,
+      });
+
+    it("keeps a zero-overlap first user fact ahead of matching assistant advice", () => {
+      const text = ["user: I keep my gear at the lakeside cabin.", ...assistantAdvice].join("\n");
+      expect(render(text).text).not.toContain("lakeside cabin");
+      const reserved = render(text, { reserve_speaker_units: true });
+      expect(reserved.text).toContain("user: I keep my gear at the lakeside cabin.");
+      expect(reserved.sources[0]!.ranges[0]!.start).toBe(0);
+      expect(reserved.sources[0]!.used_chars).toBeLessThanOrEqual(130);
+    });
+
+    it("reserves a later zero-overlap user fact when an earlier one cannot fit", () => {
+      const text = [
+        `user: ${"Long unrelated preamble. ".repeat(10)}`,
+        "assistant: Sora workers live near the harbor for ideas.",
+        "user: I keep my gear at the lakeside cabin.",
+        ...assistantAdvice.slice(1),
+      ].join("\n");
+      const reserved = render(text, { reserve_speaker_units: true });
+      expect(reserved.text).toContain("user: I keep my gear at the lakeside cabin.");
+      expect(reserved.text).not.toContain("Long unrelated preamble");
+    });
+
+    it("retains a later zero-overlap user fact alongside a short first anchor despite intervening matching advice", () => {
+      const first = "user: I keep my gear at the lakeside cabin.";
+      const later = "user: My brother keeps boats at the marina.";
+      const text = [first, ...assistantAdvice, later].join("\n");
+      // Both user units fit the raw budget together; the source and the
+      // matching assistant lines do not.
+      expect(first.length + later.length).toBeLessThanOrEqual(130);
+      expect(text.length).toBeGreaterThan(130);
+      expect(first.length + assistantAdvice[0]!.length + later.length).toBeGreaterThan(130);
+
+      const reserved = render(text, { reserve_speaker_units: true });
+      expect(reserved.text).toContain(first);
+      expect(reserved.text).toContain(later);
+      for (const advice of assistantAdvice) expect(reserved.text).not.toContain(advice);
+      expect(reserved.sources[0]!.ranges).toEqual([
+        { start: 0, end: first.length },
+        { start: text.length - later.length, end: text.length },
+      ]);
+      expect(reserved.sources[0]!.used_chars).toBeLessThanOrEqual(130);
+
+      const unreserved = render(text);
+      expect(unreserved.text).not.toContain(later);
+    });
+
+    it("never reserves a standalone role line and carries role scope to its continuation", () => {
+      const text = ["user:", "I keep my gear at the lakeside cabin.", ...assistantAdvice].join("\n");
+      const reserved = render(text, { reserve_speaker_units: true });
+      expect(reserved.text).toContain("user:\nI keep my gear at the lakeside cabin.");
+      const roleOnly = render(["user:", ...assistantAdvice].join("\n"), { reserve_speaker_units: true });
+      expect(roleOnly).toEqual(render(["user:", ...assistantAdvice].join("\n")));
+    });
+
+    it("includes mandatory negating scope with the reserved unit", () => {
+      const text = [
+        "user: Avoid the harbor.",
+        "I keep my gear at the lakeside cabin.",
+        ...assistantAdvice,
+      ].join("\n");
+      const reserved = render(text, { reserve_speaker_units: true });
+      expect(reserved.text).toContain("user: Avoid the harbor.\nI keep my gear at the lakeside cabin.");
+    });
+
+    it("leaves behavior unchanged when no speaker unit fits", () => {
+      const text = [`user: ${"Unrelated words. ".repeat(20)}`, ...assistantAdvice].join("\n");
+      expect(render(text, { reserve_speaker_units: true })).toEqual(render(text));
+    });
+
+    it("preserves the reserved anchor when no unit matches the query", () => {
+      const text = [
+        "user: I keep my gear at the lakeside cabin.",
+        `assistant: ${"Archive entry. ".repeat(20)}`,
+      ].join("\n");
+      const reserved = render(text, { reserve_speaker_units: true });
+      expect(reserved.text).toContain("user: I keep my gear at the lakeside cabin.");
+      expect(reserved.sources[0]!.ranges).toEqual([{ start: 0, end: "user: I keep my gear at the lakeside cabin.".length }]);
+    });
+
+    it("applies to an assistant preference", () => {
+      const text = [
+        "assistant: I suggested the lakeside cabin.",
+        "user: Sora workers live near the harbor for ideas.",
+        "user: Sora workers live by the harbor with options.",
+        "user: Sora workers live near the harbor while planning.",
+      ].join("\n");
+      const reserved = render(text, { preferred_speaker: "assistant", reserve_speaker_units: true });
+      expect(reserved.text).toContain("assistant: I suggested the lakeside cabin.");
+      expect(render(text, { preferred_speaker: "assistant" }).text).not.toContain("lakeside cabin");
+    });
+
+    it("has no effect without a preferred speaker or on a whole source", () => {
+      const text = ["user: I keep my gear at the lakeside cabin.", ...assistantAdvice].join("\n");
+      const withoutSpeaker = { preferred_speaker: undefined };
+      expect(render(text, { ...withoutSpeaker, reserve_speaker_units: true }))
+        .toEqual(render(text, withoutSpeaker));
+      const whole = render(text, { per_source_chars: 1_000, reserve_speaker_units: true });
+      expect(whole).toEqual(render(text, { per_source_chars: 1_000 }));
+    });
+
+    it("keeps default output identical and validates the option type", () => {
+      const text = ["user: I keep my gear at the lakeside cabin.", ...assistantAdvice].join("\n");
+      const baseline = render(text);
+      expect(render(text, { reserve_speaker_units: false })).toEqual(baseline);
+      expect(Object.keys(baseline.sources[0]!)).toEqual(Object.keys(render(text, { reserve_speaker_units: true }).sources[0]!));
+      expect(() => render(text, { reserve_speaker_units: "yes" as unknown as boolean })).toThrow("reserve_speaker_units");
+    });
+  });
+
   it("returns empty text for no sources and rejects unusable budgets", () => {
     expect(renderEvidenceSources([], { max_chars: 1 })).toEqual({ text: "", sources: [] });
     expect(() => renderEvidenceSources([{ text: "x" }], { max_chars: 0 })).toThrow("max_chars");

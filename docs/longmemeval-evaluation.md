@@ -215,6 +215,15 @@ answers with unchanged evidence. Historical diagnostics show 72/74 correct,
 so this is a contribution screen rather than a sufficient route past 95%.
 The helper does not change application defaults or public score claims.
 
+An [offline additive-retrieval diagnostic](../benchmark/LONGMEMEVAL-ADDITIVE-RETRIEVAL-NOTES.md)
+retains all twenty E5 sources and adds up to twenty distinct keyword results.
+Marked-source coverage rises from 463/470 to 470/470 across answerable cases,
+but query-focused excerpts can still omit the actual user statements. The
+separate renderer prototype reserves preferred-speaker statements within an
+additional bounded context budget. Neither source coverage nor code tests
+establish an answer-accuracy gain, and this prototype does not alter the frozen
+temporal experiment or the ordinary renderer default.
+
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
 inspection. It does not import or execute the external Python implementation.

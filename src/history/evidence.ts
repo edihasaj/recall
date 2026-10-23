@@ -11,6 +11,13 @@ export interface EvidenceOptions {
   query?: string;
   per_source_chars?: number;
   preferred_speaker?: "user" | "assistant";
+  /**
+   * With `preferred_speaker`, reserve the earliest complete substantive unit
+   * from that speaker before allocating query-matching units, and rank other
+   * substantive units from that speaker even when they share no query token.
+   * Default false.
+   */
+  reserve_speaker_units?: boolean;
 }
 
 export interface EvidenceRange {
@@ -100,7 +107,9 @@ export function renderEvidenceSources(
   }));
   const candidates = states
     .filter((state) => state.source.text.length > 0)
-    .map((state) => makeCandidate(state, options.query, perSourceChars, options.preferred_speaker))
+    .map((state) => makeCandidate(
+      state, options.query, perSourceChars, options.preferred_speaker, options.reserve_speaker_units === true,
+    ))
     .filter((candidate): candidate is EvidenceCandidate => candidate !== undefined);
   if (candidates.length === 0) return { text: "", sources: metadata };
 
@@ -132,6 +141,9 @@ function validateOptions(options: EvidenceOptions): number {
   ) {
     throw new RangeError("per_source_chars must be a positive safe integer");
   }
+  if (options.reserve_speaker_units !== undefined && typeof options.reserve_speaker_units !== "boolean") {
+    throw new TypeError("reserve_speaker_units must be a boolean");
+  }
   return options.per_source_chars ?? options.max_chars;
 }
 
@@ -162,8 +174,9 @@ function makeCandidate(
   query: string | undefined,
   sourceCap: number,
   preferredSpeaker: EvidenceOptions["preferred_speaker"],
+  reserveSpeakerUnits: boolean,
 ): EvidenceCandidate | undefined {
-  const ranges = chooseSemanticRanges(state.source.text, query, sourceCap, preferredSpeaker);
+  const ranges = chooseSemanticRanges(state.source.text, query, sourceCap, preferredSpeaker, reserveSpeakerUnits);
   if (ranges.length === 0) return undefined;
   return { state, ranges, text: renderRanges(state.source.text, ranges) };
 }
@@ -195,12 +208,21 @@ function chooseSemanticRanges(
   query: string | undefined,
   charCap: number,
   preferredSpeaker: EvidenceOptions["preferred_speaker"],
+  reserveSpeakerUnits = false,
 ): EvidenceRange[] {
   if (text.length <= charCap) return [{ start: 0, end: text.length }];
   const queryTokens = informativeQueryTokens(query ?? "");
   const units = semanticUnits(text, queryTokens);
+  // Opt-in: a direct statement by the preferred speaker can share no word with
+  // the question, so it is reserved and ranked independently of its overlap.
+  const reservedSpeaker = reserveSpeakerUnits ? preferredSpeaker : undefined;
+  const anchor = reservedSpeaker === undefined
+    ? undefined
+    : units.find((unit) => isSubstantiveSpeakerUnit(unit, reservedSpeaker)
+      && fitsIndexes(new Set(), [...unit.context, unit.index], units, charCap));
   const ranked = units
-    .filter((unit) => unit.score > 0)
+    .filter((unit) => unit.score > 0
+      || (anchor !== undefined && isSubstantiveSpeakerUnit(unit, reservedSpeaker!)))
     .sort((left, right) => speakerRank(left, preferredSpeaker) - speakerRank(right, preferredSpeaker)
       || right.score - left.score
       || right.index - left.index);
@@ -214,6 +236,11 @@ function chooseSemanticRanges(
   }
   const selected = new Set<number>();
   const primary = new Set<number>();
+  if (anchor !== undefined) {
+    for (const index of anchor.context) selected.add(index);
+    selected.add(anchor.index);
+    primary.add(anchor.index);
+  }
   for (const unit of ranked) {
     if (fitsIndexes(selected, [...unit.context, unit.index], units, charCap)) {
       for (const index of unit.context) selected.add(index);
@@ -242,6 +269,8 @@ interface SemanticUnit {
   score: number;
   context: number[];
   speaker?: string;
+  /** Has content beyond a bare role label or a trailing-colon heading. */
+  substantive: boolean;
 }
 
 function semanticUnits(text: string, queryTokens: ReadonlySet<string>): SemanticUnit[] {
@@ -279,6 +308,7 @@ function semanticUnits(text: string, queryTokens: ReadonlySet<string>): Semantic
       score: overlapScore(unitText, queryTokens),
       context: [...new Set(context)],
       speaker: explicitSpeaker ?? activeSpeaker,
+      substantive: isSubstantive(unitText),
     });
     if (isRole) {
       activeRole = index;
@@ -290,6 +320,15 @@ function semanticUnits(text: string, queryTokens: ReadonlySet<string>): Semantic
     previousNegatingScope = isNegatingScope(unitText) ? index : -1;
   }
   return units;
+}
+
+function isSubstantive(unitText: string): boolean {
+  const content = unitText.replace(/^(?:user|assistant|system|tool):\s*/i, "");
+  return content.length > 0 && !content.endsWith(":");
+}
+
+function isSubstantiveSpeakerUnit(unit: SemanticUnit, speaker: string): boolean {
+  return unit.substantive && unit.speaker === speaker;
 }
 
 function roleSpeaker(text: string): string | undefined {

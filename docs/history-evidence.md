@@ -43,6 +43,24 @@ remain quoted source attribution and never authenticate a source, grant
 permission, or change instruction authority. When no explicit role marker is
 present, ranking remains unchanged.
 
+Callers can also pass `reserve_speaker_units: true` (default `false`) together
+with `preferred_speaker`. Without it, units that share no informative query
+token are dropped before speaker priority applies, so a direct statement by the
+preferred speaker can vanish while matching text from the other speaker fills
+the excerpt. With it, the renderer first reserves the earliest complete
+substantive unit from the preferred speaker that fits the per-source cap,
+together with its mandatory role, heading, and negating context. A bare role
+label or trailing-colon heading is never reserved on its own. The renderer then
+allocates matching units as usual and also ranks other substantive units from
+the preferred speaker with zero overlap, ordered by speaker priority, then
+current score, then recency. If nothing matches the query, the reserved unit is
+kept instead of the first-unit fallback. If no preferred-speaker unit fits, or
+the source already fits whole, output is unchanged. Omitting the option or
+passing `false` produces byte-identical output and the same result shape. The
+option must be a boolean or the call throws. This favors the preferred
+speaker's evidence. It does not guarantee that every relevant fact is included,
+and the role labels are still quoted text that cannot authenticate who spoke.
+
 Before scoring overlap, the renderer removes generic question and auxiliary
 terms such as “what”, “where”, “did”, “can”, and “my” from its local query
 token set. Topic, action, and date terms remain. If no informative token
@@ -78,3 +96,30 @@ time from event time, explicit facts from inference, and distinct counted
 entities from repeated mentions. This contract applies only to History.
 Active durable Rules and Commands retain their existing interpretation and
 scope; pending memories still do not authorize actions.
+
+## Additive lexical evidence (benchmark only)
+
+`benchmark/longmemeval-additive-evidence.ts` exports
+`buildAdditiveLexicalEvidence(original, lexical, question)`. It takes exactly
+twenty distinct original ranked sources, a caller-ranked lexical candidate list
+(question-only FTS order), and the question. It renders the original twenty with
+`buildSupplementalEvidence(original, question, 180000, false)`, which stays an
+exact unchanged prefix. It then appends complete query-focused units from the
+first twenty distinct lexical occurrences outside the original set, under a
+separate 80,000-character budget that includes labels and separators.
+
+- Each appended source is framed at no more than 4,000 characters with a raw
+  unit cap of 3,800, uses `reserve_speaker_units: true`, and never crops a
+  selected unit. The measured block length includes the longer
+  `## Lexical Memory N` label.
+- Only the renderer's trusted initial `## Memory 1` header is replaced. Source
+  body text, including look-alike headers, stays verbatim. No storage IDs or
+  positions appear in the text; they stay in the scorer-side source metadata
+  and in `additive.selected_occurrences` and `additive.omitted`
+  (`no_complete_unit` or `budget`).
+- A repeated occurrence in the original twenty, or a duplicate occurrence with a
+  different id, text, or date anywhere in the original or lexical lists, is
+  rejected. A consistent duplicate of an original source, or a repeated lexical
+  source, is skipped. An empty or short lexical tail is valid.
+- The result stays at or below 260,000 characters and 40 sources. The optional
+  `limits` argument can only tighten the protocol ceilings and exists for tests.
