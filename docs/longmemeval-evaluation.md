@@ -192,6 +192,15 @@ evidence permits `--reasoning-effort high` as an experimental alternative to
 requirements. Defaults are unchanged. This pilot is exploratory, uses fresh
 control answers, and cannot replace a full-corpus result.
 
+That pilot finished at **21/24 for control and 22/24 for high reasoning**,
+missing its predeclared net-gain threshold. A separate
+[abstention-recovery replay](../benchmark/LONGMEMEVAL-ABSTENTION-RECOVERY-PROTOCOL.md)
+reviewed all 29 historical negative-premise cases with a limited keyword source
+refresh. Its **474/500 mixed saved-answer score** includes 471 reused historical
+answers and two lost abstentions. It also fails advancement and is not a fresh
+full500 result. The public **472/500** remains unchanged. Both reports retain
+source-grounding caveats and fixed judge verdicts.
+
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
 inspection. It does not import or execute the external Python implementation.

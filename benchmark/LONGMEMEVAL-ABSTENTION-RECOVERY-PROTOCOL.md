@@ -76,3 +76,36 @@ source review of all paired gains is additionally required before advancement;
 preserve ambiguity and unsupported-claim findings alongside the judge's score.
 A fresh full-corpus run of the integrated treatment would need its own frozen
 protocol before a new public benchmark result could be considered.
+
+## Results
+
+All 29 reviews and judges completed in 16.92 minutes, with no call errors,
+internal HTTP retries or unmetered usage. The frozen inventory was unchanged.
+The mixed replay scored **474/500 (94.8%)**, with four gains and two losses
+against the historical 472. Both losses were previously correct abstentions,
+reducing the overall unanswerable result from 28/30 to 26/30. The candidate
+fails both the 476 threshold and the no-abstention-loss gate. It does not
+advance, and the public fresh-run result remains **472/500 (94.4%)**.
+
+Source review separates the mechanisms:
+
+- A newly retrieved statement directly supports the prior marketing role.
+  The final answer still misattributes an assistant-written recruiter draft
+  as personal background in an ancillary paragraph.
+- The three-day event count is directly supported by one lecture day and two
+  workshop days. Its evidence did not change; review bypassed an overly
+  strict requirement that every listed event category had to be represented.
+- The gift and bike gains largely restore pre-existing qualified drafts.
+  Chandelier/jewelry and hybrid/gravel identity remain unestablished. These
+  judged gains are not new fact-retrieval gains.
+- Both lost abstentions acknowledge a missing asked-about employer or role,
+  then answer a related employer/role instead. The substituted facts were
+  already in the original evidence; retrieval did not introduce them.
+
+The fixed verdicts are unchanged. These audits are known-outcome source checks,
+not a blinded grounding-rate estimate. The 58 logical calls recorded
+1,089,346 input tokens and 33,342 output tokens, with complete observed usage.
+
+The private decision record is
+`data/longmemeval-abstention-recovery-decision-2026-10-23.json`. The final report
+SHA-256 is `1009623ea936d9c22245e335cfddf7d42e4de5dba126192c85400be392c83d73`.

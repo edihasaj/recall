@@ -135,6 +135,24 @@ full-corpus target. Three near-identical runs scored 454, 464 and 472, so
 run-to-run variation is large; this is a single run on repeatedly evaluated
 public data, and Hindsight's 473/500 uses different models.
 
+Two subsequent experiments did not qualify for advancement. The
+[paired answer-effort pilot](LONGMEMEVAL-EFFORT-PILOT-PROTOCOL.md) ran fresh
+answers on 24 hash-selected questions that had used low reasoning. Control
+scored **21/24**, and high reasoning **22/24**, with two gains and one loss.
+The net gain of one missed the predeclared threshold of two. Source review
+found one directly supported temporal correction and ambiguity in the other;
+the judged preference loss also carries source-versus-judge caveats.
+
+The [abstention-recovery replay](LONGMEMEVAL-ABSTENTION-RECOVERY-PROTOCOL.md)
+refreshed two keyword sources and reviewed all 29 historical negative-premise
+cases. It scored **474/500 (94.8%) as a mixed saved-answer replay**, with
+471 historical answers reused, four gains and two lost abstentions. It failed
+both the 476 threshold and the no-abstention-loss gate. Some gains merely
+restored earlier qualified drafts; the losses supplied related-employer/role
+answers after acknowledging that the asked-about premise was unsupported.
+All fixed verdicts remain unchanged. Neither experiment changes the public
+fresh-run result of **472/500 (94.4%)**.
+
 
 
 Hindsight's published 94.6% remains a reference result. The
