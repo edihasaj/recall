@@ -36,11 +36,26 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .recallOpenUpdates)) { _ in
             selection = .updates
         }
+        #if MAC_APP_STORE
+        .onReceive(NotificationCenter.default.publisher(for: .recallOpenDashboard)) { _ in
+            selection = .webui
+        }
+        #endif
     }
 }
 
 private enum AppSection: String, Hashable, CaseIterable {
     case overview, updates, cloud, daemon, webui, preferences
+
+    /// The Mac App Store edition updates through the store and keeps cloud
+    /// sign-in out of the app, so those two sections are not offered there.
+    static var visible: [AppSection] {
+        #if MAC_APP_STORE
+        return [.overview, .daemon, .webui, .preferences]
+        #else
+        return allCases
+        #endif
+    }
 
     var label: String {
         switch self {
@@ -96,7 +111,7 @@ private struct SidebarView: View {
             // Nav list
             List(selection: $selection) {
                 Section {
-                    ForEach(AppSection.allCases, id: \.self) { section in
+                    ForEach(AppSection.visible, id: \.self) { section in
                         HStack {
                             Label(section.label, systemImage: section.systemImage)
                             if section == .updates && updates.isAvailable {
@@ -156,6 +171,7 @@ private struct SidebarFooter: View {
                 Spacer()
             }
 
+            #if !MAC_APP_STORE
             HStack(spacing: 8) {
                 Circle()
                     .fill(CloudConnection.isInstalled ? Color.green : Color.gray.opacity(0.6))
@@ -165,7 +181,18 @@ private struct SidebarFooter: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
+            #endif
 
+            #if MAC_APP_STORE
+            Button {
+                webui.openDashboard()
+            } label: {
+                Label("Open Web Dashboard", systemImage: "safari")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            #else
             if webui.running {
                 HStack(spacing: 6) {
                     Button {
@@ -195,6 +222,7 @@ private struct SidebarFooter: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
+            #endif
         }
     }
 }
@@ -216,27 +244,7 @@ private struct DetailView: View {
 
             Divider()
 
-            ScrollView(.vertical) {
-                Group {
-                    switch section {
-                    case .overview:
-                        OverviewTab(controller: controller, webui: webui, updates: updates)
-                    case .updates:
-                        UpdatesTab(updates: updates, onInstall: onInstallUpdate)
-                    case .cloud:
-                        CloudTab()
-                    case .daemon:
-                        DaemonTab(controller: controller, webui: webui)
-                    case .webui:
-                        WebDashboardTab(webui: webui)
-                    case .preferences:
-                        PreferencesTab(preferences: preferences)
-                    }
-                }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            content
         }
         .background(
             LinearGradient(
@@ -246,6 +254,51 @@ private struct DetailView: View {
             )
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if MAC_APP_STORE
+        if section == .webui {
+            WebDashboardTab(webui: webui)
+        } else {
+            scrollingContent
+        }
+        #else
+        scrollingContent
+        #endif
+    }
+
+    private var scrollingContent: some View {
+        ScrollView(.vertical) {
+            Group {
+                switch section {
+                case .overview:
+                    OverviewTab(controller: controller, webui: webui, updates: updates)
+                case .updates:
+                    #if MAC_APP_STORE
+                    EmptyView()
+                    #else
+                    UpdatesTab(updates: updates, onInstall: onInstallUpdate)
+                    #endif
+                case .cloud:
+                    #if MAC_APP_STORE
+                    EmptyView()
+                    #else
+                    CloudTab()
+                    #endif
+                case .daemon:
+                    DaemonTab(controller: controller, webui: webui)
+                case .webui:
+                    WebDashboardTab(webui: webui)
+                case .preferences:
+                    PreferencesTab(preferences: preferences)
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
     }
 }
 
@@ -279,7 +332,11 @@ private struct DetailHeader: View {
         case .daemon:
             return "Local HTTP daemon · lifecycle, paths, logs."
         case .webui:
+            #if MAC_APP_STORE
+            return "Memories, knowledge graph and live activity."
+            #else
             return "Browser-based dashboard on http://localhost:7891."
+            #endif
         case .preferences:
             return "Startup and appearance options."
         }

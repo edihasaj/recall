@@ -9,7 +9,8 @@ settings:
     CODE_SIGN_STYLE: Manual
     ENABLE_HARDENED_RUNTIME: YES
     ARCHS: arm64
-    MARKETING_VERSION: "2.0.7"
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) MAC_APP_STORE"
+    MARKETING_VERSION: "2.0.14"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   Recall:
@@ -18,6 +19,9 @@ targets:
     sources:
       - path: AppStore
         excludes: [listing]
+      - path: Recall/AppPreferences.swift
+      - path: Recall/DashboardShell.swift
+      - path: Recall/DashboardSections.swift
       - path: Recall/Assets.xcassets
       - path: Generated/StoreRuntime
         type: folder

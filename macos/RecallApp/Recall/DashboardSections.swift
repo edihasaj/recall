@@ -48,12 +48,14 @@ struct OverviewTab: View {
                     systemImage: "bolt.fill",
                     active: controller.healthOK
                 )
+#if !MAC_APP_STORE
                 StatusTile(
                     title: "Cloud sync",
                     value: CloudConnection.isInstalled ? "Connected" : "Not connected",
                     systemImage: "cloud.fill",
                     active: CloudConnection.isInstalled
                 )
+#endif
                 StatusTile(
                     title: "Dashboard",
                     value: webui.running ? "Live" : "Ready",
@@ -101,6 +103,7 @@ struct OverviewTab: View {
     }
 }
 
+#if !MAC_APP_STORE
 struct CloudTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -171,7 +174,16 @@ struct CloudTab: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
+#endif
 
+#if MAC_APP_STORE
+struct DaemonTab: View {
+    @ObservedObject var controller: DaemonController
+    @ObservedObject var webui: WebUIController
+
+    var body: some View { StoreServiceTab(controller: controller, webui: webui) }
+}
+#else
 struct DaemonTab: View {
     @ObservedObject var controller: DaemonController
     @ObservedObject var webui: WebUIController
@@ -219,7 +231,15 @@ struct DaemonTab: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
+#endif
 
+#if MAC_APP_STORE
+struct WebDashboardTab: View {
+    @ObservedObject var webui: WebUIController
+
+    var body: some View { StoreDashboardView(webui: webui) }
+}
+#else
 struct WebDashboardTab: View {
     @ObservedObject var webui: WebUIController
 
@@ -283,6 +303,7 @@ struct WebDashboardTab: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
+#endif
 
 struct PreferencesTab: View {
     @ObservedObject var preferences: AppPreferences
@@ -379,6 +400,7 @@ struct SettingsView: View {
     }
 }
 
+#if !MAC_APP_STORE
 @MainActor
 enum CloudConnection {
     static var isInstalled: Bool {
@@ -400,6 +422,7 @@ enum CloudConnection {
         NSWorkspace.shared.open(url)
     }
 }
+#endif
 
 struct StatusTile: View {
     let title: String
@@ -430,6 +453,7 @@ struct StatusTile: View {
     }
 }
 
+#if !MAC_APP_STORE
 struct CloudFeatureRow: View {
     let icon: String
     let title: String
@@ -453,6 +477,7 @@ struct CloudFeatureRow: View {
         }
     }
 }
+#endif
 
 struct InlineNotice: View {
     let text: String

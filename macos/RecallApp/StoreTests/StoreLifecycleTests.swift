@@ -20,6 +20,41 @@ final class StoreLifecycleTests: XCTestCase {
         window.orderOut(nil)
     }
 
+    /// The store window is the direct app's sidebar app, without a tab bar or an Updates/Cloud section.
+    func testSidebarPanesRender() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let runtime = StoreRuntime(port: 37902, webPort: 37903, dataDirectory: directory)
+        addTeardownBlock { await runtime.stop() }
+        runtime.start()
+        try await waitForReady(runtime)
+        let controller = DaemonController(runtime: runtime)
+        let webui = WebUIController(daemon: controller)
+        webui.start()
+        let panes: [(String, AnyView)] = [
+            ("overview", AnyView(OverviewTab(controller: controller, webui: webui, updates: UpdateController()))),
+            ("daemon", AnyView(DaemonTab(controller: controller, webui: webui))),
+            ("preferences", AnyView(PreferencesTab(preferences: AppPreferences()))),
+        ]
+        for (name, pane) in panes {
+            let host = NSHostingView(rootView: pane.padding(28).frame(width: 640).background(Color(nsColor: .windowBackgroundColor)))
+            host.frame = NSRect(x: 0, y: 0, width: 640, height: 900)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.contentView = host
+            window.makeKeyAndOrderFront(nil)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            let shot = XCTAttachment(data: data, uniformTypeIdentifier: "public.png")
+            shot.name = "pane-\(name)"
+            shot.lifetime = .keepAlways
+            add(shot)
+            window.orderOut(nil)
+        }
+        await runtime.stop()
+    }
+
     func testExternalMCPClient() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let runtime = StoreRuntime(port: 37902, webPort: 37903, dataDirectory: directory)

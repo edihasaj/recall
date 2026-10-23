@@ -40,6 +40,10 @@ if [[ "${RECALL_MAS_SKIP_STAGE:-0}" != 1 ]]; then
   rsync -a --delete drizzle/ "$stage/drizzle/"
   cp package.json package-lock.json "$stage/"
   npm ci --omit=dev --prefix "$stage" --no-audit --no-fund
+  # A source build of a native module leaves toolchain symlinks that break bundle signing.
+  if [[ -e "$stage/node_modules/better-sqlite3/build/node_gyp_bins" ]]; then
+    trash "$stage/node_modules/better-sqlite3/build/node_gyp_bins"
+  fi
 fi
 
 # Sign every bundled native library before signing the inheriting Node executable.

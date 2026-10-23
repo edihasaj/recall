@@ -9,12 +9,16 @@ read_when:
 
 Recall's Mac App Store record is `6822790969`, titled **Recall: Coding Memory**.
 The bundle identifier remains `com.edihasaj.recall`, registered ID `ZYP72V89B5`,
-team `T8J48M4QVY`. The initial store version is **2.0.7 (1)** for Apple Silicon
-and macOS 15+. Pricing is free in all 175 territories, including future
+team `T8J48M4QVY`. Pricing is free in all 175 territories, including future
 territories. App Privacy is published as **Data Not Collected**.
-Version **2.0.7 (1)** was submitted on **14 October 2026**. Apple's review API
-reports **WAITING_FOR_REVIEW**, and the processed Mac build is `VALID`.
-The release is configured to publish automatically after approval.
+
+Version **2.0.7 (1)** was submitted on 14 October 2026 and rejected on
+15 October under Guidelines 4.3 and 4.2.6, with a message that asks for a
+Resolution Center reply instead of a new build. Version **2.0.14 (1)** for
+Apple Silicon and macOS 15+ was uploaded on 23 October 2026 (delivery
+`d25a4da5-fcfd-4a73-812d-882f7c248237`). It is not yet attached to a review
+submission. Its window is the direct app's sidebar app, not a separate store
+design; see Architecture.
 
 ## Architecture
 
@@ -24,13 +28,21 @@ MCP server, and web dashboard with a standalone Node 24 executable.
 
 ```text
 Recall.app (App Sandbox)
-  ├─ native memory, repository, connection, and preference screens
+  ├─ the direct app's sidebar: Overview, Daemon, Web Dashboard, Preferences
   ├─ app-owned Node child → SQLite, graph, local model cache
   ├─ local daemon :7892 → MCP + raw agent hook bridge
   └─ dashboard :7893 → embedded WKWebView
                          ↑
               configured agents on this Mac
 ```
+
+The window compiles the direct app's `DashboardShell`, `DashboardSections`, and
+`AppPreferences` with the `MAC_APP_STORE` condition. Updates and Recall Cloud
+are not offered, because the store delivers updates and the store edition keeps
+cloud sign-in out. `AppStore/StoreCompat.swift` backs the shared views with the
+app-owned service, and the Web Dashboard section shows the dashboard in the
+window. Repository folders and agent connections live in the Daemon pane. Start
+at login defaults to off.
 
 The service receives a minimal environment with an explicit container data
 path and `RECALL_EMBEDDING_CACHE_DIR`. It inherits the parent's sandbox and
@@ -53,7 +65,7 @@ rather than requiring an external Git installation.
 
 The inherited-sandbox Node executable cannot be launched directly by an
 outside agent. MCP and optional lifecycle hooks therefore use local HTTP.
-The Connect Agents screen copies connection commands and hook JSON; it does
+The Daemon pane's Connect agents card copies connection commands and hook JSON; it does
 not rewrite another app's settings. Review hook trust in the agent itself.
 
 The store database is separate from the direct-download edition's `~/.recall`.
@@ -62,7 +74,7 @@ per agent to avoid duplicate capture from two installations.
 
 ## Agent connections
 
-The app provides these commands in Connect Agents:
+The Daemon pane provides these commands under Connect agents:
 
 ```bash
 codex mcp add recall-store --url http://127.0.0.1:7892/mcp
@@ -80,9 +92,9 @@ Startup and prompt responses return the agent's `hookSpecificOutput` envelope;
 tool failures retain their failure status. Hook commands have a deadline and
 fail without blocking the agent if Recall is closed.
 
-The Add Memory screen saves explicitly confirmed rules through the store-only
-`POST /store/memory` endpoint. A repository is optional; an empty repository
-makes a rule global. The dashboard reviews memories, graph relationships,
+The store-only `POST /store/memory` endpoint saves explicitly confirmed rules
+for tests and tooling; the app window has no separate Add Memory screen. A
+repository is optional; an empty repository makes a rule global. The dashboard reviews memories, graph relationships,
 sessions, activity, and contradictions without requiring a coding agent.
 
 `GET /health` reports the optional service `instance_id`. `GET /update` reports
