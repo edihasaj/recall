@@ -1,16 +1,17 @@
 // Literal response contracts belong to the task that requested them. They are
 // not durable preferences, even when a worker prompt says "always" or an
 // extractor rewrites "Reply only ..." as "Use Reply only ... instead".
-const RESPONSE_CLAUSE = /^(?:(?:please|just|use|always)\s+|(?:from now on|going forward)\s*,?\s*)*(?:reply|respond|answer|return|output|say|print)\s+(?:(?:with|using)\s+)?(?:(only|exactly|just)\s+(?:with\s+)?(.+)|(.+?)\s+only)$/i;
+const PREFIX = /^(?:please|just|use|always|from now on|going forward)\s+/i;
+const RESPONSE_VERB = /^(?:reply|respond|answer|return|output|say|print)\s+/i;
 const FORMAT = /^(?:valid\s+)?(?:json|yaml|xml|csv|tsv|toml|markdown|plain\s+text|code)$/i;
 const QUOTED = /^(?:"[^"\n]+"|'[^'\n]+'|`[^`\n]+`|“[^”\n]+”|‘[^’\n]+’)$/u;
 
 export function isFixedReplyInstruction(text: string): boolean {
   if (!/\b(?:reply|respond|answer|return|output|say|print)\b/i.test(text)) return false;
   for (const clause of responseClauses(text)) {
-    const match = RESPONSE_CLAUSE.exec(clause.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, ""));
-    if (!match) continue;
-    const payload = (match[2] ?? match[3]).replace(/\s+instead$/i, "").trim();
+    const parsed = parseResponseClause(clause);
+    if (!parsed) continue;
+    const payload = (withoutLastWord(parsed.payload, "instead") ?? parsed.payload).trim();
     const quoted = QUOTED.test(payload);
     const value = quoted ? payload.slice(1, -1).trim() : payload;
     // Preserve actual output-format and language preferences, rather than
@@ -18,9 +19,32 @@ export function isFixedReplyInstruction(text: string): boolean {
     if (FORMAT.test(value) || /^(?:in|as)\s+/i.test(value)) continue;
     if (quoted || /^[A-Za-z0-9]+(?:[_:-][A-Za-z0-9]+)+$/.test(value)
       || /^(?:ok|yes|no|ready|done|pass|fail|pong)$/i.test(value)
-      || match[1]?.toLowerCase() === "exactly") return true;
+      || parsed.exactly) return true;
   }
   return false;
+}
+
+function withoutLastWord(text: string, word: string): string | undefined {
+  const value = text.trimEnd(); const boundary = value.length - word.length;
+  if (boundary < 1 || value.slice(boundary).toLowerCase() !== word || !/\s/.test(value[boundary - 1])) return;
+  return value.slice(0, boundary).trimEnd();
+}
+
+function parseResponseClause(clause: string): { payload: string; exactly: boolean } | undefined {
+  let value = clause.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, "");
+  // Consume at most eight explicit prefixes instead of a nested repeating
+  // regex. Adversarial repetitions must not trigger exponential backtracking.
+  for (let count = 0; count < 8; count++) {
+    const prefix = PREFIX.exec(value);
+    if (!prefix) break;
+    value = value.slice(prefix[0].length);
+  }
+  const verb = RESPONSE_VERB.exec(value); if (!verb) return;
+  value = value.slice(verb[0].length).replace(/^(?:with|using)\s+/i, "");
+  const qualifier = /^(only|exactly|just)\s+/i.exec(value);
+  if (qualifier) return { payload: value.slice(qualifier[0].length).replace(/^with\s+/i, ""), exactly: qualifier[1].toLowerCase() === "exactly" };
+  const payload = withoutLastWord(value, "only");
+  if (payload) return { payload, exactly: false };
 }
 
 function responseClauses(text: string): string[] {
@@ -36,8 +60,9 @@ function responseClauses(text: string): string[] {
     } else if (/[.!?;,\r\n]/.test(character)) {
       clauses.push(text.slice(start, index)); start = index + 1;
     } else if (/\s/.test(character)) {
-      const conjunction = /^\s+(?:and|then)\s+(?=(?:(?:please|just|use|always)\s+)*(?:reply|respond|answer|return|output|say|print)\b)/i.exec(text.slice(index, index + 100));
-      if (conjunction) {
+      const ahead = text.slice(index, index + 100);
+      const conjunction = /^\s+(?:and|then)\s+/i.exec(ahead);
+      if (conjunction && parseResponseClause(ahead.slice(conjunction[0].length))) {
         clauses.push(text.slice(start, index));
         start = index + conjunction[0].length; index = start - 1;
       }

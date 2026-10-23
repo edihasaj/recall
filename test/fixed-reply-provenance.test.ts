@@ -37,6 +37,9 @@ beforeEach(() => {
 afterEach(() => { closeDb(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("fixed response contracts stay in their task", () => {
+  it("handles adversarial prefix repetition without regex backtracking", () => {
+    expect(isFixedReplyInstruction("from now on ".repeat(10_000) + "reply differently.")).toBe(false);
+  });
   it.each([raw, rewritten, "Please respond only OTHER_PROBE_OK.", "Output exactly `two arbitrary words`.",
     "Do not inspect files; reply only 'green light'.", "Always answer only READY", "Return THIRD_TOKEN only.",
     "Don't use tools. Reply only `probe.finished;ready`.", 'Respond exactly "test finished. Ready!".',
