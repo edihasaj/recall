@@ -78,3 +78,32 @@ advancement screen with little statistical power, not proof of improvement.
 Pilot accuracy cannot be relabeled as a full500 score or replace the public
 94.4% claim. Any later full run must count every planned question, preserve
 failures, and report variation alongside the historical runs.
+
+## Results
+
+The pilot completed all 48 evaluations in 69.47 minutes. Fresh control scored
+**21/24**, and high initial reasoning scored **22/24**: two paired gains and
+one loss. Both scored 2/3 on unanswerable questions. There were no unresolved
+errors, and all evidence, answer prompts and system instructions matched.
+The net gain of one failed the predeclared threshold of two. This candidate
+does not advance to a full-corpus run, and the public 472/500 stays unchanged.
+
+Source review found a directly supported concert-companion correction in one
+gain. The other gain preserves conflicting museum chronology, with unresolved
+gallery/museum identity. The judged preference loss includes a speculative
+cross-domain preference inference, but the judge also called explicit dietary
+details unsupported despite their presence in the evidence. All fixed verdicts
+remain as recorded; these caveats are not rejudging or score adjustments.
+
+Control recorded 29,479 output tokens; candidate recorded 54,199, plus one
+timed-out answer whose usage is unknown. Summed completed answer-call time was
+2,105 seconds for control and 3,560 seconds for candidate, with a further 600
+seconds on the failed candidate call. A recommendation case took roughly 19
+minutes including its successful same-effort retry. Internal HTTP attempts
+retain only final-response usage, so complete physical-attempt cost is unknown.
+
+The private decision record is
+`data/longmemeval-effort-pilot-decision-2026-10-23.json`. It binds result and
+source-audit hashes. The frozen source, Node runtime and dependencies are
+archived under SHA-256
+`a5be251ff5f2afdf22853f07f786275b0b6b83753debeb959a701969fc6f26c2`.
