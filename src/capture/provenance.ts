@@ -1,4 +1,5 @@
 import type { MemoryItem } from "../types.js";
+import { isFixedReplyInstruction } from "./fixed-reply.js";
 
 // These are transport envelopes, not natural-language intent heuristics.
 // A generated message arriving on a user-prompt hook is still generated.
@@ -25,7 +26,19 @@ export function isTaskLimitedRule(text: string): boolean {
 export function hasNonDurableProvenance(memory: MemoryItem): boolean {
   return isUmpSourceRecord(memory)
     || hasOnlyGeneratedEvidence(memory)
-    || isTaskLimitedRule(memory.text);
+    || isTaskLimitedRule(memory.text)
+    || isFixedReplyInstruction(memory.text)
+    || hasOnlyTaskLimitedEvidence(memory);
+}
+
+function hasOnlyTaskLimitedEvidence(memory: MemoryItem): boolean {
+  const contexts = memory.evidence
+    .filter((entry) => entry.type === "session_correction" || entry.type === "review_feedback")
+    .map((entry) => entry.context?.trim())
+    .filter((context): context is string => Boolean(context));
+  return contexts.length > 0 && contexts.every((context) =>
+    isGeneratedCaptureContext(context) || isTaskLimitedRule(context) || isFixedReplyInstruction(context),
+  );
 }
 
 /**
