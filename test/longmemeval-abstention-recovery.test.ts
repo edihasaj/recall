@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  buildModelCall, runReplay, summarizeReplay, usageSummary, validateBaseline, ANSWER_INSTRUCTIONS, REPLAY,
+  buildModelCall, parseArgs, runReplay, summarizeReplay, usageSummary, validateBaseline, ANSWER_INSTRUCTIONS, REPLAY,
   type BaselineReport, type JournalEntry, type ReplayRow,
 } from "../benchmark/longmemeval-abstention-recovery.js";
 import { HISTORY_EVIDENCE_POLICY } from "../src/history/evidence-policy.js";
+import { SCOPE_REVIEW_INSTRUCTION, SCOPE_REVIEW_INSTRUCTION_SHA256 } from "../benchmark/longmemeval-recovery-scope.js";
 import { buildSupplementalEvidence } from "../benchmark/longmemeval-supplemental-evidence.js";
 import { MINIMAL_ANSWER_POLICY } from "../benchmark/longmemeval-minimal-answer-policy.js";
 import { questionSourcesHash } from "../benchmark/longmemeval-source-identity.js";
@@ -64,6 +65,63 @@ function fixture(matching: number[] = [20, 21]) {
 
 const reply = (text: string, error: string | null = null): Call => ({ text, error, attempts: 1, elapsed_ms: 1, model: "stub", usage: { input_tokens: 3, output_tokens: 2 }, prompt_sha256: "stub" });
 const ok = (judge = true): ModelCall => async (kind) => reply(kind === "judge" ? JSON.stringify({ correct: judge, reason: "r" }) : JSON.stringify({ reasoning: "r", answer: "Reviewed answer" }));
+
+describe("review policy", () => {
+  const capture = async (reviewPolicy?: "original" | "scope") => {
+    const prompts: string[] = [];
+    const o = { ...fixture().opts(), live: true, reviewPolicy };
+    const report = await runReplay(o, async (kind, prompt, meta) => {
+      if (kind === "answer") prompts.push(prompt);
+      return ok()(kind, prompt, meta);
+    });
+    return { prompts, report: report as unknown as { review_policy: unknown; results: ReplayRow[]; comparison_valid: boolean } };
+  };
+
+  it("default and explicit original policy send identical review prompts and record no instruction", async () => {
+    const implicit = await capture(), explicit = await capture("original");
+    expect([...implicit.prompts].sort()).toEqual([...explicit.prompts].sort());
+    expect(implicit.report.review_policy).toEqual({ name: "original", instruction_sha256: null });
+    for (const row of implicit.report.results) {
+      expect(row).toMatchObject({ review_policy: "original", review_instruction_sha256: null });
+      expect(implicit.prompts.map(sha256)).toContain(row.review_prompt_sha256);
+    }
+    for (const prompt of implicit.prompts) expect(prompt).not.toContain(SCOPE_REVIEW_INSTRUCTION);
+  });
+
+  it("scope policy changes the generation prompt that is actually sent and records policy and instruction hash", async () => {
+    const base = await capture("original"), scope = await capture("scope");
+    expect(scope.report.review_policy).toEqual({ name: "scope", instruction_sha256: SCOPE_REVIEW_INSTRUCTION_SHA256 });
+    expect(scope.report.comparison_valid).toBe(false);
+    expect(scope.prompts).toHaveLength(base.prompts.length);
+    for (const prompt of scope.prompts) expect(prompt.split(SCOPE_REVIEW_INSTRUCTION)).toHaveLength(2);
+    for (const row of scope.report.results) {
+      expect(row).toMatchObject({ review_policy: "scope", review_instruction_sha256: SCOPE_REVIEW_INSTRUCTION_SHA256 });
+      expect(scope.prompts.map(sha256)).toContain(row.review_prompt_sha256);
+      expect(base.prompts.map(sha256)).not.toContain(row.review_prompt_sha256);
+    }
+    // Source refresh, drafts and evidence are identical between policies; only the review prompt differs.
+    base.report.results.forEach((row, i) => {
+      const other = scope.report.results[i]!;
+      expect(other.evidence!.text).toBe(row.evidence!.text);
+      expect(other.draft_answer).toBe(row.draft_answer);
+      expect(other.source_changes).toEqual(row.source_changes);
+    });
+  });
+
+  it("keeps native model configuration identical across policies and rejects unknown policies", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-lme-policy-key-"));
+    writeFileSync(join(dir, "token"), "t\n");
+    process.env.DGX_KEY_FILE = join(dir, "token");
+    process.env.DGX_BASE_URL = "http://127.0.0.1:9/v1";
+    const call = buildModelCall(async () => Response.json({ status: "completed", output_text: "{}", usage: { input_tokens: 1, output_tokens: 1 } }));
+    expect((await call("answer", "p")).request_config).toEqual({ reasoning_effort: "medium", max_output_tokens: 8192 });
+    const args = ["--baseline", "b", "--input", "i", "--rankings", "r", "--out", "o"];
+    expect(parseArgs(args).reviewPolicy).toBe("original");
+    expect(parseArgs([...args, "--review-policy", "scope"]).reviewPolicy).toBe("scope");
+    expect(() => parseArgs([...args, "--review-policy", "creative"])).toThrow(/Invalid review policy/);
+    await expect(runReplay({ ...fixture().opts(), reviewPolicy: "creative" as never })).rejects.toThrow(/Invalid review policy/);
+  });
+});
 
 describe("abstention recovery replay", () => {
   it("prepares offline without credentials and selects every override row regardless of correctness", async () => {

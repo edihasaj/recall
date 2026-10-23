@@ -6,7 +6,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { buildSupplementalEvidence } from "./longmemeval-supplemental-evidence.js";
-import { answerGenerationClock, answerTaskContract, groundedAnswerReviewPrompt } from "./longmemeval-answer-review.js";
+import { caseReviewPrompt, parseReviewPolicy, policyProvenance, type ReviewPolicy } from "./longmemeval-recovery-scope.js";
 import { longRequestFetch } from "./longmemeval-qa-transport.js";
 import { questionSourcesHash } from "./longmemeval-source-identity.js";
 import { HISTORY_EVIDENCE_POLICY } from "../src/history/evidence-policy.js";
@@ -29,7 +29,7 @@ const BASELINE_INVOCATION: Record<string, unknown> = {
 };
 const CODE_FILES = [
   "./longmemeval-qa-support.ts", "./longmemeval-qa-transport.ts", "./longmemeval-supplemental-evidence.ts",
-  "./longmemeval-highlighted-evidence.ts", "./longmemeval-focused-evidence.ts", "./longmemeval-answer-review.ts",
+  "./longmemeval-highlighted-evidence.ts", "./longmemeval-focused-evidence.ts", "./longmemeval-answer-review.ts", "./longmemeval-recovery-scope.ts",
   "./longmemeval-source-identity.ts", "./longmemeval-inference-policy.ts", "./longmemeval-minimal-answer-policy.ts",
   "../src/history/evidence.ts", "../src/history/evidence-policy.ts", "../src/text/match.ts", "../src/vector/sqlite-fts.ts",
   "../src/vector/synonyms.ts", "../src/data/synonyms.en.json", "../src/models/retrieval-text.ts", "./temporal-model.ts",
@@ -55,6 +55,7 @@ export type ReplayRow = {
   gold_coverage: { baseline: Coverage; refreshed: Coverage } | null;
   review_prompt_sha256: string | null; review_call: Call | null; review_answer: string | null;
   judge_call: Call | null; replay_correct: boolean | null; error: string | null;
+  review_policy: ReviewPolicy; review_instruction_sha256: string | null;
 };
 /** One logical model call is journaled twice: a start event before the await and a finish event after it. */
 export type JournalStart = { seq: number; event: "start"; at: string; question_id: string; kind: string; prompt_sha256: string };
@@ -68,6 +69,7 @@ type Unsequenced = JournalEntry extends infer T ? T extends unknown ? Omit<T, "s
 export type ReplayOptions = {
   baseline: string; input: string; rankings: string; out: string; live: boolean; concurrency: number;
   baselineSha256?: string; expectedQuestions?: number; target?: number;
+  reviewPolicy?: ReviewPolicy;
 };
 
 /** Fail closed unless the historical report is complete, error-free and bound to the supplied input and rankings. */
@@ -121,12 +123,13 @@ export function leaksIdentifiers(prompt: string, item: Case, ranked: Ranked[]): 
   return [item.question_id, ...item.gold_session_ids, ...ranked.map((row) => row.id)].some((id) => id.length >= 6 && prompt.includes(id));
 }
 
-export function prepareCase(item: Case, base: BaselineRow, ranking: Ranking): { row: ReplayRow; prompt: string | null } {
+export function prepareCase(item: Case, base: BaselineRow, ranking: Ranking, policy: ReviewPolicy = "original"): { row: ReplayRow; prompt: string | null } {
   const row: ReplayRow = {
     question_id: item.question_id, question_type: item.question_type, is_abstention: item.is_abstention,
     baseline_correct: base.correct, baseline_answer: base.answer, draft_answer: base.draft_answer ?? null, evidence: null,
     source_changes: null, gold_coverage: null, review_prompt_sha256: null, review_call: null, review_answer: null,
     judge_call: null, replay_correct: null, error: null,
+    review_policy: policy, review_instruction_sha256: policyProvenance(policy).instruction_sha256,
   };
   try {
     const refreshed = refreshSources(item, ranking);
@@ -145,9 +148,7 @@ export function prepareCase(item: Case, base: BaselineRow, ranking: Ranking): { 
     };
     row.gold_coverage = { baseline: coverage(item, refreshed.original), refreshed: coverage(item, refreshed.ranked) };
     if (typeof base.draft_answer !== "string" || !base.draft_answer.trim()) throw new Error("baseline_draft_missing");
-    const prompt = groundedAnswerReviewPrompt(
-      item.question, answerGenerationClock(item.answer_prompt_prefix), evidence.text, base.draft_answer, answerTaskContract(item.answer_prompt_prefix),
-    );
+    const prompt = caseReviewPrompt(policy, item, evidence.text, base.draft_answer);
     if (leaksIdentifiers(prompt, item, refreshed.ranked)) throw new Error("review_prompt_leaks_identifiers");
     row.review_prompt_sha256 = sha256(prompt);
     return { row, prompt };
@@ -296,12 +297,13 @@ export async function runReplay(options: ReplayOptions, injectedCall?: ModelCall
   if (!selected.length) throw new Error("No premise-override rows selected");
   if (protocolRun && selected.length !== REPLAY.overrides) throw new Error("Live runs require exactly the 29 protocol premise-override rows");
   verifySources(selected.map((row) => caseById.get(row.question_id)!), rankById, input.provenance, rankingFile.dataset_sha256);
-  const prepared = selected.map((base) => prepareCase(caseById.get(base.question_id)!, base, rankById.get(base.question_id)!));
+  const policy = parseReviewPolicy(options.reviewPolicy);
+  const prepared = selected.map((base) => prepareCase(caseById.get(base.question_id)!, base, rankById.get(base.question_id)!, policy));
   const prepareErrors = prepared.filter((entry) => entry.row.error).length;
   const executing = options.live || injectedCall !== undefined;
   const mode = injectedCall ? "injected_test" : options.live ? "live" : "prepare";
   const common = {
-    mode, mixed_saved_answer_replay: true, fresh_full500: false, started_at: new Date().toISOString(), runtime: process.version,
+    mode, review_policy: policyProvenance(policy), mixed_saved_answer_replay: true, fresh_full500: false, started_at: new Date().toISOString(), runtime: process.version,
     hashes: { ...hashes, code: codeHashes(), package_lock: sha256(readFileSync(fileURLToPath(new URL("../package-lock.json", import.meta.url)))) },
     selection: { rule: "baseline premise_override === true, regardless of correctness, reference, category or abstention label", count: selected.length, question_ids: selected.map((r) => r.question_id) },
     invocation: {
@@ -365,8 +367,8 @@ export async function runReplay(options: ReplayOptions, injectedCall?: ModelCall
 }
 
 export function parseArgs(args: string[]): ReplayOptions {
-  const keys: Record<string, "baseline" | "input" | "rankings" | "out" | "concurrency"> = {
-    "--baseline": "baseline", "--input": "input", "--rankings": "rankings", "--out": "out", "--concurrency": "concurrency",
+  const keys: Record<string, "baseline" | "input" | "rankings" | "out" | "concurrency" | "reviewPolicy"> = {
+    "--baseline": "baseline", "--input": "input", "--rankings": "rankings", "--out": "out", "--concurrency": "concurrency", "--review-policy": "reviewPolicy",
   };
   const values: Record<string, string> = {};
   let live = false;
@@ -377,11 +379,11 @@ export function parseArgs(args: string[]): ReplayOptions {
     values[key] = value;
   }
   for (const key of ["baseline", "input", "rankings", "out"]) if (!values[key]) throw new Error(`--${key} is required`);
-  return { baseline: values.baseline!, input: values.input!, rankings: values.rankings!, out: values.out!, live, concurrency: Number(values.concurrency ?? REPLAY.maxConcurrency) };
+  return { baseline: values.baseline!, input: values.input!, rankings: values.rankings!, out: values.out!, live, concurrency: Number(values.concurrency ?? REPLAY.maxConcurrency), reviewPolicy: parseReviewPolicy(values.reviewPolicy) };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  runReplay({ ...parseArgs(process.argv.slice(2)), baselineSha256: BASELINE_SHA256 }).then((report) => {
+  Promise.resolve().then(() => runReplay({ ...parseArgs(process.argv.slice(2)), baselineSha256: BASELINE_SHA256 })).then((report) => {
     console.log(JSON.stringify(report.summary));
     if ("trial_status" in report && report.summary && "errors" in report.summary && report.summary.errors) process.exitCode = 1;
   }).catch((error: unknown) => { console.error(error instanceof Error ? error.message : "Replay failed"); process.exitCode = 1; });
