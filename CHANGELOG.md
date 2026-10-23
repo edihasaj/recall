@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Patch moderate dependency advisories: `hono` 4.13.13, `postcss` 8.5.31, `qs`
+  6.16.1 and `vite` 7.3.7. Tests run on `vitest` 4.1.12. The pnpm lockfile now
+  records the integrity of the `@universalmemoryprotocol/core` release tarball,
+  so frozen pnpm installs accept it.
+
 ## 2.0.13 - 2026-10-23
 
 - Patch vulnerable dependencies: `@modelcontextprotocol/sdk` 1.32.1, `adm-zip`
