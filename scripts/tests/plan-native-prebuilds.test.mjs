@@ -12,7 +12,7 @@ test("workflow wires the validated plan before allocating selected build runners
     "d=YAML.safe_load(File.read(ARGV[0]),aliases:true);d['on']=d.delete(true);puts JSON.generate(d)",
     file.pathname], { encoding: "utf8" }));
   const schema = document.on.workflow_dispatch.inputs;
-  assert.equal(schema.node_versions.default, "22");
+  assert.equal(schema.node_versions.default, "24");
   assert.equal(schema.node_versions.type, "string");
   assert.equal(schema.platform.default, "linux");
   assert.equal(schema.architecture.default, "x64");
@@ -30,15 +30,15 @@ test("workflow wires the validated plan before allocating selected build runners
   assert.equal(step.run, "node scripts/plan-native-prebuilds.mjs");
 });
 
-test("defaults request one Linux Node 22 x64 job, never a Mac", () => {
+test("defaults request one Linux Node 24 x64 job, never a Mac", () => {
   assert.deepEqual(planPrebuilds(), {
-    include: [{ os: "linux", arch: "x64", runner: "ubuntu-22.04", node: 22 }],
+    include: [{ os: "linux", arch: "x64", runner: "ubuntu-22.04", node: 24 }],
   });
 });
 
 test("one Apple architecture and ABI allocate only one selected Mac", () => {
   assert.deepEqual(planPrebuilds({ platform: "macos", architecture: "arm64" }), {
-    include: [{ os: "darwin", arch: "arm64", runner: "macos-14", node: 22 }],
+    include: [{ os: "darwin", arch: "arm64", runner: "macos-14", node: 24 }],
   });
 });
 

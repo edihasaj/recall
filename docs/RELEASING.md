@@ -20,9 +20,10 @@ Release artifacts are produced from tags named `vX.Y.Z`.
 - `HOMEBREW_TAP_GITHUB_TOKEN` secret with write access to both taps if Homebrew publishing should run.
 - npm trusted publishing configured for `@edihasaj/recall`, trusting the `edihasaj/recall` repository and the `release.yml` workflow with no environment. The npm job authenticates through GitHub OIDC, so it needs no `NPM_TOKEN` secret. To set it up from a logged-in npm CLI (11.20.0 or later; older CLIs get an unexplained 400 because the registry now requires an allowed action), run `npm trust github @edihasaj/recall --repo edihasaj/recall --file release.yml --allow-publish`, or use the package's Settings page on npmjs.com.
 - XcodeGen available in CI through `brew install xcodegen` (handled by the release workflow).
-- Local `Recall.app` builds need the standalone Node 22.23.4 pinned in `.nvmrc`.
+- Local `Recall.app` builds need the standalone Node 24.22.1 (current LTS) pinned in `.nvmrc`.
   The build script rejects another patch version before producing an app. It uses
-  Node 22 from `PATH` or `~/.nvm/versions/node/`; set `RECALL_NODE_PATH` to
+  the matching Node from `PATH`, `~/.nvm/versions/node/` or
+  `~/.local/share/node/`; set `RECALL_NODE_PATH` to
   select another installation. The signed app's bundled Node cannot load a
   newly rebuilt unsigned SQLite addon during a local build.
 - `OP_SERVICE_ACCOUNT_TOKEN` repository secret with read access to the
@@ -44,10 +45,10 @@ Both flags default off. Native ABI prebuilds require a separate `run_native=true
 production request and default to dry-run. Keep supported ABI combinations; do
 not launch the matrix for unrelated changes. See [CI cost policy](ci-cost-policy.md).
 
-The prebuild selection defaults to one Linux x64 Node 22 job. Request exactly
+The prebuild selection defaults to one Linux x64 Node 24 job. Request exactly
 the required OS, architecture and comma-separated `node_versions`; the planner
 validates them on Linux before allocating a build runner. An Apple arm64 Node
-22 request selects one Mac, not all six Darwin ABI combinations. All supported
+24 request selects one Mac, not all six Darwin ABI combinations. All supported
 Node 20/22/24 and x64/arm64 targets remain available through explicit selectors.
 
 All workflow actions remain pinned. Signing is still native Apple work, while

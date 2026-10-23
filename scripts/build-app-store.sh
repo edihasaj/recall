@@ -3,7 +3,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+required_node_version="$(tr -d '[:space:]' < "$root/.nvmrc")"
+export PATH="$HOME/.local/share/node/node-v$required_node_version-darwin-arm64/bin:$PATH"
 output="${RECALL_MAS_OUTPUT:-$root/build/mac-app-store}"
 stage="$root/macos/RecallApp/Generated/StoreRuntime"
 configuration="${RECALL_MAS_CONFIGURATION:-Release}"
@@ -19,11 +20,10 @@ cd "$root"
 if [[ "${RECALL_MAS_SKIP_STAGE:-0}" != 1 ]]; then
   VITE_RECALL_DAEMON_URL=http://127.0.0.1:7892 npm run build
   mkdir -p "$stage/bin"
-  if [[ ! -x "$runtime_node" ]] || [[ "$("$runtime_node" -p 'process.versions.node.split(".")[0]')" != 22 ]]; then
-    echo "Set RECALL_NODE_PATH to a standalone Node 22 executable." >&2
+  if [[ ! -x "$runtime_node" ]] || [[ "$("$runtime_node" -p 'process.versions.node.split(".")[0]')" != "${required_node_version%%.*}" ]]; then
+    echo "Set RECALL_NODE_PATH to the standalone Node $required_node_version executable from .nvmrc." >&2
     exit 1
   fi
-  required_node_version="$(tr -d '[:space:]' < "$root/.nvmrc")"
   if [[ "$("$runtime_node" -p 'process.versions.node')" != "$required_node_version" ]]; then
     echo "Set RECALL_NODE_PATH to the standalone patched Node $required_node_version from .nvmrc." >&2
     exit 1

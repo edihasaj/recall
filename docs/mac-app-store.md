@@ -20,7 +20,7 @@ The release is configured to publish automatically after approval.
 
 `macos/RecallApp/project-app-store.yml` builds the native store shell in
 `macos/RecallApp/AppStore`. It embeds the normal memory compiler, database,
-MCP server, and web dashboard with a standalone Node 22 executable.
+MCP server, and web dashboard with a standalone Node 24 executable.
 
 ```text
 Recall.app (App Sandbox)
@@ -97,7 +97,7 @@ port so test, store, and direct installations do not connect to each other.
    **Recall Mac Development 2026-10** and **Recall Mac App Store 2026-10**.
 2. Run `scripts/build-app-store.sh`. Set `RECALL_MAS_CONFIGURATION=Debug` for a
    development-signed archive. `RECALL_NODE_PATH` must point to a standalone
-   Node 22 executable; Homebrew's executable depends on external libraries and
+   Node 24 executable; Homebrew's executable depends on external libraries and
    is rejected. The default source is the installed direct app's copied Node.
 3. The script builds and stages production dependencies, signs native modules
    and the inheriting Node executable, archives the app, verifies signatures,

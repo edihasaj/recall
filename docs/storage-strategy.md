@@ -34,7 +34,7 @@ and host them in a sibling repo that `prebuild-install` can resolve.
 ## How it works
 
 1. **Explicit production CI builds selected prebuilds** in `edihasaj/recall`.
-   The default selection is one Linux x64 Node 22 ABI, not the full matrix.
+   The default selection is one Linux x64 Node 24 ABI, not the full matrix.
    Select an OS, architecture, and `node_versions` deliberately. Supported targets remain:
    - darwin x64, darwin arm64
    - linux x64, linux arm64

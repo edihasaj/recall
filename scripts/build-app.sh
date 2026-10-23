@@ -7,31 +7,32 @@ runtime_dir="$app_dir/Generated/Runtime"
 derived_data="$root_dir/build/DerivedData.noindex"
 project_path="$app_dir/RecallApp.xcodeproj"
 node_bin="${RECALL_NODE_PATH:-}"
+required_node_version="$(tr -d '[:space:]' < "$root_dir/.nvmrc")"
+required_node_major="${required_node_version%%.*}"
 
 if [[ -z "$node_bin" ]]; then
   candidate="$(command -v node || true)"
-  if [[ -n "$candidate" && "$("$candidate" -p "process.versions.node.split('.')[0]")" == "22" ]]; then
+  if [[ -n "$candidate" && "$("$candidate" -p "process.versions.node.split('.')[0]")" == "$required_node_major" ]]; then
     node_bin="$candidate"
   fi
 fi
 if [[ -z "$node_bin" ]]; then
-  for candidate in "$HOME"/.nvm/versions/node/v22.*/bin/node; do
+  for candidate in "$HOME"/.nvm/versions/node/v"$required_node_major".*/bin/node "$HOME"/.local/share/node/node-v"$required_node_version"-darwin-*/bin/node; do
     [[ -x "$candidate" ]] && node_bin="$candidate"
   done
 fi
 if [[ -z "$node_bin" ]]; then
-  echo "Recall.app build needs a standalone Node 22; set RECALL_NODE_PATH or install Node 22." >&2
+  echo "Recall.app build needs the standalone Node $required_node_version from .nvmrc; set RECALL_NODE_PATH." >&2
   exit 1
 fi
 
 node_major="$("$node_bin" -p "process.versions.node.split('.')[0]")"
-if [[ "$node_major" != "22" ]]; then
-  echo "Recall.app must embed Node 22; got $("$node_bin" -v) at $node_bin" >&2
-  echo "Set RECALL_NODE_PATH to a Node 22 binary or run nvm use." >&2
+if [[ "$node_major" != "$required_node_major" ]]; then
+  echo "Recall.app must embed Node $required_node_major; got $("$node_bin" -v) at $node_bin" >&2
+  echo "Set RECALL_NODE_PATH to a Node $required_node_major binary or run nvm use." >&2
   exit 1
 fi
 
-required_node_version="$(tr -d '[:space:]' < "$root_dir/.nvmrc")"
 actual_node_version="$("$node_bin" -p 'process.versions.node')"
 if [[ "$actual_node_version" != "$required_node_version" ]]; then
   echo "Recall.app must embed the pinned patched Node $required_node_version; got $actual_node_version." >&2
@@ -70,7 +71,7 @@ rsync -a "$root_dir/node_modules/" "$runtime_dir/node_modules/"
 cp "$root_dir/package.json" "$runtime_dir/package.json"
 cp "$root_dir/package-lock.json" "$runtime_dir/package-lock.json"
 
-# The developer shell may run a newer Node than the embedded Node 22. Always
+# The developer shell may run a different Node than the embedded runtime. Always
 # rebuild ABI-bound modules inside the staged runtime with the binary that will
 # load them; never trust the workspace binding copied above.
 env PATH="$(dirname "$node_bin"):$PATH" \

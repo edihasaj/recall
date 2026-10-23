@@ -9,7 +9,7 @@ const runners = {
 
 /** Select only requested ABI targets; do not silently drop legacy support. */
 export function planPrebuilds({
-  nodeVersions = "22",
+  nodeVersions = "24",
   platform = "linux",
   architecture = "x64",
 } = {}) {
@@ -44,7 +44,7 @@ export function planPrebuilds({
 
 export function writePlan(env) {
   const matrix = planPrebuilds({
-    nodeVersions: env.NODE_VERSIONS ?? "22",
+    nodeVersions: env.NODE_VERSIONS ?? "24",
     platform: env.TARGET_PLATFORM ?? "linux",
     architecture: env.TARGET_ARCHITECTURE ?? "x64",
   });
