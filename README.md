@@ -46,7 +46,8 @@ The bundled web dashboard (open via the menu bar item *Open Dashboard in Browser
 
 ## Benchmarks — Recall vs agentmemory
 
-LongMemEval-S, N=500 non-abstention. Same dataset agentmemory publishes.
+LongMemEval-S, N=500, including 30 unanswerable question IDs. Same dataset
+agentmemory publishes; these are retrieval metrics, not answer accuracy.
 
 | System | R@5 | R@10 | R@20 | NDCG@10 | MRR |
 |---|---|---|---|---|---|
@@ -337,6 +338,12 @@ recall eval retrieval --file docs/retrieval-eval.example.json --json
 recall eval retrieval --file docs/retrieval-eval.recall.json
 recall eval retrieval --file docs/retrieval-eval.recall-hybrid.json
 ```
+
+For facts that change over time, the experimental local MCP tools
+`temporal_remember` and `temporal_query` preserve dated evidence and support
+explicit historical queries. See [temporal assertions and comparison
+methodology](docs/temporal-memory.md) for semantics, current boundaries, and
+the synthetic benchmark.
 
 ## Teach It
 

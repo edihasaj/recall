@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, blob, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const memories = sqliteTable("memories", {
   id: text("id").primaryKey(),
@@ -564,4 +564,28 @@ export const maintenanceCleanupLog = sqliteTable("maintenance_cleanup_log", {
   index("idx_cleanup_log_memory").on(table.memory_id),
   index("idx_cleanup_log_action").on(table.action),
   index("idx_cleanup_log_created").on(table.created_at),
+]));
+
+// Experimental, local-only source assertions whose validity can change over
+// time. These are deliberately separate from ordinary instruction memories.
+export const temporalFacts = sqliteTable("temporal_facts", {
+  id: text("id").primaryKey(),
+  repo: text("repo").notNull(),
+  event_id: text("event_id").notNull(),
+  subject: text("subject").notNull(),
+  predicate: text("predicate").notNull(),
+  value: text("value").notNull(),
+  valid_from: text("valid_from").notNull(),
+  valid_to: text("valid_to"),
+  observed_at: text("observed_at").notNull(),
+  evidence: text("evidence").notNull(),
+  source: text("source"),
+  confidence: real("confidence").notNull().default(0.5),
+  supersedes_id: text("supersedes_id").references((): AnySQLiteColumn => temporalFacts.id),
+  recorded_at: text("recorded_at").notNull(),
+}, (table) => ([
+  uniqueIndex("uq_temporal_facts_repo_event").on(table.repo, table.event_id),
+  index("idx_temporal_facts_lookup").on(table.repo, table.subject, table.predicate),
+  index("idx_temporal_facts_observed").on(table.observed_at),
+  index("idx_temporal_facts_supersedes").on(table.supersedes_id),
 ]));

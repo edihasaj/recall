@@ -15,6 +15,7 @@ import { hasDirectCorrectionEvidence, hasNonDurableProvenance, containsGenerated
 import { isHighRiskRule } from "../capture/correction.js";
 import { isEphemeralTaskConstraint, isNonUserCaptureContext } from "../capture/context.js";
 import { memoryRepoAliases } from "../repo/aliases.js";
+import { preferredEvidenceSpeaker, renderEvidenceSources } from "../history/evidence.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
@@ -136,6 +137,8 @@ export interface CompiledContext {
   memories_included: string[];
   memories_dropped: string[];
   history_included: string[];
+  /** Retrieved history that could not fit a complete source passage. */
+  history_omitted?: string[];
   token_estimate: number;
   /**
    * The confidence gate actually applied. Callers cannot infer this: with no
@@ -335,9 +338,15 @@ export async function compileContextHybrid(
   // and similar boilerplate dominated the embedding signal.
   const normalizedQuery = req.query_text ? normalizeQueryForRetrieval(req.query_text) : "";
   const effectiveQuery = normalizedQuery.length > 0 ? normalizedQuery : undefined;
-  const selectedHistory = effectiveQuery
+  const retrievedHistory = effectiveQuery
     ? await selectRelevantHistory(db, req.repo, effectiveQuery, config.max_history_snippets)
     : selectRepoHistory(db, req.repo, config.max_history_snippets);
+  const omittedHistory: string[] = [];
+  const selectedHistory = retrievedHistory.filter((snippet) => {
+    if (!effectiveQuery || renderHistorySnippet(snippet, effectiveQuery)) return true;
+    omittedHistory.push(snippet.id);
+    return false;
+  });
 
   const repoMemories = memoryRepoAliases(db, req.repo).flatMap((repo) => queryMemories(db, { repo }));
   const globalMemories = queryMemories(db, { scope: "global" });
@@ -392,14 +401,16 @@ export async function compileContextHybrid(
   );
 
   if (passing.length === 0 && selectedHistory.length === 0) {
+    const omissionText = renderPack([], req.repo, [], effectiveQuery, omittedHistory.length);
     return {
       confidence_threshold: config.confidence_threshold,
       near_misses: hybridNearMisses,
-      text: "",
+      text: omissionText,
       memories_included: [],
       memories_dropped: dropped.map((m) => m.id),
       history_included: [],
-      token_estimate: 0,
+      history_omitted: omittedHistory,
+      token_estimate: Math.ceil(omissionText.length / 4),
     };
   }
 
@@ -532,7 +543,7 @@ export async function compileContextHybrid(
   }
 
   if (selected.length === 0) {
-    const historyOnlyText = renderPack([], req.repo, selectedHistory);
+    const historyOnlyText = renderPack([], req.repo, selectedHistory, effectiveQuery, omittedHistory.length);
     if (historyOnlyText) {
       recordHistoryInjections(db, {
         snippet_ids: selectedHistory.map((snippet) => snippet.id),
@@ -546,6 +557,7 @@ export async function compileContextHybrid(
         memories_included: [],
         memories_dropped: [...dropped, ...passing].map((m) => m.id),
         history_included: selectedHistory.map((snippet) => snippet.id),
+        history_omitted: omittedHistory,
         token_estimate: Math.ceil(historyOnlyText.length / 4),
       };
     }
@@ -557,18 +569,19 @@ export async function compileContextHybrid(
       memories_included: [],
       memories_dropped: [...dropped, ...passing].map((m) => m.id),
       history_included: [],
+      history_omitted: omittedHistory,
       token_estimate: 0,
     };
   }
 
   while (
     selected.length > 1 &&
-    Math.ceil(renderPack(selected, req.repo, selectedHistory).length / 4) > config.token_budget
+    Math.ceil(renderPack(selected, req.repo, selectedHistory, effectiveQuery, omittedHistory.length).length / 4) > config.token_budget
   ) {
     selected.pop();
   }
 
-  const finalText = renderPack(selected, req.repo, selectedHistory);
+  const finalText = renderPack(selected, req.repo, selectedHistory, effectiveQuery, omittedHistory.length);
   const finalTokenEstimate = Math.ceil(finalText.length / 4);
   recordMemoryInjections(db, {
     memory_ids: selected.map((memory) => memory.id),
@@ -599,14 +612,15 @@ export async function compileContextHybrid(
         .map((memory) => memory.id),
     ],
     history_included: selectedHistory.map((snippet) => snippet.id),
+    history_omitted: omittedHistory,
     token_estimate: finalTokenEstimate,
   };
 }
 
 // --- Render ---
 
-function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[] = []): string {
-  if (items.length === 0 && history.length === 0) return "";
+function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[] = [], historyQuery?: string, omittedHistoryCount = 0): string {
+  if (items.length === 0 && history.length === 0 && omittedHistoryCount === 0) return "";
 
   const rules = items.filter((m) => m.type === "rule" || m.type === "decision");
   const commands = items.filter((m) => m.type === "command");
@@ -634,9 +648,13 @@ function renderPack(items: MemoryItem[], repo: string, history: HistorySnippet[]
     );
   }
 
-  if (history.length > 0) {
+  if (history.length > 0 || omittedHistoryCount > 0) {
+    const historyText = history.map((snippet) => renderHistorySnippet(snippet, historyQuery)).filter(Boolean);
+    if (omittedHistoryCount > 0) {
+      historyText.push(`[${omittedHistoryCount} matching history summaries omitted: no complete passage fit the excerpt budget.]`);
+    }
     sections.push(
-      "## History\n" + history.map(renderHistorySnippet).join("\n"),
+      "## History\n" + historyText.join("\n"),
     );
   }
 
@@ -754,7 +772,20 @@ async function selectRelevantHistory(
 const HISTORY_ENTRY_MAX_CHARS = 120;
 const HISTORY_MAX_ENTRIES_PER_SNIPPET = 2;
 
-function renderHistorySnippet(snippet: HistorySnippet): string {
+function renderHistorySnippet(snippet: HistorySnippet, query?: string): string {
+  if (query) {
+    const evidence = renderEvidenceSources([{
+      text: snippet.text,
+      observed_at: snippet.updated_at,
+      date_kind: "record_updated",
+    }], {
+      query, max_chars: 520, per_source_chars: 420,
+      preferred_speaker: preferredEvidenceSpeaker(query),
+    });
+    return evidence.sources.some((source) => source.used_chars > 0)
+      ? `- [${snippet.kind}] ${evidence.text}` : "";
+  }
+
   const lines = snippet.text
     .split("\n")
     .map((line) => line.trim())

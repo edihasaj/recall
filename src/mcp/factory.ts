@@ -56,6 +56,8 @@ import {
 } from "../graph/store.js";
 import { loadEmbeddingConfigFromEnv } from "../embeddings/embeddings.js";
 import { recordCompletionUseValueEventsSemantic } from "../models/memory-value.js";
+import { registerTemporalTools } from "../temporal/mcp.js";
+import { HISTORY_EVIDENCE_POLICY } from "../history/evidence-policy.js";
 
 export function createRecallMcpServer(db: RecallDb = initDb()) {
 const activityEventTypes = [
@@ -142,9 +144,11 @@ function tool(name: string, description: string, schema: any, handler: (args: an
 
 // --- Tools ---
 
+registerTemporalTools(server, db);
+
 tool(
   "query",
-  "Retrieve memory for the current task. If no relevant Recall context is visible, call query before non-trivial work; configured hooks are not proof that context was delivered. Also query when the task or repository changes or the user asks for memory. Prefer query_text for relevance. Pending preferences are labelled unconfirmed and never authorize actions.",
+  "Retrieve memory for the current task. If no relevant Recall context is visible, call query before non-trivial work; configured hooks are not proof that context was delivered. Also query when the task or repository changes or the user asks for memory. Prefer query_text for relevance. Pending preferences are labelled unconfirmed and never authorize actions.\n\nApply the following contract only to retrieved History excerpts. Active durable Rules and Commands retain their existing interpretation and scope.\n" + HISTORY_EVIDENCE_POLICY,
   {
     repo: z.string().describe("Repository name (e.g., owner/repo)"),
     repo_path: z.string().optional().describe("Optional local repo path hint for first-time bootstrap"),
@@ -211,6 +215,7 @@ tool(
         included: result.memories_included,
         dropped: result.memories_dropped,
         history_included: result.history_included,
+        history_omitted: result.history_omitted ?? [],
         token_estimate: result.token_estimate,
         repo_path: bootstrap.repo_path,
       },

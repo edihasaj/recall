@@ -73,6 +73,13 @@ describe("initDb fast path", () => {
     const legacyActivityKey = "activity\u001flegacy-payload";
     const legacyHookKey = "hook\u001flegacy-payload";
     first.$client.prepare(`
+      insert into memories (id, type, text, scope, status, confidence, source, evidence, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "memory-before-temporal", "rule", "Existing memory survives temporal migration.", "repo",
+      "active", 0.8, "user_correction", "[]", new Date().toISOString(), new Date().toISOString(),
+    );
+    first.$client.prepare(`
       insert into activity_events (
         id, source, event_type, memory_ids, dedupe_key, request, result, created_at
       ) values (?, ?, ?, ?, ?, ?, ?, ?)
@@ -114,11 +121,12 @@ describe("initDb fast path", () => {
     // every later migration is rolled back too and its schema change undone.
     const rolledBack = first.$client.prepare(`
       delete from __drizzle_migrations
-      where created_at in (select created_at from __drizzle_migrations order by created_at desc limit 2)
+      where created_at in (select created_at from __drizzle_migrations order by created_at desc limit 3)
     `).run();
-    expect(rolledBack.changes).toBe(2);
+    expect(rolledBack.changes).toBe(3);
+    first.$client.exec("drop table temporal_facts"); // 0013_temporal_facts
     first.$client.exec("alter table memories drop column note"); // 0012_memory_notes
-    first.$client.pragma(`user_version = ${RECALL_DB_USER_VERSION - 2}`);
+    first.$client.pragma(`user_version = ${RECALL_DB_USER_VERSION - 3}`);
     first.$client.close();
 
     const migrated = initStandaloneDb(path);
@@ -133,6 +141,8 @@ describe("initDb fast path", () => {
     expect(hookKey).toMatch(/^hook\u001fsha256:[a-f0-9]{64}$/);
     expect(migrated.$client.prepare("select count(*) from activity_events").pluck().get()).toBe(1);
     expect(migrated.$client.prepare("select count(*) from hook_calls").pluck().get()).toBe(1);
+    expect(migrated.$client.prepare("select text from memories where id = ?").pluck().get("memory-before-temporal"))
+      .toBe("Existing memory survives temporal migration.");
     expect(Number(migrated.$client.pragma("user_version", { simple: true }))).toBe(RECALL_DB_USER_VERSION);
     migrated.$client.close();
   });
