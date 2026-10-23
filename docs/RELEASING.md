@@ -125,11 +125,22 @@ GHSA-27r3-jxmh-p828, covering the MCP SDK's Express transport dependency.
 The bundled UI uses patched Vite 6.4.5 for the launch-editor and development
 server advisories affecting Vite through 6.4.3; its separate npm lock is audited
 and its production assets are rebuilt with the CLI.
+Transformers 4.3.1 and its required ONNX Runtime 1.30.0 accept patched sharp and
+adm-zip in consumer installs. The earlier Transformers 4.2.0 dependency ranges
+selected vulnerable versions when installing the published package, because
+npm ignores overrides inside dependencies. Model names, cache paths, vector
+storage and backend selection remain unchanged. Native quantized inference can
+differ numerically between runtime versions, so check retrieval against
+previously stored vectors before releasing an embedding-runtime update.
 `scripts/check-release-package.mjs` installs the archive into a temporary global
 prefix without running package scripts, then checks every direct dependency and
-ONNX against that lock. This catches dependency drift that `npm ci` source tests
-cannot expose. Transitive dependencies with their own ranges are not all frozen;
-the package check specifically verifies the published runtime and embedding stack.
+ONNX against that lock. It also verifies every installed copy of sharp, adm-zip,
+body-parser and Zod and submits the actual installed runtime graph to the public
+npm advisory service. The gate fails on dependency drift, any returned advisory,
+or an unavailable audit service. This catches dependency drift that `npm ci`
+source tests cannot expose. Transitive dependencies with their own ranges are
+not all frozen; the package check verifies the published runtime and embedding
+stack and audits every installed transitive package.
 
 If `HOMEBREW_TAP_GITHUB_TOKEN` is configured, the workflow renders `Casks/recall.rb` with the real release SHA and pushes it to every tap listed in the workflow's `HOMEBREW_TAP_REPOS` env var (currently `edihasaj/homebrew-tap` and `edihasaj/homebrew-recall`). Inaccessible taps are skipped with a warning so a missing repo never fails the release. The cask source template lives in [packaging/homebrew/Casks/recall.rb.template](../packaging/homebrew/Casks/recall.rb.template), and the renderer is [scripts/render-homebrew-cask.mjs](../scripts/render-homebrew-cask.mjs).
 
