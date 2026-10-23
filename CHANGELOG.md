@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.0.12 - 2026-10-23
+
+- Bundle Node.js 24.22.1 (current LTS) in the macOS app and use it in CI,
+  release and native prebuild jobs.
+- Add experimental temporal assertions and query-focused history evidence
+  for injected context.
+- Add the LongMemEval answer harness with a separate premise check, timeout
+  and transport retries; the best full run scored 472/500.
+
 ## 2.0.11 - 2026-10-21
 
 - Bundle Node.js 22.23.4 in the macOS app to include the October security fixes.
