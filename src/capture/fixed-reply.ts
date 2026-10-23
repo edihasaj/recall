@@ -30,7 +30,7 @@ function withoutLastWord(text: string, word: string): string | undefined {
   return value.slice(0, boundary).trimEnd();
 }
 
-function parseResponseClause(clause: string): { payload: string; exactly: boolean } | undefined {
+function responseBody(clause: string): string | undefined {
   let value = clause.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, "");
   // Consume at most eight explicit prefixes instead of a nested repeating
   // regex. Adversarial repetitions must not trigger exponential backtracking.
@@ -40,7 +40,12 @@ function parseResponseClause(clause: string): { payload: string; exactly: boolea
     value = value.slice(prefix[0].length);
   }
   const verb = RESPONSE_VERB.exec(value); if (!verb) return;
-  value = value.slice(verb[0].length).replace(/^(?:with|using)\s+/i, "");
+  return value.slice(verb[0].length);
+}
+
+function parseResponseClause(clause: string): { payload: string; exactly: boolean } | undefined {
+  const body = responseBody(clause); if (body === undefined) return;
+  const value = body.replace(/^(?:with|using)\s+/i, "");
   const qualifier = /^(only|exactly|just)\s+/i.exec(value);
   if (qualifier) return { payload: value.slice(qualifier[0].length).replace(/^with\s+/i, ""), exactly: qualifier[1].toLowerCase() === "exactly" };
   const payload = withoutLastWord(value, "only");
@@ -62,7 +67,7 @@ function responseClauses(text: string): string[] {
     } else if (/\s/.test(character)) {
       const ahead = text.slice(index, index + 100);
       const conjunction = /^\s+(?:and|then)\s+/i.exec(ahead);
-      if (conjunction && parseResponseClause(ahead.slice(conjunction[0].length))) {
+      if (conjunction && responseBody(ahead.slice(conjunction[0].length)) !== undefined) {
         clauses.push(text.slice(start, index));
         start = index + conjunction[0].length; index = start - 1;
       }

@@ -44,7 +44,9 @@ describe("fixed response contracts stay in their task", () => {
     "Do not inspect files; reply only 'green light'.", "Always answer only READY", "Return THIRD_TOKEN only.",
     "Don't use tools. Reply only `probe.finished;ready`.", 'Respond exactly "test finished. Ready!".',
     "Do not call tools, reply only DIFFERENT_PROBE_READY.", "Do not call tools.\n- Reply only BULLET_TEST_READY.",
-    "Do not call tools and reply only SECOND_TEST_READY.", "Do not call tools then respond only FOURTH_TEST_READY."])(
+    "Do not call tools and reply only SECOND_TEST_READY.", "Do not call tools then respond only FOURTH_TEST_READY.",
+    "Do not call tools and return THIRD_TOKEN only.", "Do not call tools then return THIRD_TOKEN only.",
+    "Do not call tools and return THIRD_TOKEN only; wait."])(
     "recognizes a literal response contract: %s", text => expect(isFixedReplyInstruction(text)).toBe(true),
   );
   it.each(["Always reply in Spanish.", "Always output JSON.", "Always respond only in Albanian.",
@@ -71,7 +73,8 @@ describe("fixed response contracts stay in their task", () => {
     expect(queryMemories(db, {})).toEqual([]);
   });
   it.each(["Do not call tools, reply only COMMA_TEST_READY.", "Do not call tools.\n- Reply only LIST_TEST_READY.",
-    "Do not call tools and reply only JOINED_TEST_READY."])("blocks capture and legacy paraphrases of %s", async prompt => {
+    "Do not call tools and reply only JOINED_TEST_READY.", "Do not call tools and return THIRD_TOKEN only.",
+    "Do not call tools then return THIRD_TOKEN only; wait."])("blocks capture and legacy paraphrases of %s", async prompt => {
     const db = freshDb(); vi.stubEnv("RECALL_LLM_CAPTURE_DISABLED", "true");
     expect((await processCorrection(db, prompt, { sessionId: "probe", force_semantic_capture: true })).ids).toEqual([]);
     applyExtractRulesFromPrompt(db, task(prompt), { rules: [{ text: "Avoid using external tools.", type: "rule", scope: "global", confidence: 0.99, durability: "durable" }] });
