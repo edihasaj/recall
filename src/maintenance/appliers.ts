@@ -21,6 +21,7 @@ import type { CaptureContext, EvidenceEntry, MaintenanceTask, MemoryType } from 
 import type { RecentToolCall } from "../agents/types.js";
 import { isHighRiskRule } from "../capture/correction.js";
 import { isEphemeralTaskConstraint, isNonUserCaptureContext } from "../capture/context.js";
+import { isFixedReplyInstruction } from "../capture/fixed-reply.js";
 import { getRepoQualityProfile, seedCandidateConfidence } from "../repo/quality.js";
 import type {
   ExtractedRule,
@@ -479,6 +480,7 @@ export function applyExtractRulesFromPrompt(
     // English heuristic only for legacy responses that predate that field.
     if (
       rule.scope === "session" ||
+      isFixedReplyInstruction(rule.text) ||
       rule.durability === "ephemeral" ||
       rule.durability === "ambiguous" ||
       (
