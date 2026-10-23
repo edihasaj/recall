@@ -1,4 +1,5 @@
 import { isGeneratedCaptureContext, isTaskLimitedRule } from "./provenance.js";
+import { isFixedReplyInstruction } from "./fixed-reply.js";
 
 const SYSTEM_SCAFFOLD_RE =
   /(?:^\s*[⏺⎿❯✻※]|<\/?task-notification>|task-notification|hook activity|\[correction_summary\]|correction_summary|session(?:start| start| end) hook|stop hook|<system-reminder>|<\/?command-(?:name|message)>|recent_tool_calls|probeport qa agent contract|you extract durable memory candidates for a personal agent runtime|required schema_version:\s*memory_extraction|##\s*(?:run context|scout assignment|lead verifier assignment|available tool commands|mapped local files|allowed secret environment names))/i;
@@ -131,6 +132,7 @@ function looksLikeQuestionContext(text: string): boolean {
 export function isNonUserCaptureContext(text: string): boolean {
   return (
     isGeneratedCaptureContext(text) ||
+    isFixedReplyInstruction(text) ||
     SYSTEM_SCAFFOLD_RE.test(text) ||
     NON_USER_CONTEXT_RE.test(text) ||
     INJECTION_ARTIFACT_RE.test(text) ||

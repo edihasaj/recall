@@ -57,6 +57,25 @@ non-durable provenance, or a `user_correction` fragment. It also suppresses
 when explicit negative feedback exceeds positive feedback, or an unresolved
 contradiction names another active or candidate memory.
 
+Literal response contracts such as `Reply only BUILD_READY` belong to the
+request that supplied them. They are rejected before correction extraction or
+LLM task enqueueing; an LLM result cannot override this boundary by labelling
+the contract durable. Rewritten instructions such as `Use Reply only ...
+instead` are covered too. This is a general contract check, not a marker
+blacklist. Output-format and language preferences remain eligible.
+
+The same provenance guard suppresses promotion and both ambient and queried
+injection of legacy rows when their text is a fixed-response instruction, or
+all their original correction/review evidence is generated or task-limited.
+Independent durable evidence is retained. Existing provenance cleanup can
+quarantine affected rows reversibly without erasing the audit trail.
+
+Following a test prompt, or observing its literal answer in later completions,
+does not make it a standing preference. Regression tests reproduce a historical
+score of 8 from one followed outcome, five observed uses (capped at four
+points), one injected session, and one injected day. The provenance guard
+suppresses that candidate regardless of score or repetition.
+
 Before accepting a scored candidate, cleanup checks it against active
 memories and earlier accepted promotions using the existing contradiction
 detector. Conflicts suppress the new promotion. Otherwise, scores below 8

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.0.15 - 2026-10-23
+
+- Keep fixed-response probe instructions out of durable memory. Capture and
+  extraction reject literal reply contracts, and shared provenance checks block
+  promotion and injection of legacy rows backed only by those task instructions.
+  Preserve real output-format, language, and tool-permission preferences. Thanks
+  to Edi Hasaj for reporting the cross-chat test-marker responses.
+
 ## 2.0.14 - 2026-10-23
 
 - Patch moderate dependency advisories: `hono` 4.13.13, `postcss` 8.5.31, `qs`
