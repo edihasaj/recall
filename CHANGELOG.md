@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.15 - 2026-10-23
+
 - Keep fixed-response probe instructions out of durable memory. Capture and
   extraction reject literal reply contracts, and shared provenance checks block
   promotion and injection of legacy rows backed only by those task instructions.
