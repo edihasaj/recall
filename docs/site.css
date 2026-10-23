@@ -623,6 +623,47 @@ pre code {
   color: var(--ink-soft);
 }
 
+.benchmark-teaser {
+  margin-top: 24px;
+  color: var(--fern);
+  font-weight: 600;
+}
+
+.benchmark-teaser span {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.benchmark {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 2fr;
+  gap: clamp(28px, 5vw, 64px);
+  margin-bottom: 78px;
+  padding: clamp(24px, 4vw, 48px);
+  border-block: 1px solid var(--line);
+  background: rgba(219, 232, 210, 0.45);
+  scroll-margin-top: 100px;
+}
+
+.benchmark-score strong {
+  display: block;
+  color: var(--fern);
+  font: 600 clamp(68px, 8vw, 108px)/1.1 var(--display);
+  letter-spacing: -0.05em;
+}
+
+.benchmark-score strong span { font-size: 0.5em; }
+.benchmark-score p { color: var(--ink-soft); }
+.benchmark-copy h2 {
+  margin: 0 0 16px;
+  font: 600 clamp(30px, 4vw, 44px)/1.1 var(--display);
+}
+.benchmark-copy p { color: var(--ink-soft); }
+.benchmark-scope { font-size: 14px; }
+.benchmark-links { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.benchmark-links a { color: var(--fern); text-decoration: underline; text-underline-offset: 4px; }
+
 .workflow {
   margin: 0 0 78px;
 }
@@ -1011,6 +1052,7 @@ footer {
 
   .proof,
   .flow-grid,
+  .benchmark,
   .links-band {
     grid-template-columns: 1fr;
   }
