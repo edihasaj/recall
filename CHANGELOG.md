@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.13 - 2026-10-23
+
 - Patch vulnerable dependencies: `@modelcontextprotocol/sdk` 1.32.1, `adm-zip`
   0.6.1, `fast-uri` 3.1.9, `sharp` 0.35.5, `proxy-addr` 2.0.8, `source-map-js`
   1.2.2, `tinypool` 2.1.2, `ip-address` 10.7.4 and `nanoid` 3.3.18. The npm and
