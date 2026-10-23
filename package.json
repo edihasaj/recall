@@ -59,13 +59,13 @@
     "commander": "13.1.0",
     "drizzle-orm": "0.45.2",
     "sqlite-vec": "0.1.9",
-    "zod": "3.25.76"
+    "zod": "^4.6.6"
   },
   "overrides": {
     "@hono/node-server": "2.1.0",
     "@protobufjs/utf8": "1.1.2",
     "adm-zip": "0.6.1",
-    "body-parser": "2.3.0",
+    "body-parser": "2.4.0",
     "esbuild": "0.28.1",
     "fast-uri": "3.1.9",
     "hono": "4.13.13",
@@ -85,7 +85,7 @@
       "@hono/node-server": "2.0.11",
       "@protobufjs/utf8": "1.1.2",
       "adm-zip": "0.6.1",
-      "body-parser": "2.3.0",
+      "body-parser": "2.4.0",
       "esbuild": "0.28.1",
       "fast-uri": "3.1.9",
       "hono": "4.13.13",

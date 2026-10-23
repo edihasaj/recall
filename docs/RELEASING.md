@@ -116,6 +116,15 @@ uses the same release tag for the CLI and tray. A registry authentication
 failure therefore does not prevent installation from the GitHub release.
 
 Direct runtime dependencies use exact versions from `package-lock.json`.
+Zod has a security floor of `^4.6.6` for GHSA-mrhx-c7xc-m3w5; both npm and
+pnpm locks resolve the same patched version. The existing MCP SDK accepts Zod 4
+without an override. The gate exercises SDK tool discovery and input validation,
+maintenance results, and string-keyed policy and evaluation records.
+Both package managers also retain the body-parser 2.4.0 security override for
+GHSA-27r3-jxmh-p828, covering the MCP SDK's Express transport dependency.
+The bundled UI uses patched Vite 6.4.5 for the launch-editor and development
+server advisories affecting Vite through 6.4.3; its separate npm lock is audited
+and its production assets are rebuilt with the CLI.
 `scripts/check-release-package.mjs` installs the archive into a temporary global
 prefix without running package scripts, then checks every direct dependency and
 ONNX against that lock. This catches dependency drift that `npm ci` source tests
