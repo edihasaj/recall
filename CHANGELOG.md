@@ -8,6 +8,8 @@
   Preserve real output-format, language, and tool-permission preferences. Thanks
   to Edi Hasaj for reporting the cross-chat test-marker responses.
 
+## 2.0.14 - 2026-10-23
+
 - Patch moderate dependency advisories: `hono` 4.13.13, `postcss` 8.5.31, `qs`
   6.16.1 and `vite` 7.3.7. Tests run on `vitest` 4.1.12. The pnpm lockfile now
   records the integrity of the `@universalmemoryprotocol/core` release tarball,
