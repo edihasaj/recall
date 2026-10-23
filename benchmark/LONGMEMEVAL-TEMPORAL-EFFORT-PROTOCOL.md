@@ -86,3 +86,32 @@ A pass is a development screen with limited statistical power. Neither a
 cohort score nor a replay combining old and new answers can replace the public
 **472/500 (94.4%)** fresh-run claim. A score above 95% requires a separately
 specified fresh full500 run with every planned question counted.
+
+## Results
+
+All 148 question-arm evaluations completed without errors or retries. Fresh
+control scored **69/74** and high effort scored **73/74**: four judged gains,
+no paired losses, and 7/7 correct abstentions in each arm. The numerical screen
+passed, but the source-review gate did not establish support for every gain.
+This configuration does not advance on the strength of these scores alone.
+
+The NovaTech gain is a supported conditional calculation from direct statements
+of nine professional years and about four years three months at NovaTech. The
+airline answer adds a supported unique-airline interpretation to substantially
+the same flights listed by control; an undated recent flight remains ordered
+without a precise event date. This is partly answer granularity and judge
+variation, not clearly a corrected chronology.
+
+The Paris answer identifies an explicit April family trip but does not establish
+that the other, less precisely dated family trips preceded it. The bedtime
+answer links a 2 AM Wednesday bedtime to an appointment from a different week:
+the May 24 appointment account points to May 18, while the May 29 bedtime
+account points to May 24. The validity review already records this reference
+date conflict. Judge acceptance cannot supply the missing relationship. Fixed
+verdicts remain unchanged, and neither case is silently removed.
+
+The run took approximately 128.5 minutes. Control recorded 5,440,871 tokens and
+high effort recorded 5,506,016; all 444 calls reported usage. Summed answer-call
+time was 5,001 seconds for control and 7,709 seconds for high effort. No recovery
+fallback was needed. These are development results on repeatedly evaluated
+public data, not a fresh full500 score; the public **472/500** remains unchanged.

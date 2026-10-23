@@ -208,12 +208,14 @@ one historically correct abstention. Scope instructions cleaned up one
 biography answer but did not prevent substituted-role answers. Both arms fail
 advancement; neither changes the public score.
 
-The next [selective temporal-effort experiment](../benchmark/LONGMEMEVAL-TEMPORAL-EFFORT-PROTOCOL.md)
-selects all 74 questions whose original text changes from adaptive-low to
-temporal-high under a fixed English heuristic. It compares fresh low and high
-answers with unchanged evidence. Historical diagnostics show 72/74 correct,
-so this is a contribution screen rather than a sufficient route past 95%.
-The helper does not change application defaults or public score claims.
+The [selective temporal-effort experiment](../benchmark/LONGMEMEVAL-TEMPORAL-EFFORT-PROTOCOL.md)
+completed **69/74 for fresh control and 73/74 for high effort**, with four judged
+gains, no paired losses and all seven abstentions correct in each arm. It passed
+the numerical screen but did not establish source support for every gain:
+accepted answers still assert unresolved trip ordering and connect bedtime to
+an appointment from a different week. All fixed scores are retained. This
+configuration does not advance, and application defaults and public score
+claims remain unchanged.
 
 An [offline additive-retrieval diagnostic](../benchmark/LONGMEMEVAL-ADDITIVE-RETRIEVAL-NOTES.md)
 retains all twenty E5 sources and adds up to twenty distinct keyword results.
@@ -223,6 +225,23 @@ separate renderer prototype reserves preferred-speaker statements within an
 additional bounded context budget. Neither source coverage nor code tests
 establish an answer-accuracy gain, and this prototype does not alter the frozen
 temporal experiment or the ordinary renderer default.
+
+The [fresh paired additive-evidence protocol](../benchmark/LONGMEMEVAL-ADDITIVE-TRIAL-PROTOCOL.md)
+defines the next answer-quality test: all thirty abstention questions plus
+seventy hash-selected answerable questions. Both arms retain adaptive reasoning
+and the same premise check. The treatment appends evidence to the exact control
+prefix; advancement requires a net gain, no paired abstention loss and source
+review of every changed outcome.
+
+`--evidence additive` enables this benchmark-only treatment with cached exact
+occurrences, top twenty sources and the fixed 180,000-character base budget.
+Live execution requires system evidence policy, minimal answers, the premise
+check, adaptive reasoning with 16,384 output tokens, robust transport and
+longer-timeout recovery. It rejects Azure answers, ledgers and multiple samples.
+Reports record the additional 80,000-character budget, lexical selection limits,
+code hashes and per-row `additive_diagnostics`. `retrieval_ms` includes its fresh
+keyword search and evidence rendering. Injected additive test calls produce
+`comparison_valid: false`; no test output qualifies as live evidence.
 
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
