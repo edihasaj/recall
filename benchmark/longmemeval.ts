@@ -1,30 +1,8 @@
-/**
- * Recall side of the LongMemEval-S retrieval benchmark.
- *
- * Mirrors the methodology in
- *   ~/Projects/oss/agentmemory/benchmark/longmemeval-bench.ts
- * and
- *   ~/Projects/oss/agentmemory/benchmark/LONGMEMEVAL.md
- *
- * For each question:
- *   1. Build a fresh haystack of ~48 sessions as memories in a temp DB,
- *      tagged with repo=`q_<idx>` so they don't bleed into other questions.
- *   2. Embed + store each session via Recall's normal pipeline.
- *   3. Call hybridSearch(db, question, config, { repo, limit: 20 }).
- *   4. Score recall_any@{5,10,20}, NDCG@10, MRR.
- *
- * Usage:
- *   npx tsx benchmark/longmemeval.ts [--limit N] [--out FILE] [--quiet]
- *
- * Defaults to the full 500-question set excluding abstention variants.
- * The dataset must live at benchmark/data/longmemeval_s_cleaned.json
- * (264 MB, fetched from xiaowu0162/longmemeval-cleaned on HF).
- */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { initStandaloneDb } from "../src/db/client.js";
 import {
   generateEmbedding,
@@ -41,7 +19,9 @@ import { getMemory } from "../src/models/memory.js";
 import { normalizeQueryForRetrieval } from "../src/compiler/context.js";
 import { memories } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
-
+import { DocumentEmbeddingCache } from "./document-embedding-cache.js";
+import { questionSourcesHash } from "./longmemeval-source-identity.js";
+import { LongMemEvalReporter, collectRunProvenance, summarizeRetrieval, type CacheStats, type RetrievalMetrics } from "./longmemeval-report.js";
 interface LongMemEvalEntry {
   question_id: string;
   question_type: string;
@@ -49,26 +29,17 @@ interface LongMemEvalEntry {
   answer: string;
   answer_session_ids: string[];
   haystack_session_ids: string[];
+  haystack_dates: string[];
   haystack_sessions: Array<Array<{ role: string; content: string; has_answer?: boolean }>>;
 }
-
-interface BenchResult {
-  question_id: string;
-  question_type: string;
-  recall_any_at_5: number;
-  recall_any_at_10: number;
-  recall_any_at_20: number;
-  ndcg_at_10: number;
-  mrr: number;
+interface BenchResult extends RetrievalMetrics {
   retrieved_session_ids: string[];
+  retrieved_session_occurrences?: number[];
+  source_sha256: string;
   gold_session_ids: string[];
-  // Raw per-arm rankings (session_ids, in rank order, top 50). Persisted so
-  // offline sweeps can re-fuse without re-embedding. `dump_raw` arg gates
-  // this — adds ~5–10 % JSON size and one extra vec query per question.
   lex_rank_session_ids?: string[];
   vec_rank_session_ids?: string[];
 }
-
 const ABSTENTION_TYPES = new Set([
   "single-session-user_abs",
   "multi-session_abs",
@@ -113,10 +84,11 @@ interface Args {
   quiet: boolean;
   stratify: boolean;
   dumpRaw: boolean;
+  cacheEmbeddings: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { quiet: false, stratify: false, dumpRaw: false };
+  const out: Args = { quiet: false, stratify: false, dumpRaw: false, cacheEmbeddings: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--limit") out.limit = parseInt(argv[++i] ?? "0", 10);
@@ -124,14 +96,15 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--quiet") out.quiet = true;
     else if (a === "--stratify") out.stratify = true;
     else if (a === "--dump-raw") out.dumpRaw = true;
+    else if (a === "--cache-embeddings") out.cacheEmbeddings = true;
   }
   return out;
 }
 
-// Deterministic small PRNG so the same RECALL_STRATIFY_SEED reproduces the slice
-// while different seeds rotate it. Without this, the round-robin below locks to
-// the dataset's file order — picks the same "easy first 10" of each type every
-// run, which inflates small-N numbers above what a representative slice gives.
+function hashText(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -144,9 +117,6 @@ function mulberry32(seed: number): () => number {
 }
 
 function stratifySample<T extends { question_type: string }>(entries: T[], limit: number): T[] {
-  // Round-robin by question_type so a small N still covers every category.
-  // Within each type bucket, shuffle with a seeded PRNG to avoid locking onto
-  // the dataset's natural ordering (override via RECALL_STRATIFY_SEED).
   const seed = parseInt(process.env.RECALL_STRATIFY_SEED ?? "42", 10);
   const rand = mulberry32(Number.isFinite(seed) ? seed : 42);
   const byType = new Map<string, T[]>();
@@ -176,10 +146,6 @@ function stratifySample<T extends { question_type: string }>(entries: T[], limit
 async function main() {
   const args = parseArgs(process.argv);
 
-  // LongMemEval-S is a conversational haystack — production defaults (0.7
-  // similarity floor, AND-FTS) are tuned for short coding rules and zero
-  // out every hit. Apply chat-mode env knobs if the caller hasn't, and log
-  // what we changed so the run is reproducible.
   const chatEnvDefaults: Record<string, string> = {
     RECALL_HYBRID_MIN_SIM: "0",
     RECALL_SIMILARITY_THRESHOLD: "0",
@@ -199,6 +165,7 @@ async function main() {
   const datasetPath = fileURLToPath(
     new URL("./data/longmemeval_s_cleaned.json", import.meta.url),
   );
+  const repoRoot = fileURLToPath(new URL("../", import.meta.url));
   if (!existsSync(datasetPath)) {
     console.error(`Dataset not found: ${datasetPath}`);
     console.error("Download with:");
@@ -214,7 +181,11 @@ async function main() {
 
   process.stdout.write(`loading dataset…`);
   const t0 = Date.now();
-  const raw = JSON.parse(readFileSync(datasetPath, "utf-8")) as LongMemEvalEntry[];
+  const datasetText = readFileSync(datasetPath, "utf-8");
+  const datasetSHA256 = hashText(datasetText);
+  const harnessSHA256 = hashText(readFileSync(fileURLToPath(import.meta.url), "utf-8"));
+  const provenance = collectRunProvenance(repoRoot, process.env);
+  const raw = JSON.parse(datasetText) as LongMemEvalEntry[];
   process.stdout.write(` ${raw.length} entries in ${Date.now() - t0}ms\n`);
 
   let entries = raw.filter((e) => !ABSTENTION_TYPES.has(e.question_type));
@@ -224,10 +195,22 @@ async function main() {
       : entries.slice(0, args.limit);
   }
   console.log(
-    `processing ${entries.length} non-abstention questions ` +
-      `(${raw.length - entries.length} excluded as abstention)` +
+    `processing ${entries.length} retrieval questions ` +
+      `(${raw.length - entries.length} not selected)` +
       (args.stratify ? " · stratified across types" : ""),
   );
+  const reporter = new LongMemEvalReporter(args.out, {
+    selected_question_ids: entries.map((entry) => entry.question_id),
+    dataset_sha256: datasetSHA256,
+    harness_sha256: harnessSHA256,
+    runtime: {
+      node_version: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    },
+    cache_embeddings: args.cacheEmbeddings,
+    provenance,
+  }, { hits: 0, misses: 0, entries: 0 });
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (!embeddingConfig) {
@@ -245,9 +228,19 @@ async function main() {
   console.log(
     `dimensions: ${info?.dimensions} canonical / ${info?.index_dimensions} index`,
   );
+  const providerMetadata = {
+    provider: embeddingConfig.provider,
+    model: embeddingConfig.model,
+    dimensions: info?.dimensions ?? embeddingConfig.dimensions,
+    index_dimensions: info?.index_dimensions ?? embeddingConfig.dimensions,
+    version: embeddingConfig.version,
+  };
+  const resolvedEmbeddingConfig = {
+    ...providerMetadata,
+    similarity_threshold: embeddingConfig.similarity_threshold,
+  };
+  reporter.setProvider(providerMetadata, resolvedEmbeddingConfig);
 
-  // One DB per run, repo-scoped haystacks. Cheaper than initStandaloneDb per
-  // question (sqlite-vec setup + drizzle migrations cost ~80ms each).
   const tmp = mkdtempSync(join(tmpdir(), "recall-lme-"));
   const dbPath = join(tmp, "lme.db");
   const db = initStandaloneDb(dbPath);
@@ -255,23 +248,33 @@ async function main() {
 
   const results: BenchResult[] = [];
   const memToSession = new Map<string, string>();
+  const memToOccurrence = new Map<string, number>();
+  let lastSourceCount = 0;
+  const documentCache = args.cacheEmbeddings
+    ? new DocumentEmbeddingCache(
+      { provider: embeddingConfig.provider, model: embeddingConfig.model },
+      (text) => generateEmbedding(text, embeddingConfig, "document"),
+    )
+    : undefined;
   const startedAt = Date.now();
 
   for (let qi = 0; qi < entries.length; qi++) {
     const entry = entries[qi]!;
     const repo = `q_${qi}_${entry.question_id.slice(0, 8)}`;
 
-    // 1) Seed haystack memories for this question. We bypass createMemory()
-    //    intentionally: it queues an async embedding sync per row via
-    //    queueMemoryEmbeddingSync, and 50 of those firing in parallel against
-    //    a single-threaded inference worker plus the same sqlite handle is
-    //    the path to a 0%-CPU deadlock. Insert raw, then drive the batched
-    //    embed + index upserts ourselves below.
     const seeded: string[] = [];
     const seedTexts: string[] = [];
+    const sourceSessions: Array<{ id: string; date: string; text: string }> = [];
+    if (
+      entry.haystack_session_ids.length !== entry.haystack_sessions.length
+      || entry.haystack_dates.length !== entry.haystack_sessions.length
+    ) {
+      throw new Error(`Invalid source shape for question ${entry.question_id}`);
+    }
     const now = new Date().toISOString();
     for (let si = 0; si < entry.haystack_sessions.length; si++) {
       const sessionId = entry.haystack_session_ids[si]!;
+      const date = entry.haystack_dates[si]!;
       const text = turnsToText(entry.haystack_sessions[si]!);
       const memoryId = randomUUID();
       db.insert(memories).values({
@@ -299,16 +302,16 @@ async function main() {
       seeded.push(memoryId);
       seedTexts.push(text);
       memToSession.set(memoryId, sessionId);
+      memToOccurrence.set(memoryId, si);
+      sourceSessions.push({ id: sessionId, date, text });
     }
+    const sourceSHA256 = questionSourcesHash(entry.question, sourceSessions);
 
-    // Single-call embed per session. Batched (`embedBatch`) leaks worker
-    // threads across calls under transformers.js's onnxruntime, growing RSS
-    // unboundedly across questions; one-at-a-time keeps memory flat at the
-    // cost of throughput. The per-call cost is dominated by the model itself,
-    // not by tokenizer overhead, so the speed delta vs batched is small.
     const embeddings: Float32Array[] = [];
     for (const text of seedTexts) {
-      embeddings.push(await generateEmbedding(text, embeddingConfig, "document"));
+      embeddings.push(documentCache
+        ? await documentCache.embed(text)
+        : await generateEmbedding(text, embeddingConfig, "document"));
     }
     for (let si = 0; si < seeded.length; si++) {
       const memoryId = seeded[si]!;
@@ -316,10 +319,6 @@ async function main() {
       const embedding = embeddings[si]!;
       storeEmbedding(db, memoryId, text, embedding, embeddingConfig);
 
-      // Mirror the embedding into the sqlite-vec ANN index AND the FTS5
-      // lexical index. The normal sync path is queue-driven and asynchronous;
-      // we want both rows visible to hybridSearch immediately for the benchmark
-      // cycle.
       const mem = getMemory(db, memoryId);
       if (mem) {
         upsertMemoryVecRow(
@@ -333,6 +332,7 @@ async function main() {
         upsertMemoryFtsRow(db, {
           id: mem.id,
           text: mem.text,
+          note: mem.note ?? null,
           repo: mem.repo,
           status: mem.status,
           type: mem.type,
@@ -343,19 +343,22 @@ async function main() {
       }
     }
 
-    // 2) Search. normalizeQueryForRetrieval strips harness wrappers — the
-    // dataset is clean conversational text so this is a near no-op here.
     const query = normalizeQueryForRetrieval(entry.question);
     const hits = await hybridSearch(db, query, embeddingConfig, {
       repo,
       limit: 20,
     });
-    const retrievedSessionIds = hits
-      .map((h) => memToSession.get(h.memory.id))
-      .filter((id): id is string => id != null);
+    const retrieved = hits.map((hit) => {
+      const id = memToSession.get(hit.memory.id);
+      const occurrence = memToOccurrence.get(hit.memory.id);
+      if (id === undefined || occurrence === undefined) {
+        throw new Error(`Missing original-session mapping for retrieved memory ${hit.memory.id}`);
+      }
+      return { id, occurrence };
+    });
+    const retrievedSessionIds = retrieved.map((item) => item.id);
+    const retrievedSessionOccurrences = retrieved.map((item) => item.occurrence);
 
-    // When --dump-raw is on, also capture the per-arm rankings so offline
-    // sweeps can re-fuse different lex/vec mixes without re-embedding.
     let lexRankIds: string[] | undefined;
     let vecRankIds: string[] | undefined;
     if (args.dumpRaw) {
@@ -374,7 +377,6 @@ async function main() {
     }
 
     if (qi < 3 && !args.quiet) {
-      // Sanity counts directly from the DB.
       const memCount = db.select().from(memories).all().filter((m) => m.repo === repo).length;
       const ftsCount = (db.$client as any)
         .prepare("select count(*) as n from fts_memory_index where repo = ?")
@@ -411,19 +413,27 @@ async function main() {
       recall_any_at_20: recallAny(retrievedSessionIds, entry.answer_session_ids, 20),
       ndcg_at_10: ndcg(retrievedSessionIds, goldSet, 10),
       mrr: mrr(retrievedSessionIds, goldSet),
-      retrieved_session_ids: retrievedSessionIds.slice(0, 10),
+      retrieved_session_ids: retrievedSessionIds.slice(0, 20),
+      retrieved_session_occurrences: retrievedSessionOccurrences.slice(0, 20),
+      source_sha256: sourceSHA256,
       gold_session_ids: entry.answer_session_ids,
       lex_rank_session_ids: lexRankIds,
       vec_rank_session_ids: vecRankIds,
     });
 
-    // 3) Drop the per-question rows so the next question starts clean.
-    // sqlite-vec rows clean up via the deleteMemory hook; vec_memories also
-    // gets pruned by memory_id FK cascade.
     for (const id of seeded) {
       db.delete(memories).where(eq(memories.id, id)).run();
       memToSession.delete(id);
+      memToOccurrence.delete(id);
     }
+
+    reporter.record(
+      results.at(-1)!,
+      results.length,
+      seeded.length,
+      documentCache?.stats() ?? { hits: 0, misses: 0, entries: 0 },
+    );
+    lastSourceCount = seeded.length;
 
     if (!args.quiet && (qi + 1) % 10 === 0) {
       const elapsed = (Date.now() - startedAt) / 1000;
@@ -437,33 +447,21 @@ async function main() {
     }
   }
 
-  // Summary stats.
-  const mean = (k: keyof BenchResult) =>
-    (results.reduce((s, r) => s + (r[k] as number), 0) / results.length) * 100;
-  const summary = {
-    questions: results.length,
-    embedding_provider: embeddingConfig.provider,
-    embedding_model: embeddingConfig.model,
-    recall_any_at_5: mean("recall_any_at_5"),
-    recall_any_at_10: mean("recall_any_at_10"),
-    recall_any_at_20: mean("recall_any_at_20"),
-    ndcg_at_10: mean("ndcg_at_10"),
-    mrr: mean("mrr"),
-    total_seconds: Math.round((Date.now() - startedAt) / 1000),
-  };
+  const cache: CacheStats = documentCache?.stats() ?? { hits: 0, misses: 0, entries: 0 };
+  const report = summarizeRetrieval(
+    results,
+    providerMetadata,
+    args.cacheEmbeddings,
+    cache,
+    Math.round((Date.now() - startedAt) / 1000),
+  );
+  const { summary, by_type: byType } = report;
 
   console.log("\n=== Recall LongMemEval-S ===");
   console.log(JSON.stringify(summary, null, 2));
 
-  // Per-type breakdown.
-  const byType = new Map<string, BenchResult[]>();
-  for (const r of results) {
-    const list = byType.get(r.question_type) ?? [];
-    list.push(r);
-    byType.set(r.question_type, list);
-  }
   console.log("\nBy question type:");
-  for (const [t, rs] of [...byType.entries()].sort((a, b) => b[1].length - a[1].length)) {
+  for (const [t, rs] of Object.entries(byType).sort((a, b) => b[1].length - a[1].length)) {
     const r5 = (rs.reduce((s, r) => s + r.recall_any_at_5, 0) / rs.length) * 100;
     const r10 = (rs.reduce((s, r) => s + r.recall_any_at_10, 0) / rs.length) * 100;
     console.log(
@@ -472,13 +470,26 @@ async function main() {
     );
   }
 
-  if (args.out) {
-    writeFileSync(
-      args.out,
-      JSON.stringify({ summary, by_type: Object.fromEntries(byType), results }, null, 2),
-    );
-    console.log(`\nresults → ${args.out}`);
-  }
+  const completed = {
+    status: "complete",
+    selected_question_ids: entries.map((entry) => entry.question_id),
+    dataset_sha256: datasetSHA256,
+    harness_sha256: harnessSHA256,
+    runtime: {
+      node_version: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    },
+    local_provider: providerMetadata,
+    resolved_embedding_config: resolvedEmbeddingConfig,
+    provenance,
+    cache_embeddings: { enabled: args.cacheEmbeddings, stats: cache },
+    summary,
+    by_type: byType,
+    results,
+  };
+  reporter.complete(completed, lastSourceCount, cache);
+  if (args.out) console.log(`\nresults → ${args.out}`);
 }
 
 main().catch((err) => {

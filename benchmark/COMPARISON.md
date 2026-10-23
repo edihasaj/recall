@@ -99,7 +99,12 @@ What the script does, per question:
 
 ### Current numbers — N=500 full set ✅
 
-Full LongMemEval-S non-abstention set (n=500). The N=500 number is the
+Full LongMemEval-S cleaned set (n=500), including 30 unanswerable question IDs.
+The earlier “non-abstention” label was inaccurate because the harness filtered
+category names rather than `_abs` question IDs. These numbers measure
+relevant-session retrieval, not answer accuracy; see the
+[answer evaluation guide](../docs/longmemeval-evaluation.md).
+The N=500 number is the
 one to cite; the N=60 stratified row is a small-N sanity check on a
 seed-shuffled slice (`RECALL_STRATIFY_SEED=42`) so the slice rotates
 when the seed changes — earlier reports of a 100 % N=60 score were a
