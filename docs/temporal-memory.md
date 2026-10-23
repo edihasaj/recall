@@ -102,6 +102,12 @@ natural-language questions. It provides temporal selection for one
 repository/subject/predicate at a time, rather than general graph SQL,
 aggregation, or arbitrary multi-hop reasoning.
 
+The separate [temporal event investigation](../benchmark/LONGMEMEVAL-TEMPORAL-EVENTS-NOTES.md)
+explores source-linked event evidence for LongMemEval. Its offline calendar
+prototype keeps prose mentions unresolved and only interprets reviewed complete
+date expressions. It does not extend state capture, count events, alter MCP
+queries or establish an answer-accuracy improvement.
+
 Temporal assertions live in a separate local table. They do not enter automatic
 instruction injection or the existing Recall Cloud sync format. The usual
 whole-store backup and data purge include them. They need an explicit retention

@@ -217,6 +217,13 @@ an appointment from a different week. All fixed scores are retained. This
 configuration does not advance, and application defaults and public score
 claims remain unchanged.
 
+The [temporal event investigation](../benchmark/LONGMEMEVAL-TEMPORAL-EVENTS-NOTES.md)
+separates event identity, action status, source time and event time. Its first
+offline helper keeps discovered prose mentions unresolved and only interprets
+complete supported date expressions, retaining multiple calendar readings.
+It cannot establish event occurrence or join unrelated facts. This is a
+prototype for source inspection, with no changes to answer generation or scores.
+
 An [offline additive-retrieval diagnostic](../benchmark/LONGMEMEVAL-ADDITIVE-RETRIEVAL-NOTES.md)
 retains all twenty E5 sources and adds up to twenty distinct keyword results.
 Marked-source coverage rises from 463/470 to 470/470 across answerable cases,
@@ -242,6 +249,13 @@ Reports record the additional 80,000-character budget, lexical selection limits,
 code hashes and per-row `additive_diagnostics`. `retrieval_ms` includes its fresh
 keyword search and evidence rendering. Injected additive test calls produce
 `comparison_valid: false`; no test output qualifies as live evidence.
+
+The first additive attempt was interrupted after three completed pairs, all
+correct in both arms. No rows were recorded for the next treatment block,
+and its in-flight usage is unknown. Its stale running checkpoint is preserved
+with a separate interruption receipt. The operational restart repeats all one
+hundred cases with fresh calls and identical settings in a persistent session;
+it reuses no completed answers and changes no cohort based on outcomes.
 
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST

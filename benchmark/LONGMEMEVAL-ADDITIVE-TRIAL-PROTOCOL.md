@@ -86,3 +86,20 @@ overrepresents unanswerable questions and does not estimate full-corpus
 accuracy. Passing permits planning a separately specified fresh full500 run;
 it cannot replace the public **472/500 (94.4%)** claim. Do not combine favorable
 old and new answers into a new headline score.
+
+## Operational restart, 24 October 2026
+
+The first attempt was externally interrupted after one completed block in each
+arm: three correct answers each. The next treatment block has no recorded
+question rows, empty logs and a partial report. Its original supervisor process
+and matching child processes are absent, despite the checkpoint still saying
+running. The cause is unknown, and in-flight usage cannot be recovered. Preserve
+that run and its separate interruption receipt; it cannot pass advancement.
+
+A second attempt restarts all one hundred cases with fresh calls, identical
+selection, schedule, source and inference settings. It does not reuse the six
+completed answers or choose cases based on outcomes. No correction is made to
+the first attempt's fixed verdicts. Use one persistent terminal session so the
+job can survive loss of an interactive agent session. Record the launch and
+runtime inventory separately, and report the interrupted attempt and unknown
+usage alongside the second attempt's result.
