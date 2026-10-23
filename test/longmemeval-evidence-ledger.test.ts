@@ -408,7 +408,7 @@ describe("LongMemEval evidence ledger", () => {
     expect(calls).toBe(0);
   });
 
-  it("includes ledger usage and preserves missing-usage diagnostics in the Python summary", () => {
+  it.skipIf(spawnSync("uv", ["--version"]).status !== 0)("includes ledger usage and preserves missing-usage diagnostics in the Python summary", () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-ledger-summary-"));
     const lexical = join(dir, "lexical.json"), hindsight = join(dir, "hindsight.json.gz"), out = join(dir, "summary.json");
     writeFileSync(lexical, JSON.stringify({
