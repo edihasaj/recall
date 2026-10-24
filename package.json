@@ -25,6 +25,7 @@
     "scripts/recall-codex",
     "scripts/recall-session",
     "scripts/install.ps1",
+    "vendor/recall-cloud-sync",
     "README.md",
     "LICENSE"
   ],

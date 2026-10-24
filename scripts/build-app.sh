@@ -67,6 +67,9 @@ chmod +x "$runtime_dir/bin/recall-update-direct-macos"
 
 rsync -a "$root_dir/dist/" "$runtime_dir/dist/"
 rsync -a "$root_dir/drizzle/" "$runtime_dir/drizzle/"
+# Optional Recall Cloud sync engine (see vendor/recall-cloud-sync/PROVENANCE.md).
+mkdir -p "$runtime_dir/vendor/recall-cloud-sync"
+rsync -a "$root_dir/vendor/recall-cloud-sync/" "$runtime_dir/vendor/recall-cloud-sync/"
 rsync -a "$root_dir/node_modules/" "$runtime_dir/node_modules/"
 cp "$root_dir/package.json" "$runtime_dir/package.json"
 cp "$root_dir/package-lock.json" "$runtime_dir/package-lock.json"

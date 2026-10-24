@@ -373,6 +373,41 @@ MCP clients can call `signal_completion_use` with `session_id`,
 recall maintenance credentials clear openai
 ```
 
+## Recall Cloud sync (optional)
+
+Cloud sync is off by default. A fresh install has no `~/.recall/cloud.json`, runs no
+sync process, and makes no cloud request. Sync starts only after you choose
+**Connect** (or **Move sync into Recall**) in the Recall app's Recall Cloud tab.
+
+- **Connect**: create a token in the portal (`https://app.recallmemory.dev/connect`),
+  paste it into the app, and confirm the opt-in. The token is stored in
+  `~/.config/recall-cloud/token` (mode 0600). It is never a command-line argument,
+  never in status output, and never logged. Optional end-to-end encryption uses a
+  passphrase stored the same way (`e2ee-passphrase`); once a device has used
+  encryption, Recall refuses to reconnect it without the passphrase.
+- **Where it runs**: inside the existing Recall daemon (`com.recall.daemon`). The
+  daemon supervises one bounded child process running the bundled engine
+  (`vendor/recall-cloud-sync`, see its `PROVENANCE.md`). There is no separate
+  launchd item. The child is tied to the daemon by an IPC channel, so it exits when
+  the daemon stops or is killed. Disconnect reports success only after the child has
+  actually exited.
+- **Status**: `GET /cloud/status` on the local daemon. "Syncing" is shown only after a
+  full pull has succeeded; a running process alone is shown as checking credentials.
+- **Disconnect**: stops the child, disables sync, and removes the saved token and
+  passphrase. Device name and sync position are kept.
+- **Move from the old Recall Cloud Sync item**: an explicit action. Recall stages the
+  new settings (device id, aliases, interval, database, state file, encryption) while
+  disabled, boots the old `dev.recallmemory.cloud-sync` job out, requires launchd to
+  prove it is gone, moves its plist to `~/.config/recall-cloud/legacy-backup/`, and only
+  then starts sync. Any failure leaves sync off. Jobs using options Recall cannot
+  reproduce exactly (for example `--e2ee-passphrase`, a different `Label`, relative
+  paths) are left untouched. The token and `sync-state.json` are reused, never deleted.
+  macOS may keep the old entry in Login Items & Extensions until you log out and
+  back in; the old helper app is not removed.
+- **Mac App Store edition**: cloud sync is unavailable (`RECALL_DISTRIBUTION=mac-app-store`).
+- **Child environment**: an allowlist (PATH, HOME, locale, temp, proxy and CA variables).
+  Inherited `RECALL_*`, `NODE_OPTIONS` and similar variables never reach the engine.
+
 ## General daemon env vars
 
 Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.plist`, then `recall daemon restart`.

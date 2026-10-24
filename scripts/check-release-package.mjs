@@ -44,6 +44,13 @@ try {
     readFileSync("scripts/install.ps1", "utf8"),
     "Windows updater script is missing from the published package",
   );
+  for (const file of readdirSync("vendor/recall-cloud-sync")) {
+    assert.equal(
+      readFileSync(join(installed, "vendor", "recall-cloud-sync", file), "utf8"),
+      readFileSync(join("vendor", "recall-cloud-sync", file), "utf8"),
+      `Cloud sync engine file ${file} is missing or differs in the published package`,
+    );
+  }
   const dependencies = [...new Set([
     ...Object.keys(lock.packages[""].dependencies),
     ...Object.keys(lock.packages[""].optionalDependencies ?? {}),

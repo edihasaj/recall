@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.0.17 - 2026-10-24
+
+- Recall Cloud sync now runs inside the Recall daemon after an explicit, in-app
+  Connect, replacing the separate Recall Cloud Sync LaunchAgent. A fresh or
+  disconnected install starts no worker and sends no cloud traffic. The Cloud tab
+  accepts a pasted portal token, shows real status, and can disconnect. An existing
+  install moves over only on an explicit "Move sync into Recall", which keeps the
+  device id, cursor, token and encryption mode, and fails closed if macOS does not
+  stop the old job. The Mac App Store edition stays cloud-disabled.
+
 ## 2.0.16 - 2026-10-24
 
 - Patch Zod schema validation, body-parser request parsing, and Vite development

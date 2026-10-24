@@ -45,6 +45,8 @@ import {
   type RelationType,
 } from "./graph/store.js";
 import { homedir } from "node:os";
+import { CloudService } from "./cloud/service.js";
+import { handleCloudRoute } from "./cloud/routes.js";
 import { join } from "node:path";
 import { safeIngestMemoryById } from "./graph/ingest.js";
 import { reconcileGraphIfStale } from "./graph/reconcile.js";
@@ -444,6 +446,9 @@ function runReliabilityProbeSubprocess(realEmbeddings: boolean): Promise<Reliabi
     });
   });
 }
+
+// Optional Recall Cloud sync. Inert (no worker, no network) until the user connects in the app.
+const cloudService = new CloudService({ log: (message) => console.log(message) });
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
@@ -1293,6 +1298,8 @@ const server = createServer(async (req, res) => {
       return send(res, ok ? 200 : 404, { success: ok });
     }
 
+    if (await handleCloudRoute(cloudService, req, res, path, method)) return;
+
     send(res, 404, { error: "not found" });
   } catch (err: any) {
     // Report the unhandled request failure (no-op unless SENTRY_DSN is set).
@@ -1374,8 +1381,16 @@ async function startDaemon() {
     scheduleQualitySnapshotLoop();
     scheduleReliabilityProbeLoop();
     scheduleReliabilityVerdictLoop();
-
+    void cloudService.startIfEnabled();
   });
+
+  // Stop the cloud sync child before exiting; then re-raise so default termination still applies.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      void cloudService.shutdown().finally(() => process.kill(process.pid, signal));
+    });
+  }
+  process.on("exit", () => cloudService.killSync());
 }
 
 void startDaemon().catch((error: unknown) => {
