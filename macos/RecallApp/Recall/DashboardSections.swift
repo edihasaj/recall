@@ -5,6 +5,9 @@ struct OverviewTab: View {
     @ObservedObject var controller: DaemonController
     @ObservedObject var webui: WebUIController
     @ObservedObject var updates: UpdateController
+    #if !MAC_APP_STORE
+    @ObservedObject var cloud = CloudStatusModel.shared
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -51,9 +54,9 @@ struct OverviewTab: View {
 #if !MAC_APP_STORE
                 StatusTile(
                     title: "Cloud sync",
-                    value: CloudConnection.isInstalled ? "Connected" : "Not connected",
+                    value: cloud.summary,
                     systemImage: "cloud.fill",
-                    active: CloudConnection.isInstalled
+                    active: cloud.isSynced
                 )
 #endif
                 StatusTile(
@@ -102,79 +105,6 @@ struct OverviewTab: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
-
-#if !MAC_APP_STORE
-struct CloudTab: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 18) {
-                Image(systemName: "cloud.fill")
-                    .font(.system(size: 32, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 58, height: 58)
-                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(CloudConnection.isInstalled ? "This Mac is connected" : "Take Recall everywhere")
-                        .font(.system(size: 23, weight: .bold, design: .rounded))
-                    Text(CloudConnection.isInstalled
-                         ? "Automatic two-way sync runs in the background. Your connected Macs and hosted agents share one consolidated memory."
-                         : "Sign in once, connect this Mac, and Recall keeps every device and hosted agent in sync automatically.")
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-            }
-            .padding(22)
-            .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-            HStack(spacing: 10) {
-                Button {
-                    CloudConnection.openConnect()
-                } label: {
-                    Label(
-                        CloudConnection.isInstalled ? "Manage Cloud" : "Sign In & Connect",
-                        systemImage: "arrow.up.right.square"
-                    )
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
-                Button {
-                    CloudConnection.openMemories()
-                } label: {
-                    Label("Cloud Memories", systemImage: "brain.head.profile")
-                }
-                .controlSize(.large)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                CloudFeatureRow(
-                    icon: "arrow.triangle.2.circlepath",
-                    title: "Automatic two-way sync",
-                    detail: "Changes and tombstones converge every five minutes—no manual push or pull."
-                )
-                CloudFeatureRow(
-                    icon: "network",
-                    title: "Hosted MCP",
-                    detail: "Codex, Claude, Cursor, and web agents can query the same synced memory."
-                )
-                CloudFeatureRow(
-                    icon: "lock.shield.fill",
-                    title: "You choose what leaves this Mac",
-                    detail: "Local-only memories stay local; synced and end-to-end encrypted modes remain explicit."
-                )
-            }
-            .padding(18)
-            .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-}
-#endif
 
 #if MAC_APP_STORE
 struct DaemonTab: View {
@@ -399,30 +329,6 @@ struct SettingsView: View {
         .padding(.bottom, AppLayout.bottomPadding)
     }
 }
-
-#if !MAC_APP_STORE
-@MainActor
-enum CloudConnection {
-    static var isInstalled: Bool {
-        FileManager.default.fileExists(
-            atPath: NSHomeDirectory() + "/Library/LaunchAgents/dev.recallmemory.cloud-sync.plist"
-        )
-    }
-
-    static func openConnect() {
-        open(path: "/connect")
-    }
-
-    static func openMemories() {
-        open(path: "/memories")
-    }
-
-    private static func open(path: String) {
-        guard let url = URL(string: "https://app.recallmemory.dev\(path)") else { return }
-        NSWorkspace.shared.open(url)
-    }
-}
-#endif
 
 struct StatusTile: View {
     let title: String

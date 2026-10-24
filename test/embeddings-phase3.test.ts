@@ -6,6 +6,7 @@ const { pipelineMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@huggingface/transformers", () => ({
+  env: {},
   pipeline: pipelineMock,
 }));
 

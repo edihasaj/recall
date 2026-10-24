@@ -28,6 +28,7 @@ import {
   type PreTrainedTokenizer,
 } from "@huggingface/transformers";
 import { getEmbeddingCacheRoot } from "./cache.js";
+import { configureTransformersCache } from "./transformers-cache.js";
 import { tokenizeRerankPairs } from "./tokenize-pairs.js";
 
 const DEFAULT_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2";
@@ -51,6 +52,7 @@ function maxLength(): number {
 }
 
 async function loadReranker(model: string): Promise<Reranker> {
+  configureTransformersCache();
   // A local directory loads in place; a hub id is cached under the shared
   // embedding cache root in a "rerank" subdir.
   const options: { dtype: "q8"; cache_dir?: string } = { dtype: "q8" };

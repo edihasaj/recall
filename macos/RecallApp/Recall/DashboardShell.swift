@@ -30,6 +30,9 @@ struct DashboardView: View {
             )
         }
         .navigationSplitViewStyle(.balanced)
+        #if !MAC_APP_STORE
+        .task { CloudStatusModel.shared.startPolling() }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .recallOpenPreferences)) { _ in
             selection = .preferences
         }
@@ -146,6 +149,9 @@ private struct SidebarView: View {
 }
 
 private struct SidebarFooter: View {
+    #if !MAC_APP_STORE
+    @ObservedObject var cloud = CloudStatusModel.shared
+    #endif
     @ObservedObject var controller: DaemonController
     @ObservedObject var webui: WebUIController
 
@@ -174,9 +180,9 @@ private struct SidebarFooter: View {
             #if !MAC_APP_STORE
             HStack(spacing: 8) {
                 Circle()
-                    .fill(CloudConnection.isInstalled ? Color.green : Color.gray.opacity(0.6))
+                    .fill(cloud.isSynced ? Color.green : Color.gray.opacity(0.6))
                     .frame(width: 8, height: 8)
-                Text(CloudConnection.isInstalled ? "Cloud sync connected" : "Cloud sync not connected")
+                Text("Cloud sync: \(cloud.summary.lowercased())")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
