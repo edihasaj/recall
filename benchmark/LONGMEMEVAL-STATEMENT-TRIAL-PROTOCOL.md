@@ -105,3 +105,36 @@ at least **474/500** exceeds the pinned published **94.6%** number; it still
 uses a different model setup and cannot establish a matched Hindsight win.
 Scores from this safety-enriched sample or mixed old/new answers cannot replace
 the full-run claim.
+
+## Completed trial and source review
+
+The run completed all 200 evaluations across 68 stages: **93/100 control and
+95/100 statements**, with five judged gains and three losses. Both arms scored
+28/30 on abstentions; answerable scores were 65/70 and 67/70. Every numerical
+check passed. All 600 calls succeeded on their first attempt, with no unknown
+usage or fallbacks. Observed input-plus-output tokens were 7,546,784 for control
+and 7,052,616 for statements. Wall time was approximately 159 minutes.
+
+Independent integrity review reconstructed all evidence and all 600 prompts,
+verified all 18,407 inventory entries and checked every stage artifact. An
+offline preparation script had omitted the system evidence flag, so its control
+contexts differ from live. The live control matches the pinned full500 baseline
+exactly; this is a preflight-receipt limitation, not an observed live-run defect.
+Future preflights must pass `--evidence-policy system --answer-policy minimal`.
+
+Independent source review does **not clear advancement**. The prior occupation
+gain is supported. The smoker and three-day event gains retain correct drafts
+that control's premise check wrongly replaced. The publication gain adds an
+incorrect person identity and converts a proposed study into current research;
+its relevant medical-imaging facts were already available to both arms, and
+the reference conflicts with explicitly broader interests. The dinner gain
+recovers harvested tomatoes but also infers harvest availability from pepper
+plant ownership. Genuine losses drop Wednesday yoga without a cancellation and
+replace a direct user fare quote with an assistant estimate. The furniture loss
+largely reflects conditional-count framing and judge sensitivity.
+
+These findings preserve every fixed verdict and do not calculate a revised
+score. They do not establish a defensible improvement in grounded answer
+quality. This configuration is rejected for full500 advancement; the public
+**472/500 (94.4%)** remains unchanged. The separate decision receipt binds the
+fixed result, integrity audit and source-review conclusions.

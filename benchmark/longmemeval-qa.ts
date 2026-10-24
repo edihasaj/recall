@@ -25,7 +25,7 @@ import { questionSourcesHash } from "./longmemeval-source-identity.js";
 import { HISTORY_EVIDENCE_POLICY } from "../src/history/evidence-policy.js";
 import { MINIMAL_ANSWER_POLICY, MINIMAL_ANSWER_POLICY_V2 } from "./longmemeval-minimal-answer-policy.js";
 import { PREMISE_CHECK_POLICY } from "./longmemeval-premise-policy.js";
-import { premiseAbstention, premiseCheckPrompt } from "./longmemeval-premise-check.js";
+import { PREMISE_POLICIES, premiseAbstention, premiseCheckPrompt, type PremisePolicy } from "./longmemeval-premise-check.js";
 import { answerOnce, sampleAnswers, withTransportRetry } from "./longmemeval-answer-sampling.js";
 import {
   answerPrompt, buildEvidence, cachedRank, createModelCall, judgePrompt, lexicalRank,
@@ -46,7 +46,7 @@ export type Options = {
   evidenceLedger?: "none" | "quoted" | "units" | "packed";
   answerPolicy?: "history" | "minimal" | "minimal-v2" | "premise" | "minimal-premise";
   answerRecovery?: "none" | "lower-effort" | "lower-effort-transport" | "longer-timeout-transport";
-  answerSamples?: number; sourceTurns?: string;
+  answerSamples?: number; sourceTurns?: string; premisePolicy?: PremisePolicy;
 };
 export type Row = {
   question_id: string; question_type: string; is_abstention: boolean;
@@ -98,7 +98,7 @@ export function summarize(rows: Row[], planned: number) {
   };
 }
 
-export async function evaluateCase(item: Case, options: Pick<Options, "retrieval" | "topK" | "contextChars" | "evidence" | "answerCheck" | "evidencePolicy" | "evidenceLedger" | "answerRecovery" | "answerSamples">, ids?: string[], call?: ModelCall, occurrences?: number[]): Promise<Row> {
+export async function evaluateCase(item: Case, options: Pick<Options, "retrieval" | "topK" | "contextChars" | "evidence" | "answerCheck" | "premisePolicy" | "evidencePolicy" | "evidenceLedger" | "answerRecovery" | "answerSamples">, ids?: string[], call?: ModelCall, occurrences?: number[]): Promise<Row> {
   const row: Row = { question_id: item.question_id, question_type: item.question_type, is_abstention: item.is_abstention, evidence: null, retrieval_ms: 0, answer_call: null, judge_call: null, answer: null, correct: call ? false : null, error: null, gold_any: null, gold_all: null, cached_ambiguous_session_ids: [] };
   if (call && options.answerRecovery?.endsWith("-transport")) call = withTransportRetry(call);
   if (options.evidenceLedger === "quoted") Object.assign(row, {
@@ -235,7 +235,7 @@ export async function evaluateCase(item: Case, options: Pick<Options, "retrieval
     if (options.answerCheck === "premise") {
       row.draft_answer = row.answer;
       row.premise_override = false;
-      row.premise_call = await call("premise", premiseCheckPrompt(item.question, answerGenerationClock(item.answer_prompt_prefix), row.evidence.text));
+      row.premise_call = await call("premise", premiseCheckPrompt(item.question, answerGenerationClock(item.answer_prompt_prefix), row.evidence.text, options.premisePolicy));
       const check = row.premise_call.error ? null : parseObject(row.premise_call.text);
       row.premise_recorded = typeof check?.correct === "boolean" ? check.correct : null;
       if (row.premise_recorded === false) {
@@ -293,6 +293,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
   }
   if (options.evidence === "additive") validateAdditiveOptions(options, options.provider !== undefined || injectedCall !== undefined);
   validateStatementOptions(options, options.provider !== undefined || injectedCall !== undefined);
+  if (options.premisePolicy !== undefined && (!PREMISE_POLICIES.includes(options.premisePolicy) || options.answerCheck !== "premise" || options.evidence !== "supplemental")) throw new Error("--premise-policy requires --answer-check premise and --evidence supplemental");
   const azurePreparation = prepareAzureAnswer(
     options,
     options.provider !== undefined || injectedCall !== undefined,
@@ -414,6 +415,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
       : {}),
     ...(options.evidence === "additive" ? { additive_evidence: additiveReport() } : {}),
     ...(options.evidence === "statements" ? { statement_evidence: statementReport(), source_turns_manifest: sourceTurns!.report } : {}),
+    ...(options.premisePolicy === "category-union" ? { premise_policy: { policy: "category-union", prompt_source_sha256: sha256(readFileSync(fileURLToPath(new URL("./longmemeval-premise-check.ts", import.meta.url)))), note: "Opt-in generic category-union sentence added to the premise check only; other prompts and settings unchanged." } } : {}),
     ...(azurePreparation
       ? { azure_answer_provider: {
         ...azurePreparation.metadata,
@@ -510,7 +512,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
 
 export function parseArgs(args: string[]): Options {
   const options: Options = { input: "benchmark/data/longmemeval-amb-input-2026-10-19.json", out: "", retrieval: "lexical", concurrency: 3, contextChars: 180_000, topK: 10 };
-  const keys: Record<string, string> = { "--input": "input", "--out": "out", "--provider": "provider", "--retrieval": "retrieval", "--rankings": "rankings", "--limit": "limit", "--concurrency": "concurrency", "--context-chars": "contextChars", "--top-k": "topK", "--evidence": "evidence", "--answer-provider": "answerProvider", "--request-mode": "requestMode", "--answer-check": "answerCheck", "--reasoning-effort": "reasoningEffort", "--max-output-tokens": "maxOutputTokens", "--evidence-policy": "evidencePolicy", "--evidence-ledger": "evidenceLedger", "--answer-policy": "answerPolicy", "--answer-recovery": "answerRecovery", "--answer-samples": "answerSamples", "--source-turns": "sourceTurns" };
+  const keys: Record<string, string> = { "--input": "input", "--out": "out", "--provider": "provider", "--retrieval": "retrieval", "--rankings": "rankings", "--limit": "limit", "--concurrency": "concurrency", "--context-chars": "contextChars", "--top-k": "topK", "--evidence": "evidence", "--answer-provider": "answerProvider", "--request-mode": "requestMode", "--answer-check": "answerCheck", "--reasoning-effort": "reasoningEffort", "--max-output-tokens": "maxOutputTokens", "--evidence-policy": "evidencePolicy", "--evidence-ledger": "evidenceLedger", "--answer-policy": "answerPolicy", "--answer-recovery": "answerRecovery", "--answer-samples": "answerSamples", "--source-turns": "sourceTurns", "--premise-policy": "premisePolicy" };
   for (let i = 0; i < args.length; i++) {
     const key = keys[args[i]!], value = args[++i];
     if (!key || !value) throw new Error("Unknown or missing argument");
@@ -529,6 +531,7 @@ export function parseArgs(args: string[]): Options {
   if (options.answerPolicy && !["history", "minimal", "minimal-v2", "premise", "minimal-premise"].includes(options.answerPolicy)) throw new Error("Invalid answer policy");
   if (options.answerRecovery && !["none", "lower-effort", "lower-effort-transport", "longer-timeout-transport"].includes(options.answerRecovery)) throw new Error("Invalid answer recovery");
   if (options.answerSamples !== undefined && (!Number.isInteger(options.answerSamples) || options.answerSamples < 1 || options.answerSamples > 5)) throw new Error("Invalid answer samples");
+  if (options.premisePolicy !== undefined && !PREMISE_POLICIES.includes(options.premisePolicy)) throw new Error("Invalid premise policy");
   return options;
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

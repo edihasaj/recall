@@ -271,6 +271,25 @@ calls. Nested role-like text cannot create a new trusted turn. Injected calls
 remain invalid as benchmark evidence. This is an exploratory combined treatment
 whose numerical and source-review gates precede any fresh full500 evaluation.
 
+That trial finished **93/100 control versus 95/100 statements**, with both arms
+at 28/30 abstentions and no paired abstention loss. All 600 calls succeeded.
+The numerical gate passed, but independent source review did not clear
+advancement: accepted answers include a wrong person identity and an unsupported
+harvest claim, while losses discard an ongoing yoga class and replace a user's
+fare quote with an assistant estimate. The candidate does not advance to
+full500. Its 95/100 pilot score cannot replace the public 472/500 result.
+
+The separate [category-union premise diagnostic](../benchmark/LONGMEMEVAL-PREMISE-UNION-PROTOCOL.md)
+keeps the canonical supplemental contexts and makes two fresh premise calls per
+question: the original policy and an opt-in clarification for aggregate counts
+over generic categories. Named subjects and explicit co-occurrence constraints
+remain required. `--premise-policy category-union` is available only with
+`--answer-check premise --evidence supplemental`; omitting it preserves the
+original prompt. The check-only runner makes no answer or judge calls and emits
+no answer-accuracy score. Source review and a separately frozen fresh full run
+remain necessary before changing public numbers or publishing the requested
+release.
+
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
 inspection. It does not import or execute the external Python implementation.
