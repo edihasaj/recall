@@ -435,7 +435,7 @@ export const MaintenanceEvalMetrics = z.object({
   total_abandoned: z.number(),
   abandon_rate: z.number(),
   mean_completion_ms: z.number().nullable(),
-  completed_by_kind: z.record(z.number()),
+  completed_by_kind: z.record(z.string(), z.number()),
   merge_precision: z.number().nullable(),
   merge_rollbacks: z.number(),
 });
@@ -518,7 +518,7 @@ export const PolicyRule = z.object({
     "max_active_per_repo",
     "require_evidence_count",
   ]),
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   enabled: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),

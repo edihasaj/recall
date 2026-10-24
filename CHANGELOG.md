@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.0.16 - 2026-10-24
+
+- Patch Zod schema validation, body-parser request parsing, and Vite development
+  tooling vulnerabilities. Preserve string-keyed policy and evaluation records
+  and verify MCP input validation through the SDK.
+- Update Transformers and its required ONNX runtime so published installs resolve
+  patched sharp and adm-zip versions. Preserve model selection, cache locations,
+  and stored vector formats; quantized inference scores can change.
+- Verify security-sensitive transitive dependencies and audit the actual
+  installed runtime graph before publishing a release.
+
 ## 2.0.15 - 2026-10-23
 
 - Keep fixed-response probe instructions out of durable memory. Capture and

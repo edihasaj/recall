@@ -70,4 +70,23 @@ describe("temporal MCP tools", () => {
       await client.close(); await server.close(); db.$client.close();
     }
   });
+
+  it("advertises typed inputs and rejects invalid input through the SDK", async () => {
+    const { db, server, client } = await connectedMcp();
+    try {
+      const tools = (await client.listTools()).tools;
+      const query = tools.find((tool) => tool.name === "temporal_query")!;
+      expect(query.inputSchema.properties?.repo).toMatchObject({ type: "string" });
+      expect(query.inputSchema.required).toContain("repo");
+      const invalid = await client.callTool({ name: "temporal_query", arguments: {
+        repo: 42, subject: "production", predicate: "hosting",
+      } });
+      expect(invalid.isError).toBe(true);
+      expect(invalid.content).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: expect.stringContaining("repo") }),
+      ]));
+    } finally {
+      await client.close(); await server.close(); db.$client.close();
+    }
+  });
 });
