@@ -7,6 +7,12 @@ local HTTP connections. Its Connect Agents screen provides connection commands
 and optional hook JSON. It does not install a CLI or rewrite global agent settings.
 `RECALL_EMBEDDING_CACHE_DIR` selects an explicit model-cache directory; the
 store service sets it inside its container.
+Recall points the library-wide Transformers.js cache (`env.cacheDir`) at a
+`shared` folder inside that same cache root before any embedding or reranker
+model loads. Transformers.js otherwise defaults to a `.cache` folder inside its
+own package, which for the macOS app lies inside the signed bundle: the library
+reads `config.json` and the wasm files through that default, so a real-embedding
+run would add files to `Recall.app` and invalidate its code signature.
 
 ## Hook injection
 

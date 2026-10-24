@@ -11,6 +11,11 @@
   install moves over only on an explicit "Move sync into Recall", which keeps the
   device id, cursor, token and encryption mode, and fails closed if macOS does not
   stop the old job. The Mac App Store edition stays cloud-disabled.
+- Embedding and reranker models no longer write into the installed package.
+  Transformers.js fetched `config.json` and wasm files through its default
+  in-package cache, so a real-embedding run inside `Recall.app` added files and
+  invalidated the app's code signature. The library cache now lives under the
+  user model-cache root; model locations and stored vectors are unchanged.
 
 ## 2.0.16 - 2026-10-24
 

@@ -1,6 +1,7 @@
 import { layer_norm, pipeline, type FeatureExtractionPipeline, type Tensor } from "@huggingface/transformers";
 import type { EmbeddingConfig } from "../../types.js";
 import { ensureEmbeddingCachePath } from "../cache.js";
+import { configureTransformersCache } from "../transformers-cache.js";
 import type { EmbeddingPurpose, EmbeddingProvider } from "./types.js";
 
 const NOMIC_MODEL = "nomic-ai/nomic-embed-text-v1.5";
@@ -33,6 +34,7 @@ function prefixTexts(texts: string[], purpose: EmbeddingPurpose): string[] {
 }
 
 async function getExtractor(config: EmbeddingConfig): Promise<FeatureExtractionPipeline> {
+  configureTransformersCache();
   const cacheDir = ensureEmbeddingCachePath({
     provider: config.provider,
     model: getModel(config),

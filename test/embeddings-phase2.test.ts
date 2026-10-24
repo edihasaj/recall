@@ -7,6 +7,7 @@ const { layerNormMock, pipelineMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@huggingface/transformers", () => ({
+  env: {},
   layer_norm: layerNormMock,
   pipeline: pipelineMock,
 }));
