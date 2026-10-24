@@ -63,3 +63,18 @@ exceed 94.6%. Public claims, GitHub and landing-page numbers, and the requested
 new release remain conditional on a complete independently reviewed fresh
 full500 result. At least 474/500 exceeds the pinned published Hindsight number;
 different model setups still prevent a matched system-ranking claim.
+
+## Completed diagnostic
+
+All 200 fresh premise calls completed across 100 cases, with no errors,
+malformed verdicts, retries, fallbacks or unknown usage. The treatment changed
+one control-rejected abstention to acceptance, violating the safety gate. It
+treated the recorded tomato plants as enough support for a question that also
+names unrecorded chili pepper plants. A separate changed answerable decision
+accepted a previous-occupation premise from a recruiter-background statement;
+that does not establish recovery of the missing occupation fact. The targeted
+generic event-count case did not produce a paired recovery.
+
+The numerical screen fails. No fresh answer trial or public accuracy score is
+advanced from this diagnostic. Observed input-plus-output tokens total
+7,472,980. Fixed decisions and the separate rejection receipt remain retained.

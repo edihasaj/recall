@@ -290,6 +290,13 @@ no answer-accuracy score. Source review and a separately frozen fresh full run
 remain necessary before changing public numbers or publishing the requested
 release.
 
+The category-union diagnostic completed all 200 calls without errors but failed
+its abstention safety gate. It does not advance. Edi subsequently requested a
+separate [exploratory full500 run of the original statement candidate](../benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
+That new request does not clear either failed gate or remove the source-review
+findings. It uses fresh answers for all 500 cases, unchanged pilot settings and
+the original premise policy; its result and publication decision remain pending.
+
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
 inspection. It does not import or execute the external Python implementation.
