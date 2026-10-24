@@ -1,9 +1,28 @@
 import { matchTokens } from "../text/match.js";
 
+export type EvidenceSpeakerRole = "user" | "assistant" | "system" | "tool";
+
+/**
+ * Trusted host boundary of one structured message inside flattened
+ * `role: content` text. Offsets are UTF-16 code units, half-open.
+ */
+export interface EvidenceSpeakerSpan {
+  start: number;
+  end: number;
+  role: EvidenceSpeakerRole;
+}
+
 export interface EvidenceSource {
   text: string;
   observed_at?: string;
   date_kind?: "observed" | "record_updated";
+  /**
+   * Optional host-supplied message boundaries. When present, only the line at a
+   * span start is an explicit role marker; a `user:` line inside a span is
+   * ordinary content that inherits the span's role and governing context.
+   * Absent spans keep the line-prefix heuristic. Invalid spans throw.
+   */
+  speaker_spans?: readonly EvidenceSpeakerSpan[];
 }
 
 export interface EvidenceOptions {
@@ -91,6 +110,7 @@ export function renderEvidenceSources(
   options: EvidenceOptions,
 ): RenderedEvidence {
   const perSourceChars = validateOptions(options);
+  for (const source of sources) validateSpeakerSpans(source);
   if (sources.length === 0) return { text: "", sources: [] };
 
   const states = sources.map((source, sourceIndex) => ({
@@ -176,7 +196,9 @@ function makeCandidate(
   preferredSpeaker: EvidenceOptions["preferred_speaker"],
   reserveSpeakerUnits: boolean,
 ): EvidenceCandidate | undefined {
-  const ranges = chooseSemanticRanges(state.source.text, query, sourceCap, preferredSpeaker, reserveSpeakerUnits);
+  const ranges = chooseSemanticRanges(
+    state.source.text, query, sourceCap, preferredSpeaker, reserveSpeakerUnits, state.source.speaker_spans,
+  );
   if (ranges.length === 0) return undefined;
   return { state, ranges, text: renderRanges(state.source.text, ranges) };
 }
@@ -209,10 +231,11 @@ function chooseSemanticRanges(
   charCap: number,
   preferredSpeaker: EvidenceOptions["preferred_speaker"],
   reserveSpeakerUnits = false,
+  spans?: readonly EvidenceSpeakerSpan[],
 ): EvidenceRange[] {
   if (text.length <= charCap) return [{ start: 0, end: text.length }];
   const queryTokens = informativeQueryTokens(query ?? "");
-  const units = semanticUnits(text, queryTokens);
+  const units = semanticUnits(text, queryTokens, spans);
   // Opt-in: a direct statement by the preferred speaker can share no word with
   // the question, so it is reserved and ranked independently of its overlap.
   const reservedSpeaker = reserveSpeakerUnits ? preferredSpeaker : undefined;
@@ -273,7 +296,45 @@ interface SemanticUnit {
   substantive: boolean;
 }
 
-function semanticUnits(text: string, queryTokens: ReadonlySet<string>): SemanticUnit[] {
+function validateSpeakerSpans(source: EvidenceSource): void {
+  const spans = source.speaker_spans;
+  if (spans === undefined) return;
+  const { text } = source;
+  const fail = (reason: string): never => {
+    throw new RangeError(`Invalid evidence speaker_spans: ${reason}`);
+  };
+  if (!Array.isArray(spans)) return fail("must be an array");
+  if (spans.length === 0) {
+    if (text.length > 0) fail("must be nonempty for nonempty text");
+    return;
+  }
+  let expectedStart = 0;
+  for (const [index, span] of spans.entries()) {
+    const role = span?.role;
+    if (!span || typeof span !== "object") return fail("span must be an object");
+    if (!Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) || span.start >= span.end) {
+      return fail("offsets must be ordered integers");
+    }
+    if (role !== "user" && role !== "assistant" && role !== "system" && role !== "tool") {
+      return fail("unknown role");
+    }
+    if (span.start !== expectedStart || span.end > text.length) return fail("spans must tile the text");
+    if (span.start > 0 && text[span.start - 1] !== "\n") return fail("span must start at a line boundary");
+    if (!text.startsWith(`${role}: `, span.start)) return fail("span text must start with its role label");
+    const last = index === spans.length - 1;
+    if (last ? span.end !== text.length : text[span.end] !== "\n") {
+      return fail(last ? "last span must end at the text end" : "spans must be separated by one newline");
+    }
+    expectedStart = span.end + 1;
+  }
+}
+
+function semanticUnits(
+  text: string,
+  queryTokens: ReadonlySet<string>,
+  spans?: readonly EvidenceSpeakerSpan[],
+): SemanticUnit[] {
+  const roleAt = spans && new Map(spans.map((span) => [span.start, span.role]));
   const ranges: EvidenceRange[] = [];
   let lineStart = 0;
   while (lineStart < text.length) {
@@ -292,7 +353,7 @@ function semanticUnits(text: string, queryTokens: ReadonlySet<string>): Semantic
   let previousNegatingScope = -1;
   for (const [index, range] of windows.entries()) {
     const unitText = text.slice(range.start, range.end).trim();
-    const explicitSpeaker = roleSpeaker(unitText);
+    const explicitSpeaker = roleAt ? roleAt.get(range.start) : roleSpeaker(unitText);
     const isRole = explicitSpeaker !== undefined;
     const context = isRole
       ? []
@@ -308,7 +369,7 @@ function semanticUnits(text: string, queryTokens: ReadonlySet<string>): Semantic
       score: overlapScore(unitText, queryTokens),
       context: [...new Set(context)],
       speaker: explicitSpeaker ?? activeSpeaker,
-      substantive: isSubstantive(unitText),
+      substantive: isSubstantive(unitText, roleAt === undefined || isRole),
     });
     if (isRole) {
       activeRole = index;
@@ -322,8 +383,8 @@ function semanticUnits(text: string, queryTokens: ReadonlySet<string>): Semantic
   return units;
 }
 
-function isSubstantive(unitText: string): boolean {
-  const content = unitText.replace(/^(?:user|assistant|system|tool):\s*/i, "");
+function isSubstantive(unitText: string, stripRole: boolean): boolean {
+  const content = stripRole ? unitText.replace(/^(?:user|assistant|system|tool):\s*/i, "") : unitText;
   return content.length > 0 && !content.endsWith(":");
 }
 

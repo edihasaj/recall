@@ -24,31 +24,31 @@ export const additiveCodePaths = () => [
   here("./longmemeval-supplemental-evidence.ts"),
 ];
 
-/** Rejects every unsupported additive combination before credentials, files or calls. */
-export function validateAdditiveOptions(options: Options, hasCalls: boolean): void {
-  if (options.retrieval !== "cached") throw new Error("Additive evidence requires cached retrieval");
-  if (options.topK !== 20) throw new Error("Additive evidence requires --top-k 20");
-  if (options.contextChars !== ADDITIVE_BASE_CAP) throw new Error("Additive evidence requires --context-chars 180000");
-  if (options.evidenceLedger && options.evidenceLedger !== "none") throw new Error("Additive evidence cannot use an evidence ledger");
-  if (options.answerSamples !== undefined && options.answerSamples !== 1) throw new Error("Additive evidence requires a single answer sample");
-  if (options.answerProvider) throw new Error("Additive evidence cannot use the Azure answer provider");
-  if (options.answerCheck === "grounded") throw new Error("Additive evidence cannot use grounded answer checks");
-  if (options.concurrency > 3) throw new Error("Additive evidence concurrency must be at most three");
+/** Rejects every unsupported additive (or, via `name`, statement) combination before credentials, files or calls. */
+export function validateAdditiveOptions(options: Options, hasCalls: boolean, name = "Additive"): void {
+  if (options.retrieval !== "cached") throw new Error(`${name} evidence requires cached retrieval`);
+  if (options.topK !== 20) throw new Error(`${name} evidence requires --top-k 20`);
+  if (options.contextChars !== ADDITIVE_BASE_CAP) throw new Error(`${name} evidence requires --context-chars 180000`);
+  if (options.evidenceLedger && options.evidenceLedger !== "none") throw new Error(`${name} evidence cannot use an evidence ledger`);
+  if (options.answerSamples !== undefined && options.answerSamples !== 1) throw new Error(`${name} evidence requires a single answer sample`);
+  if (options.answerProvider) throw new Error(`${name} evidence cannot use the Azure answer provider`);
+  if (options.answerCheck === "grounded") throw new Error(`${name} evidence cannot use grounded answer checks`);
+  if (options.concurrency > 3) throw new Error(`${name} evidence concurrency must be at most three`);
   if (!hasCalls) return;
-  if (options.provider !== "qwen-local") throw new Error("Additive evidence requires qwen-local");
-  if (options.requestMode !== "robust" || options.evidencePolicy !== "system") throw new Error("Additive evidence calls require robust requests and system evidence policy");
-  if (options.reasoningEffort !== "adaptive" || options.maxOutputTokens !== 16_384) throw new Error("Additive evidence calls require adaptive reasoning and a 16384-token answer budget");
-  if (options.answerPolicy !== "minimal" || options.answerCheck !== "premise") throw new Error("Additive evidence calls require the minimal answer policy and a premise check");
-  if (options.answerRecovery !== "longer-timeout-transport") throw new Error("Additive evidence calls require longer-timeout-transport answer recovery");
+  if (options.provider !== "qwen-local") throw new Error(`${name} evidence requires qwen-local`);
+  if (options.requestMode !== "robust" || options.evidencePolicy !== "system") throw new Error(`${name} evidence calls require robust requests and system evidence policy`);
+  if (options.reasoningEffort !== "adaptive" || options.maxOutputTokens !== 16_384) throw new Error(`${name} evidence calls require adaptive reasoning and a 16384-token answer budget`);
+  if (options.answerPolicy !== "minimal" || options.answerCheck !== "premise") throw new Error(`${name} evidence calls require the minimal answer policy and a premise check`);
+  if (options.answerRecovery !== "longer-timeout-transport") throw new Error(`${name} evidence calls require longer-timeout-transport answer recovery`);
 }
 
 /** Exact original occurrences are mandatory so the original twenty are never re-derived from IDs. */
-export function validateAdditiveRankings(rankById: Map<string, Ranking>, selected: Case[]): void {
+export function validateAdditiveRankings(rankById: Map<string, Ranking>, selected: Case[], name = "Additive"): void {
   for (const item of selected) {
     const ranking = rankById.get(item.question_id);
-    if (!ranking) throw new Error("Additive evidence requires a ranking for every selected question");
-    if (ranking.retrieved_session_occurrences === undefined) throw new Error("Additive evidence requires exact ranking occurrences");
-    if (ranking.retrieved_session_ids.length < ADDITIVE_ORIGINAL_COUNT) throw new Error("Additive evidence requires exactly 20 ranked sources per selected question");
+    if (!ranking) throw new Error(`${name} evidence requires a ranking for every selected question`);
+    if (ranking.retrieved_session_occurrences === undefined) throw new Error(`${name} evidence requires exact ranking occurrences`);
+    if (ranking.retrieved_session_ids.length < ADDITIVE_ORIGINAL_COUNT) throw new Error(`${name} evidence requires exactly 20 ranked sources per selected question`);
   }
 }
 

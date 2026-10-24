@@ -124,7 +124,7 @@ function fitBlock(
   label: string,
   allowance: number,
   budget: AdditiveLimits,
-): { block: string; source: Source } | { reason: AdditiveOmissionReason } {
+): { block: string; source: Pick<Source, "full_chars" | "used_chars" | "truncated" | "ranges"> } | { reason: AdditiveOmissionReason } {
   const floor = Math.max(1, shortestLineLength(row.text));
   let renderedAny = false;
   for (let raw = budget.raw_unit_chars; raw >= floor; raw--) {

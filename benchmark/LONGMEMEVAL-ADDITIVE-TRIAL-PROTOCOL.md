@@ -103,3 +103,28 @@ the first attempt's fixed verdicts. Use one persistent terminal session so the
 job can survive loss of an interactive agent session. Record the launch and
 runtime inventory separately, and report the interrupted attempt and unknown
 usage alongside the second attempt's result.
+
+## Completed restart results
+
+The persistent restart completed all 200 question-arm evaluations across 68
+stages. Fresh control scored **94/100** and additive evidence scored **93/100**:
+two judged gains and three losses, for a net loss of one. Abstention accuracy
+was 27/30 versus 28/30, with no control-correct abstention lost; answerable
+accuracy was 67/70 versus 65/70. The candidate fails its predeclared gain gate
+and does not advance to full500 validation.
+
+All 600 model calls completed on their first attempt without errors, fallbacks
+or unknown usage in the restart. Control recorded 7,550,049 tokens and additive
+recorded 10,647,057. The earlier interrupted attempt and its unknown in-flight
+usage remain separate. The restart took approximately 189 minutes.
+
+The occupation gain recovers an explicit prior role. The other judged gain
+has nearly identical abstention answers with different fixed judge verdicts;
+it is not demonstrated fact recovery. Losses include preference responses and
+an overstrict premise check that replaces a correct smoker-purchase draft by
+rejecting it as a kitchen appliance. Preserve every fixed verdict, including
+source ambiguities and judge variation. The original context was retained in
+full, so added source membership alone did not guarantee better answers.
+
+The original 100-case safety-enriched trial is not a full-corpus score. The
+public **472/500 (94.4%)** remains unchanged.

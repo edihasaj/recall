@@ -13,7 +13,7 @@ export type AzureAnswerHarnessOptions = {
   topK: number;
   concurrency: number;
   requestMode?: "standard" | "robust";
-  answerCheck?: "none" | "grounded";
+  answerCheck?: "none" | "grounded" | "premise";
   reasoningEffort?: "none" | "low" | "medium" | "high" | "adaptive";
   maxOutputTokens?: number;
   evidencePolicy?: "inline" | "system";

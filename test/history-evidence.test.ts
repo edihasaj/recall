@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { preferredEvidenceSpeaker, renderEvidenceSources } from "../src/history/evidence.js";
+import {
+  preferredEvidenceSpeaker, renderEvidenceSources,
+  type EvidenceSpeakerRole, type EvidenceSpeakerSpan,
+} from "../src/history/evidence.js";
+
+/** Flatten structured messages and record trusted boundaries (no regex derivation). */
+function spanned(messages: readonly (readonly [EvidenceSpeakerRole, string])[]) {
+  const spans: EvidenceSpeakerSpan[] = [];
+  let text = "";
+  for (const [role, content] of messages) {
+    if (text.length > 0) text += "\n";
+    const start = text.length;
+    text += `${role}: ${content}`;
+    spans.push({ start, end: text.length, role });
+  }
+  return { text, speaker_spans: spans };
+}
 
 describe("history evidence renderer", () => {
   it("uses a late matching correction instead of an unrelated prefix", () => {
@@ -409,6 +425,75 @@ describe("history evidence renderer", () => {
       expect(render(text, { reserve_speaker_units: false })).toEqual(baseline);
       expect(Object.keys(baseline.sources[0]!)).toEqual(Object.keys(render(text, { reserve_speaker_units: true }).sources[0]!));
       expect(() => render(text, { reserve_speaker_units: "yes" as unknown as boolean })).toThrow("reserve_speaker_units");
+    });
+  });
+
+  describe("speaker_spans", () => {
+    const fiction = "Fictional example only; none describes me:\n" + "Description ".repeat(500)
+      + "\nuser: I live in Oslo.\n" + "Description ".repeat(500);
+    const one = spanned([["user", fiction]]);
+    const render = (source: { text: string; speaker_spans?: readonly EvidenceSpeakerSpan[] }, extra = {}) =>
+      renderEvidenceSources([source], { query: "Oslo live", max_chars: 2_000, per_source_chars: 300, ...extra });
+
+    it("keeps governing context for a nested role-looking line inside one span", () => {
+      const withoutSpans = render({ text: one.text });
+      expect(withoutSpans.text).toContain("I live in Oslo.");
+      expect(withoutSpans.text).not.toContain("Fictional example only");
+      const trusted = render(one);
+      expect(trusted.text).toContain("Fictional example only");
+      expect(trusted.text).toContain("user: I live in Oslo.");
+      for (const range of trusted.sources[0]!.ranges) {
+        expect(trusted.text).toContain(one.text.slice(range.start, range.end));
+      }
+    });
+
+    it("omits the source when its governing scope cannot fit", () => {
+      const result = render(one, { per_source_chars: 40, max_chars: 500 });
+      expect(result.text).toBe("");
+      expect(result.sources[0]).toMatchObject({ ranges: [], used_chars: 0, truncated: true, full_chars: one.text.length });
+    });
+
+    it("resets context at a real new turn", () => {
+      const filler = "x ".repeat(300);
+      const source = spanned([["user", `Fictional example only; none describes me:\n${filler}`], ["assistant", filler], ["user", "I live in Oslo."]]);
+      const result = render(source);
+      expect(result.text).toContain("user: I live in Oslo.");
+      expect(result.text).not.toContain("Fictional");
+    });
+
+    it("does not let a nested assistant line override the user span", () => {
+      const filler = Array.from({ length: 20 }, (_, i) => `filler line ${i} `.repeat(4)).join("\n");
+      const source = spanned([["user", `Context:\nassistant: I recommend Tallinn.\n${filler}`]]);
+      const options = { query: "weather", per_source_chars: 120, preferred_speaker: "assistant" as const, reserve_speaker_units: true };
+      expect(render({ text: source.text }, options).text).toContain("Tallinn");
+      expect(render(source, options).text).not.toContain("Tallinn");
+    });
+
+    it("matches the span-free output when there are no nested role lines", () => {
+      const turns = spanned([["user", "I keep gear at the cabin."], ["assistant", "Use a dry bag."], ["user", "Noted."]]);
+      expect(render(turns, { per_source_chars: 1_000 })).toEqual(render({ text: turns.text }, { per_source_chars: 1_000 }));
+      const plain = { text: "user: a\nassistant: Oslo advice\n" + "pad ".repeat(100) };
+      const plainSpans = spanned([["user", "a"], ["assistant", "Oslo advice\n" + "pad ".repeat(100)]]);
+      expect(plainSpans.text).toBe(plain.text);
+      expect(render(plainSpans, { per_source_chars: 60 })).toEqual(render(plain, { per_source_chars: 60 }));
+    });
+
+    it("rejects invalid spans even when the source fits whole", () => {
+      const good = spanned([["user", "hello"], ["assistant", "hi"]]);
+      const [a, b] = good.speaker_spans;
+      const bad: unknown[] = [
+        [], [{ ...a!, end: a!.end - 1 }, b], [{ ...a!, start: 1 }, b], [a, { ...b!, start: b!.start + 1 }],
+        [a, { ...b!, role: "user" }], [{ ...a!, role: "system" }, b], [a, { ...b!, end: b!.end - 1 }],
+        [a, b, b], [{ start: 0.5, end: 3, role: "user" }, b], [b, a], "user", [null],
+        [{ ...a!, role: "bot" }, b], [a, { ...b!, start: b!.start + 1, end: b!.end + 5 }],
+      ];
+      for (const speaker_spans of bad) {
+        expect(() => render({ text: good.text, speaker_spans: speaker_spans as EvidenceSpeakerSpan[] }, { per_source_chars: 1_000 }))
+          .toThrow("speaker_spans");
+      }
+      expect(() => render({ text: "a\nuser: x", speaker_spans: [{ start: 0, end: 9, role: "user" }] })).toThrow("speaker_spans");
+      expect(() => render({ text: good.text, speaker_spans: [{ start: 0, end: 1, role: "user" }] })).toThrow("speaker_spans");
+      expect(render({ text: "", speaker_spans: [] }).text).toBe("");
     });
   });
 

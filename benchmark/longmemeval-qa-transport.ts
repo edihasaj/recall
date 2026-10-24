@@ -8,7 +8,7 @@ function abortError(signal: AbortSignal) {
   return new DOMException(name === "TimeoutError" ? "Request timed out" : "Request aborted", name);
 }
 
-function normalizeHeaders(input: HeadersInit | undefined): Record<string, string> {
+function normalizeHeaders(input: RequestInit["headers"] | undefined): Record<string, string> {
   if (!input) return {};
   const entries = input instanceof Headers ? [...input.entries()]
     : Array.isArray(input) ? input : Object.entries(input);

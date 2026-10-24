@@ -5,10 +5,11 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as schema from "../src/db/schema.js";
 import { searchMemoryFtsIndex, upsertMemoryFtsRow } from "../src/vector/sqlite-fts.js";
+import type { EvidenceSpeakerSpan } from "../src/history/evidence.js";
 import { validateLocalBaseUrl } from "./temporal-model.js";
 import { resolveReasoningEffort, type ReasoningEffort } from "./longmemeval-inference-policy.js";
 
-export type Session = { id: string; date: string; text: string };
+export type Session = { id: string; date: string; text: string; speaker_spans?: readonly EvidenceSpeakerSpan[] };
 export type Case = {
   question_id: string; question_type: string; is_abstention: boolean;
   question: string; question_date: string; reference: string; gold_session_ids: string[];

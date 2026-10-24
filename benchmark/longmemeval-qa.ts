@@ -8,6 +8,10 @@ import {
   ADDITIVE_LIMITATION, additiveCodePaths, additiveCoveredIds, additiveEvidence, additiveReport,
   validateAdditiveOptions, validateAdditiveRankings, type AdditiveEvidence, type additiveDiagnostics,
 } from "./longmemeval-additive-qa.js";
+import {
+  STATEMENT_LIMITATION, statementCodePaths, statementCoveredIds, statementEvidence, statementReport,
+  attachSourceTurns, validateStatementOptions, validateStatementRankings, type StatementEvidence, type statementDiagnostics,
+} from "./longmemeval-statement-qa.js";
 import { createAzureComposedCall, prepareAzureAnswer } from "./longmemeval-azure-qa.js";
 import { longRequestFetch } from "./longmemeval-qa-transport.js";
 import { answerGenerationClock, answerTaskContract, groundedAnswerReviewPrompt } from "./longmemeval-answer-review.js";
@@ -34,7 +38,7 @@ export const PACKED_ANSWER_FINALIZATION_GUIDANCE = "The answer field is the sole
 export type Options = {
   input: string; out: string; provider?: Provider; retrieval: "lexical" | "cached";
   rankings?: string; limit?: number; concurrency: number; contextChars: number; topK: number;
-  evidence?: "prefix" | "focused" | "highlighted" | "supplemental" | "additive"; requestMode?: "standard" | "robust";
+  evidence?: "prefix" | "focused" | "highlighted" | "supplemental" | "additive" | "statements"; requestMode?: "standard" | "robust";
   answerProvider?: "azure";
   answerCheck?: "none" | "grounded" | "premise";
   reasoningEffort?: "none" | "low" | "medium" | "high" | "adaptive"; maxOutputTokens?: number;
@@ -42,11 +46,11 @@ export type Options = {
   evidenceLedger?: "none" | "quoted" | "units" | "packed";
   answerPolicy?: "history" | "minimal" | "minimal-v2" | "premise" | "minimal-premise";
   answerRecovery?: "none" | "lower-effort" | "lower-effort-transport" | "longer-timeout-transport";
-  answerSamples?: number;
+  answerSamples?: number; sourceTurns?: string;
 };
 export type Row = {
   question_id: string; question_type: string; is_abstention: boolean;
-  evidence: ReturnType<typeof buildEvidence> | ReturnType<typeof buildFocusedEvidence> | ReturnType<typeof buildHighlightedEvidence> | ReturnType<typeof buildSupplementalEvidence> | AdditiveEvidence | null; retrieval_ms: number;
+  evidence: ReturnType<typeof buildEvidence> | ReturnType<typeof buildFocusedEvidence> | ReturnType<typeof buildHighlightedEvidence> | ReturnType<typeof buildSupplementalEvidence> | AdditiveEvidence | StatementEvidence | null; retrieval_ms: number;
   answer_call: Call | null; judge_call: Call | null; answer: string | null;
   correct: boolean | null; error: string | null; gold_any: boolean | null; gold_all: boolean | null;
   cached_ambiguous_session_ids: string[];
@@ -70,6 +74,7 @@ export type Row = {
     omitted: { source_rank: number; reason: "no_complete_unit" | "budget" }[];
   };
   additive_diagnostics?: ReturnType<typeof additiveDiagnostics>;
+  statements_diagnostics?: ReturnType<typeof statementDiagnostics>;
 };
 export function summarize(rows: Row[], planned: number) {
   const completed = rows.filter((row) => row.correct !== null);
@@ -127,6 +132,12 @@ export async function evaluateCase(item: Case, options: Pick<Options, "retrieval
       row.evidence = additive.evidence;
       row.supplemental_diagnostics = additive.evidence.supplemental;
       row.additive_diagnostics = additive.diagnostics;
+    } else if (options.evidence === "statements") {
+      const statements = statementEvidence(item, ranked, occurrences !== undefined);
+      row.retrieval_ms = Date.now() - start;
+      if ("error" in statements) { row.error = statements.error; return row; }
+      row.evidence = statements.evidence;
+      row.statements_diagnostics = statements.diagnostics;
     } else if (options.evidence === "supplemental") {
       const evidence = buildSupplementalEvidence(
         ranked,
@@ -145,7 +156,7 @@ export async function evaluateCase(item: Case, options: Pick<Options, "retrieval
           : buildEvidence(ranked, options.contextChars);
     }
     if (!item.is_abstention && item.gold_session_ids.length) {
-      const retrieved = new Set(row.additive_diagnostics ? additiveCoveredIds(row.evidence) : ranked.map((source) => source.id));
+      const retrieved = new Set(row.additive_diagnostics ? additiveCoveredIds(row.evidence) : row.statements_diagnostics ? statementCoveredIds(row.evidence) : ranked.map((source) => source.id));
       row.gold_any = item.gold_session_ids.some((id) => retrieved.has(id));
       row.gold_all = item.gold_session_ids.every((id) => retrieved.has(id));
     }
@@ -281,6 +292,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
     if (!injectedCall && options.provider !== "qwen-local") throw new Error("Evidence ledger requires qwen-local");
   }
   if (options.evidence === "additive") validateAdditiveOptions(options, options.provider !== undefined || injectedCall !== undefined);
+  validateStatementOptions(options, options.provider !== undefined || injectedCall !== undefined);
   const azurePreparation = prepareAzureAnswer(
     options,
     options.provider !== undefined || injectedCall !== undefined,
@@ -300,8 +312,10 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
       || rankings?.length !== declared.size
       || rankings.some((row) => !declared.has(row.question_id))) throw new Error("Ranking question identity mismatch");
   }
-  const selected = selectCases(input.cases, rankings, options.limit);
+  let selected = selectCases(input.cases, rankings, options.limit);
   if (!selected.length) throw new Error("No questions selected");
+  const sourceTurns = options.evidence === "statements" ? attachSourceTurns(options.sourceTurns!, input, inputBytes, selected) : undefined;
+  if (sourceTurns) selected = sourceTurns.cases;
   const rankById = new Map(rankings?.map((row) => [row.question_id, row]));
   let sourceVerification: "per_question_hash" | "dataset_hash" | "unverified" = "unverified";
   if (options.retrieval === "cached") {
@@ -328,6 +342,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
     }
   }
   if (options.evidence === "additive") validateAdditiveRankings(rankById, selected);
+  if (options.evidence === "statements") validateStatementRankings(rankById, selected);
   if (options.evidence === "supplemental") {
     for (const item of selected) {
       const ranking = rankById.get(item.question_id);
@@ -370,10 +385,11 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
       .map((path) => fileURLToPath(new URL(path, import.meta.url))),
     ...(options.evidence === "supplemental" ? [supplementalSourcePath] : []),
     ...(options.evidence === "additive" ? additiveCodePaths() : []),
+    ...(options.evidence === "statements" ? statementCodePaths() : []),
     ...azureSourcePaths,
   ];
   const report = {
-    status: "partial", comparison_valid: !(options.evidence === "additive" && injectedCall !== undefined), started_at: new Date().toISOString(), finished_at: null as string | null,
+    status: "partial", comparison_valid: !((options.evidence === "additive" || options.evidence === "statements") && injectedCall !== undefined), started_at: new Date().toISOString(), finished_at: null as string | null,
     invocation: options, runtime: process.version, provenance: input.provenance,
     hashes: { input: sha256(inputBytes), rankings: rankingBytes ? sha256(rankingBytes) : null, code: Object.fromEntries(files.map((path) => [path, sha256(readFileSync(path))])), package_lock: sha256(readFileSync(fileURLToPath(new URL("../package-lock.json", import.meta.url)))) },
     source_verification: sourceVerification,
@@ -397,6 +413,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
       } }
       : {}),
     ...(options.evidence === "additive" ? { additive_evidence: additiveReport() } : {}),
+    ...(options.evidence === "statements" ? { statement_evidence: statementReport(), source_turns_manifest: sourceTurns!.report } : {}),
     ...(azurePreparation
       ? { azure_answer_provider: {
         ...azurePreparation.metadata,
@@ -410,6 +427,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
       options.retrieval === "lexical" ? "Fresh production FTS search only, with OR queries for chat. Vector retrieval, extraction, promotion and lifecycle delivery are outside this experiment." : "Supplied rankings use exact original source positions when present. Older ID-only rankings expand ambiguous duplicate IDs before top-k and can displace later IDs; affected questions are counted. Ranking-file provenance determines the retrieval configuration.",
       "Source text is raw role/content conversation history, not automatically extracted durable memories. Dataset has_answer flags never enter retrieval or generation.",
       options.evidence === "additive" ? ADDITIVE_LIMITATION
+      : options.evidence === "statements" ? STATEMENT_LIMITATION
       : options.evidence === "supplemental"
         ? "Context preserves the original highlighted evidence for the first ten ranked sources unchanged, then uses only spare context budget for query-focused complete verbatim excerpts from ranks 11 through 20. Supplemental excerpts use neutral labels, observation dates and a 4000-character per-source ceiling; characters are not tokens and selection can omit useful text."
         : options.evidence === "highlighted"
@@ -492,7 +510,7 @@ export async function runEvaluation(options: Options, injectedCall?: ModelCall) 
 
 export function parseArgs(args: string[]): Options {
   const options: Options = { input: "benchmark/data/longmemeval-amb-input-2026-10-19.json", out: "", retrieval: "lexical", concurrency: 3, contextChars: 180_000, topK: 10 };
-  const keys: Record<string, string> = { "--input": "input", "--out": "out", "--provider": "provider", "--retrieval": "retrieval", "--rankings": "rankings", "--limit": "limit", "--concurrency": "concurrency", "--context-chars": "contextChars", "--top-k": "topK", "--evidence": "evidence", "--answer-provider": "answerProvider", "--request-mode": "requestMode", "--answer-check": "answerCheck", "--reasoning-effort": "reasoningEffort", "--max-output-tokens": "maxOutputTokens", "--evidence-policy": "evidencePolicy", "--evidence-ledger": "evidenceLedger", "--answer-policy": "answerPolicy", "--answer-recovery": "answerRecovery", "--answer-samples": "answerSamples" };
+  const keys: Record<string, string> = { "--input": "input", "--out": "out", "--provider": "provider", "--retrieval": "retrieval", "--rankings": "rankings", "--limit": "limit", "--concurrency": "concurrency", "--context-chars": "contextChars", "--top-k": "topK", "--evidence": "evidence", "--answer-provider": "answerProvider", "--request-mode": "requestMode", "--answer-check": "answerCheck", "--reasoning-effort": "reasoningEffort", "--max-output-tokens": "maxOutputTokens", "--evidence-policy": "evidencePolicy", "--evidence-ledger": "evidenceLedger", "--answer-policy": "answerPolicy", "--answer-recovery": "answerRecovery", "--answer-samples": "answerSamples", "--source-turns": "sourceTurns" };
   for (let i = 0; i < args.length; i++) {
     const key = keys[args[i]!], value = args[++i];
     if (!key || !value) throw new Error("Unknown or missing argument");
@@ -501,7 +519,7 @@ export function parseArgs(args: string[]): Options {
   if (!options.out) throw new Error("--out is required");
   if (!["lexical", "cached"].includes(options.retrieval)) throw new Error("Invalid retrieval mode");
   if (options.provider && !["gemini", "qwen-local", "moonshot"].includes(options.provider)) throw new Error("Invalid provider");
-  if (options.evidence && !["prefix", "focused", "highlighted", "supplemental", "additive"].includes(options.evidence)) throw new Error("Invalid evidence mode");
+  if (options.evidence && !["prefix", "focused", "highlighted", "supplemental", "additive", "statements"].includes(options.evidence)) throw new Error("Invalid evidence mode");
   if (options.answerProvider && options.answerProvider !== "azure") throw new Error("Invalid answer provider");
   if (options.requestMode && !["standard", "robust"].includes(options.requestMode)) throw new Error("Invalid request mode");
   if (options.answerCheck && !["none", "grounded", "premise"].includes(options.answerCheck)) throw new Error("Invalid answer check");

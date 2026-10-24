@@ -66,6 +66,14 @@ terms such as “what”, “where”, “did”, “can”, and “my” from i
 token set. Topic, action, and date terms remain. If no informative token
 remains, it uses the same deterministic complete-unit fallback.
 
+Callers with structured messages can supply `speaker_spans`: half-open UTF-16
+ranges and roles from the original messages. The spans must tile the complete
+source with single newline separators and exact role prefixes. Invalid spans
+throw, including for sources that fit whole. Only those span starts become
+turn boundaries; role-like lines inside a message retain that message's role
+and governing scope. Without spans, existing rendering stays unchanged. These
+boundaries preserve source structure; they do not authenticate its claims.
+
 `max_chars` is a hard total limit: headers, date labels, ellipses, separators,
 and excerpt text all count. `per_source_chars` limits each source’s verbatim
 text selection. Invalid or too-small budgets throw rather than silently
@@ -123,3 +131,19 @@ separate 80,000-character budget that includes labels and separators.
   source, is skipped. An empty or short lexical tail is valid.
 - The result stays at or below 260,000 characters and 40 sources. The optional
   `limits` argument can only tighten the protocol ceilings and exists for tests.
+
+## Statement evidence (benchmark only)
+
+`buildStatementEvidence` selects the same twenty original sources plus the
+first twenty distinct lexical occurrences outside them from the top eighty.
+It renders all selected sources together with preferred-speaker reservation,
+a shared 180,000-character budget and at most 4,000 raw characters per source.
+Every selected source requires structured `speaker_spans`. The benchmark
+rebuilds these from the raw role/content messages and verifies exact prepared
+text, identities, dates and hashes through `--source-turns`. It never infers
+trusted turn boundaries from flattened text. Source metadata stays scorer-side.
+
+This opt-in treatment changes both selection and representation. Its original
+twenty source identities remain equal to control, but its text is not an
+unchanged control prefix. The paired trial protocol defines accuracy and
+grounding gates; source coverage alone cannot establish an improvement.

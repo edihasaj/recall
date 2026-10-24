@@ -10,11 +10,14 @@ inputs, schedule and digest inventory (no model calls). `--live` runs the
 sequential stages through `dgx run`. No retries, no rejudging. DGX_KEY_FILE is
 inherited from the environment and required only for live runs. This trial
 overrepresents unanswerable questions, claims no full500 score and leaves the
-public 472/500 result unchanged.
+public 472/500 result unchanged. `--candidate-evidence statements` (default
+`additive`) swaps only the candidate arm for the fresh statement-evidence trial,
+which needs LONGMEMEVAL-STATEMENT-TRIAL-PROTOCOL.md and pins
+longmemeval_statement_validation.py; every other protocol element is shared.
 """
 from __future__ import annotations
 
-import argparse, hashlib, json, os, shutil, subprocess, sys, time, types
+import argparse, functools, hashlib, json, os, shutil, subprocess, sys, time, types
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +26,10 @@ SEED = "recall-longmemeval-additive-2026-10-23-v1"
 BASELINE_SHA = "9cba4555cad8031eec9e404d96ae4f7065c302cbacfa8a87f1232c0b9e0105f0"
 ABSTENTIONS, ANSWERABLE, BLOCK, ORIGINAL_SOURCES = 30, 70, 3, 20
 PROTOCOL_NAME = "LONGMEMEVAL-ADDITIVE-TRIAL-PROTOCOL.md"
+STATEMENT_PROTOCOL_NAME = "LONGMEMEVAL-STATEMENT-TRIAL-PROTOCOL.md"
+CANDIDATE_MODES = ("additive", "statements")
+STATEMENT_CLAIM = ("Exploratory fresh 100-question paired statement-evidence trial that overrepresents the 30 unanswerable questions; "
+                   "not a full500 score; the public 472/500 result is unchanged.")
 POLICY_TS = "benchmark/longmemeval-inference-policy.ts"
 EFFORT_JS = """import {readFileSync} from "node:fs"; import {resolve} from "node:path"; import {pathToFileURL} from "node:url";
 const {resolveReasoningEffort: adaptive} = await import(pathToFileURL(resolve(%r)).href);
@@ -47,9 +54,25 @@ MODEL, ANSWER_TOKENS, CHECK_TOKENS = "qwen3.8-flash-next", 16384, 4096
 LOWER = {"high": "low", "medium": "low", "low": "none"}  # recovery after response_not_completed
 Runner = Callable[..., int]
 VALIDATION = Path(__file__).resolve().with_name("longmemeval_additive_validation.py")
+STATEMENT_VALIDATION = Path(__file__).resolve().with_name("longmemeval_statement_validation.py")
 V = types.ModuleType("longmemeval_additive_validation")
 exec(compile(VALIDATION.read_text(), str(VALIDATION), "exec"), V.__dict__)  # exec, not import: no bytecode beside the frozen tree
-_physical, usage, evidence_problems = V.physical, V.usage, V.evidence_problems
+_physical, usage = V.physical, V.usage
+
+
+@functools.cache
+def statement_validation() -> types.ModuleType:
+    """The statements-mode validator, loaded on first use so additive runs never touch it."""
+    m = types.ModuleType("longmemeval_statement_validation")
+    exec(compile(STATEMENT_VALIDATION.read_text(), str(STATEMENT_VALIDATION), "exec"), m.__dict__)
+    return m
+
+
+def evidence_problems(row: dict, arm: str, mode: str = "additive") -> list[str]:
+    """Additive validation unless the candidate arm runs in statements mode; the control keeps its own rules in both."""
+    if mode != "statements": return V.evidence_problems(row, arm)
+    if arm == "control": return V.evidence_problems(row, arm) + (["control row carries statements_diagnostics"] if "statements_diagnostics" in row else [])
+    return statement_validation().evidence_problems(row)
 
 
 class Failure(Exception):
@@ -158,6 +181,7 @@ def manifest(a: argparse.Namespace) -> dict[str, str]:
     pinned = {"node": a.node, "python": Path(sys.executable), "protocol": a.protocol, "supervisor": Path(__file__), "validation": VALIDATION,
               "selection": a.out_dir / "selection.json", "efforts": a.out_dir / "efforts.json",
               "baseline": a.data_dir / BASELINE, "input": a.data_dir / INPUT, "rankings": a.data_dir / RANKINGS}
+    if a.candidate_evidence == "statements": pinned.update(statement_validation=STATEMENT_VALIDATION, source_turns=a.source_turns)
     for key, p in pinned.items(): m[key] = sha(Path(p).resolve())
     return m
 
@@ -168,13 +192,15 @@ def verify_manifest(a: argparse.Namespace, want: dict[str, str]) -> None:
     if bad: raise Failure("inventory_mismatch", 3, {"count": len(bad), "first": bad[:20]})
 
 
-def arm_flags(arm: str) -> dict[str, str]: return {**COMMON, "--evidence": EVIDENCE[arm]}
+def arm_flags(arm: str, mode: str = "additive") -> dict[str, str]:
+    return {**COMMON, "--evidence": mode if arm == "candidate" else EVIDENCE[arm]}
 
 
-def stage_command(a: argparse.Namespace, arm: str, inp: Path, rank: Path, out: Path) -> list[str]:
+def stage_command(a: argparse.Namespace, arm: str, inp: Path, rank: Path, out: Path, mode: str = "additive") -> list[str]:
     return ["dgx", "run", "--", str(a.node), "--import", "tsx", "benchmark/longmemeval-qa.ts",
             "--input", str(inp), "--retrieval", "cached", "--rankings", str(rank),
-            *[x for kv in arm_flags(arm).items() for x in kv], "--out", str(out)]
+            *[x for kv in arm_flags(arm, mode).items() for x in kv],
+            *(["--source-turns", str(a.source_turns)] if arm == "candidate" and mode == "statements" else []), "--out", str(out)]
 
 
 def _config_problems(row: dict, first: str) -> list[str]:
@@ -213,7 +239,7 @@ def _config_problems(row: dict, first: str) -> list[str]:
     return out
 
 
-def _row_problems(row: dict, arm: str, first: str) -> list[str]:
+def _row_problems(row: dict, arm: str, first: str, mode: str = "additive") -> list[str]:
     out = []
     for key in ("answer_call", "premise_call", "judge_call"):
         c = row.get(key)
@@ -225,10 +251,10 @@ def _row_problems(row: dict, arm: str, first: str) -> list[str]:
     failed = row.get("failed_answer_call")
     if isinstance(failed, dict) and isinstance(ac, dict) and failed.get("prompt_sha256") != ac.get("prompt_sha256"):
         out.append("recovered call prompt hash differs")
-    return out + evidence_problems(row, arm) + _config_problems(row, first)
+    return out + evidence_problems(row, arm, mode) + _config_problems(row, first)
 
 
-def check_rows(rows: list[dict], ids: list[str], abs_ids: set[str], arm: str, init: dict[str, str]) -> list[str]:
+def check_rows(rows: list[dict], ids: list[str], abs_ids: set[str], arm: str, init: dict[str, str], mode: str = "additive") -> list[str]:
     got = [r.get("question_id") for r in rows]
     problems: list[str] = []
     if sorted(map(str, got)) != sorted(ids):  # also rejects duplicates
@@ -239,21 +265,23 @@ def check_rows(rows: list[dict], ids: list[str], abs_ids: set[str], arm: str, in
         if not isinstance(r.get("correct"), bool): problems.append(f"{q}: correct is not boolean")
         if q in ids and bool(r.get("is_abstention")) != (q in abs_ids): problems.append(f"{q}: abstention flag differs from frozen input")
         if q not in init: continue
-        problems += [f"{q}: {p}" for p in _row_problems(r, arm, init[q])]
+        problems += [f"{q}: {p}" for p in _row_problems(r, arm, init[q], mode)]
     return problems
 
 
-def check_report(report: dict, ids: list[str], abs_ids: set[str], arm: str, init: dict[str, str], expect: dict[str, str]) -> list[str]:
+def check_report(report: dict, ids: list[str], abs_ids: set[str], arm: str, init: dict[str, str], expect: dict[str, str], mode: str = "additive",
+                 turns: dict | None = None) -> list[str]:
     problems = [] if report.get("status") == "complete" else [f"report status {report.get('status')}"]
     if report.get("comparison_valid") is not True: problems.append(f"comparison_valid is {report.get('comparison_valid')}, not true")
-    inv, s, flags = report.get("invocation") or {}, report.get("summary") or {}, arm_flags(arm)
+    inv, s, flags = report.get("invocation") or {}, report.get("summary") or {}, arm_flags(arm, mode)
     for flag, key in INVOCATION.items():
         if str(inv.get(key)) != flags[flag]: problems.append(f"invocation {key}={inv.get(key)} want {flags[flag]}")
     for key, want in {**expect, "retrieval": "cached"}.items():
         if inv.get(key) != want: problems.append(f"invocation {key} differs")
     if s.get("errors") != 0 or s.get("planned") != len(ids) or s.get("recorded") != len(ids):
         problems.append(f"summary not clean: errors={s.get('errors')} planned={s.get('planned')} recorded={s.get('recorded')}")
-    return problems + check_rows(report.get("results") or [], ids, abs_ids, arm, init)
+    if mode == "statements": problems += statement_validation().report_problems(report, arm) + statement_validation().turns_problems(report, arm, turns, len(ids))
+    return problems + check_rows(report.get("results") or [], ids, abs_ids, arm, init, mode)
 
 
 def _get(rows: dict[str, dict], q: str, *path: str) -> Any:
@@ -278,23 +306,24 @@ def parity_problems(control: dict | None, candidate: dict | None) -> list[str]:
 
 
 def compare(ids: list[str], control: dict[str, dict], candidate: dict[str, dict], abs_ids: set[str], init: dict[str, str],
-            instructions: dict[str, set] | None = None) -> dict:
+            instructions: dict[str, set] | None = None, mode: str = "additive") -> dict:
     """Numerical screen only. Answer prompts intentionally differ because the evidence differs, so they are recorded, not compared."""
     ok = lambda rows, q: _get(rows, q, "correct") is True
     gains = [q for q in ids if not ok(control, q) and ok(candidate, q)]
     losses = [q for q in ids if ok(control, q) and not ok(candidate, q)]
     abs_losses = [q for q in losses if q in abs_ids]
-    parity = {q: p for q in ids if (p := parity_problems(control.get(q), candidate.get(q)))}
+    stmt = mode == "statements"
+    parity = {q: p for q in ids if (p := (statement_validation().parity_problems if stmt else parity_problems)(control.get(q), candidate.get(q)))}
     c_ok, k_ok = sum(ok(control, q) for q in ids), sum(ok(candidate, q) for q in ids)
-    complete = (len(control) == len(candidate) == len(ids) and not check_rows(list(control.values()), ids, abs_ids, "control", init)
-                and not check_rows(list(candidate.values()), ids, abs_ids, "candidate", init))
+    complete = (len(control) == len(candidate) == len(ids) and not check_rows(list(control.values()), ids, abs_ids, "control", init, mode)
+                and not check_rows(list(candidate.values()), ids, abs_ids, "candidate", init, mode))
     same = bool(instructions) and all(len(instructions.get(arm) or ()) == 1 for arm in ("control", "candidate")) and instructions["control"] == instructions["candidate"]
     checks = {"all_rows_present_error_free": complete, "net_gain_at_least_2": k_ok - c_ok >= 2, "no_abstention_pair_loss": not abs_losses,
-              "base_prefix_and_source_parity": not parity, "answer_instructions_match": same}
+              ("source_identity_parity" if stmt else "base_prefix_and_source_parity"): not parity, "answer_instructions_match": same}
     return {"advancement_screen_passed": all(checks.values()), "checks": checks, "control_correct": c_ok, "candidate_correct": k_ok,
             "net": k_ok - c_ok, "gains": gains, "losses": losses, "abstention_losses": abs_losses,
             "abstention_pairs": {q: {"control": ok(control, q), "candidate": ok(candidate, q)} for q in ids if q in abs_ids},
-            "prefix_or_source_parity_failures": parity,
+            ("source_identity_parity_failures" if stmt else "prefix_or_source_parity_failures"): parity,
             "answer_prompt_sha256": {q: {"control": _get(control, q, "answer_call", "prompt_sha256"),
                                          "candidate": _get(candidate, q, "answer_call", "prompt_sha256")} for q in ids},
             "source_review": {"required": True, "status": "pending", "gains": gains, "losses": losses}}
@@ -305,7 +334,7 @@ def default_runner(cmd: list[str], cwd: Path, env: dict, stdout: Any, stderr: An
 
 
 def run_stage(a: argparse.Namespace, s: dict, st: dict, inv: dict, abs_ids: set[str], init: dict[str, str], runner: Runner,
-              save: Callable[[], None]) -> list[dict]:
+              save: Callable[[], None], turns: dict | None = None) -> list[dict]:
     out = a.out_dir
     rec = st["stages"][s["index"]] = {"arm": s["arm"], "block": s["block"], "status": "verifying"}
     save()
@@ -331,7 +360,7 @@ def run_stage(a: argparse.Namespace, s: dict, st: dict, inv: dict, abs_ids: set[
         rec["status"] = "invalid_json"
         raise Failure("stage_report_unparseable", 6, {"stage": s["index"]})
     expect = {"input": str(bdir / "input.json"), "rankings": str(bdir / "rankings.json"), "out": str(report)}
-    problems = (["nonzero exit %s" % code] if code else []) + check_report(rep, s["ids"], abs_ids, s["arm"], init, expect)
+    problems = (["nonzero exit %s" % code] if code else []) + check_report(rep, s["ids"], abs_ids, s["arm"], init, expect, a.candidate_evidence, turns)
     instr = rep.get("answer_instructions")
     if isinstance(instr, dict) and isinstance(instr.get("sha256"), str):
         rec["answer_instructions_sha256"] = canon(instr)
@@ -347,8 +376,9 @@ def run_stage(a: argparse.Namespace, s: dict, st: dict, inv: dict, abs_ids: set[
 
 
 def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: Runner | None) -> int:
-    out = a.out_dir
+    out, mode = a.out_dir, a.candidate_evidence
     if sha(a.data_dir / BASELINE) != BASELINE_SHA: raise Failure("baseline_mismatch", 2)
+    if mode == "statements": statement_validation()  # fail before any output if the pinned validator is unusable
     baseline = load(a.data_dir / BASELINE)
     in_sha, rank_sha = sha(a.data_dir / INPUT), sha(a.data_dir / RANKINGS)
     bound = baseline.get("hashes") or {}  # the baseline run recorded the exact input and rankings it consumed
@@ -357,11 +387,18 @@ def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: R
     inp, rank = load(a.data_dir / INPUT), load(a.data_dir / RANKINGS)
     sel = derive_selection(inp["cases"])
     ids, abs_ids = sel["selected_question_ids"], set(sel["abstention_ids"])
+    turns = None
+    if mode == "statements":  # trusted source-turns manifest: checked before anything but state.json is written
+        turns = {"path": str(a.source_turns), "sha256": sha(a.source_turns), "input_sha256": in_sha, "raw_dataset_sha256": (inp.get("provenance") or {}).get("dataset_sha256")}
+        try: tm = load(a.source_turns)
+        except (OSError, ValueError) as e: raise Failure("source_turns_unreadable", 2, repr(e))
+        if bad := statement_validation().turns_manifest_problems(tm, ids, in_sha, turns["raw_dataset_sha256"]): raise Failure("source_turns_invalid", 2, bad[:10])
     write_json(out / "selection.json", {
         "seed": SEED, "stratum": "abstention-only safety stratum; no correctness or gold reference is read",
         "rule": "all abstention cases plus the first 70 answerable cases by SHA256(seed NUL id); combined list sorted by the same hash",
         "count": len(ids), "abstention_count": len(abs_ids), "answerable_count": len(sel["answerable_ids"]), **sel,
-        "input_sha256": in_sha, "rankings_sha256": rank_sha, "baseline_sha256": BASELINE_SHA, "recorded_at": now()}, exclusive=True)
+        "input_sha256": in_sha, "rankings_sha256": rank_sha, "baseline_sha256": BASELINE_SHA, "recorded_at": now(),
+        **({"candidate_evidence": mode} if mode == "statements" else {})}, exclusive=True)
     if not set(ids) <= {r["question_id"] for r in rank["results"]}: raise Failure("selected_ids_missing_from_rankings", 2)
     init = derive_efforts(a, inp["cases"], ids)
     write_json(out / "efforts.json", {"policy": POLICY_TS, "policy_sha256": sha(a.source_root / POLICY_TS), "initial_effort": init}, exclusive=True)
@@ -376,13 +413,15 @@ def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: R
     write_json(out / "inventory.json", inv, exclusive=True)
     for s in stages:
         d = out / "blocks" / f"block-{s['block']}"
-        s["cmd"] = stage_command(a, s["arm"], d / "input.json", d / "rankings.json", out / "stages" / f"{s['index']:02d}-{s['arm']}" / "report.json")
+        s["cmd"] = stage_command(a, s["arm"], d / "input.json", d / "rankings.json", out / "stages" / f"{s['index']:02d}-{s['arm']}" / "report.json", mode)
     st.update(selected_question_ids=ids, abstention_ids=sorted(abs_ids), initial_effort=init, inventory_sha256=canon(inv), inventory_files=len(inv),
-              python=sys.version, hashes={k: inv[k] for k in ("supervisor", "validation", "protocol", "selection", "efforts", "baseline", "input", "rankings", "node", "python")},
+              python=sys.version, hashes={k: inv[k] for k in ("supervisor", "validation", "protocol", "selection", "efforts", "baseline", "input", "rankings", "node", "python",
+                                *(("statement_validation", "source_turns") if mode == "statements" else ()))},
               block_sha256={k: v for k, v in inv.items() if k.startswith("block:")},
               schedule=[{k: s[k] for k in ("index", "block", "arm")} for s in stages], stages={}, cohort_size=len(ids),
-              claim="Exploratory fresh 100-question paired additive-evidence trial that overrepresents the 30 unanswerable questions; "
+              claim=STATEMENT_CLAIM if mode == "statements" else "Exploratory fresh 100-question paired additive-evidence trial that overrepresents the 30 unanswerable questions; "
                     "not a full500 score; the public 472/500 result is unchanged.")
+    if turns: st["source_turns"] = turns
     if not a.live:
         st.update(status="prepared", finished_at=now(), planned_commands=[s["cmd"] for s in stages])
         save()
@@ -393,11 +432,11 @@ def execute(a: argparse.Namespace, st: dict, save: Callable[[], None], runner: R
     (out / "stages").mkdir()
     rows: dict[str, dict[str, dict]] = {"control": {}, "candidate": {}}
     for s in stages:
-        results = run_stage(a, s, st, inv, abs_ids, init, runner or default_runner, save)
+        results = run_stage(a, s, st, inv, abs_ids, init, runner or default_runner, save, turns)
         rows[s["arm"]].update({r["question_id"]: r for r in results})
     verify_manifest(a, inv)
     instr = {arm: {r.get("answer_instructions_sha256") for r in st["stages"].values() if r["arm"] == arm} for arm in rows}
-    result = compare(ids, rows["control"], rows["candidate"], abs_ids, init, instr)
+    result = compare(ids, rows["control"], rows["candidate"], abs_ids, init, instr, mode)
     result.update(usage={arm: usage(list(r.values())) for arm, r in rows.items()}, selected_question_ids=ids, claim=st["claim"],
                   strata={"abstention": len(abs_ids), "answerable": len(ids) - len(abs_ids)},
                   answer_instructions_sha256=st.get("answer_instructions_sha256"),
@@ -413,10 +452,17 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     for flag in ("source-root", "data-dir", "node", "out-dir", "protocol"): p.add_argument("--" + flag, type=Path, required=True)
     p.add_argument("--live", action="store_true", default=False)
+    p.add_argument("--candidate-evidence", choices=CANDIDATE_MODES, default="additive")
+    p.add_argument("--source-turns", type=Path, default=None, help="trusted source-turns manifest; required by, and only valid with, statements")
     a = p.parse_args(argv)
-    if a.protocol.name != PROTOCOL_NAME: p.error(f"--protocol must be {PROTOCOL_NAME}")
+    if (a.candidate_evidence == "statements") != (a.source_turns is not None): p.error("--source-turns is required with, and only valid with, --candidate-evidence statements")
+    want = STATEMENT_PROTOCOL_NAME if a.candidate_evidence == "statements" else PROTOCOL_NAME
+    if a.protocol.name != want: p.error(f"--protocol must be {want}")
     for k in ("source_root", "data_dir", "node", "out_dir", "protocol"): setattr(a, k, getattr(a, k).absolute())
     if not a.protocol.is_file(): p.error(f"--protocol file not found: {a.protocol}")
+    if a.source_turns is not None:
+        a.source_turns = a.source_turns.absolute()
+        if not a.source_turns.is_file(): p.error(f"--source-turns file not found: {a.source_turns}")
     return a
 
 
@@ -431,7 +477,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         print(f"output_exists: {a.out_dir}", file=sys.stderr)
         return 4
     st: dict[str, Any] = {"started_at": now(), "status": "preparing", "mode": "live" if a.live else "prepare",
-                          "source_root": str(a.source_root), "out_dir": str(a.out_dir)}
+                          "source_root": str(a.source_root), "out_dir": str(a.out_dir),
+                          **({"candidate_evidence": a.candidate_evidence} if a.candidate_evidence == "statements" else {})}
     save = lambda: write_json(a.out_dir / "state.json", st)
     save()
     try: return execute(a, st, save, runner)

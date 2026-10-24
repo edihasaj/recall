@@ -253,9 +253,23 @@ keyword search and evidence rendering. Injected additive test calls produce
 The first additive attempt was interrupted after three completed pairs, all
 correct in both arms. No rows were recorded for the next treatment block,
 and its in-flight usage is unknown. Its stale running checkpoint is preserved
-with a separate interruption receipt. The operational restart repeats all one
-hundred cases with fresh calls and identical settings in a persistent session;
-it reuses no completed answers and changes no cohort based on outcomes.
+with a separate interruption receipt. The operational restart repeated all one
+hundred cases with fresh calls and identical settings in a persistent session.
+It scored **94/100 control and 93/100 additive**, with two recorded gains and
+three losses, and used 41.02% more tokens. One recorded gain reflects judge
+variation between nearly identical supported abstentions. The treatment fails
+advancement; all scores remain fixed.
+
+The [statement-evidence trial](../benchmark/LONGMEMEVAL-STATEMENT-TRIAL-PROTOCOL.md)
+uses the same cohort with fresh answers in both arms. `--evidence statements`
+renders the original twenty and up to twenty lexical sources together within
+180,000 characters, prioritizing complete preferred-speaker statements. It
+requires `--source-turns` with a manifest rebuilt from the original structured
+role/content messages, bound to raw and prepared input hashes. QA verifies
+source text, identity, date and exact turn spans before credentials or model
+calls. Nested role-like text cannot create a new trusted turn. Injected calls
+remain invalid as benchmark evidence. This is an exploratory combined treatment
+whose numerical and source-review gates precede any fresh full500 evaluation.
 
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
