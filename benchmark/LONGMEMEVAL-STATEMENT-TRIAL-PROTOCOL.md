@@ -135,6 +135,6 @@ largely reflects conditional-count framing and judge sensitivity.
 
 These findings preserve every fixed verdict and do not calculate a revised
 score. They do not establish a defensible improvement in grounded answer
-quality. This configuration is rejected for full500 advancement; the public
-**472/500 (94.4%)** remains unchanged. The separate decision receipt binds the
-fixed result, integrity audit and source-review conclusions.
+quality, so the configuration did not advance under this protocol. The public
+result at the time remained **472/500 (94.4%)**. The configuration was later
+run on all 500 questions in a [separate experiment](LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).

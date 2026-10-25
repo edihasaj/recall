@@ -59,10 +59,9 @@ decisions into a mixed full500 answer score.
 
 A pass permits defining a separately frozen fresh answer trial or full500
 protocol. It does not guarantee the two additional correct answers needed to
-exceed 94.6%. Public claims, GitHub and landing-page numbers, and the requested
-new release remain conditional on a complete independently reviewed fresh
-full500 result. At least 474/500 exceeds the pinned published Hindsight number;
-different model setups still prevent a matched system-ranking claim.
+exceed 94.6%. Any public accuracy claim requires a complete, independently
+reviewed fresh full500 result. At least 474/500 exceeds the pinned published
+Hindsight number; different model setups still prevent a matched ranking.
 
 ## Completed diagnostic
 
@@ -77,4 +76,4 @@ generic event-count case did not produce a paired recovery.
 
 The numerical screen fails. No fresh answer trial or public accuracy score is
 advanced from this diagnostic. Observed input-plus-output tokens total
-7,472,980. Fixed decisions and the separate rejection receipt remain retained.
+7,472,980. All fixed decisions are retained.

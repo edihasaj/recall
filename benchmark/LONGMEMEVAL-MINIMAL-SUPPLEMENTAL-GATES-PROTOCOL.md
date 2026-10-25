@@ -70,5 +70,5 @@ control's 14/16. Three unanswerable misses (`a96c20ee_abs`, `09ba9854_abs`,
 `gpt4_70e84552_abs`) answered a nearby question instead of rejecting the
 false premise; `edced276_abs` exhausted its output budget. The minimal
 policy does not target false-premise abstention, so the candidate stops here.
-The [decision record](data/longmemeval-minimal-supplemental-final-decision-2026-10-21.json)
+The decision record
 binds the freeze, source archive and both reports.

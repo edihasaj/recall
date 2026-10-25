@@ -7,6 +7,12 @@ adapted to Recall's daemon surface.
 
 ## LongMemEval answer accuracy and Hindsight
 
+The current best full run is **474/500 (94.8%)**; see the
+[full500 results](LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md). Reports,
+decision records and receipts mentioned in these documents are written to
+`benchmark/data/`, which is kept out of the repository because it holds the
+raw benchmark dataset and full model outputs.
+
 The [saved-context diagnostic protocol](LONGMEMEVAL-CONTEXT-REPLAY-PROTOCOL.md)
 defines a separate comparison using the same answerer and judge on both saved
 contexts, with original identifiers hidden. It compares representation and

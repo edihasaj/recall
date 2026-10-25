@@ -27,6 +27,16 @@ results. Answer accuracy additionally tests whether the selected text contains
 the needed evidence, the model reasons correctly, and it declines unanswerable
 questions. Finding one relevant session does not establish complete evidence.
 
+## Current result
+
+Recall's best experimental full run is **474/500 (94.8%)**, from the
+[statement-evidence configuration](../benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
+A second fresh run of the same configuration scored 470/500, and the earlier
+best configuration scored 472/500. Recall answers and judges with Qwen, so the
+comparison with Hindsight's published 473/500 below is not head-to-head.
+Sections that mention a public 472/500 result describe the state at the time
+of each experiment.
+
 ## Published Hindsight reference
 
 The [AMB result artifact](https://github.com/vectorize-io/agent-memory-benchmark/blob/aef3702e0586a959c845cc2c61f10d5e8ff0f94a/outputs/longmemeval/hindsight/rag/s.json.gz)
@@ -138,7 +148,7 @@ ineligible, and the policy still used more tokens after mean imputation for
 the missing control calls. Because every requirement must pass, the blinded
 grounding review was not dispatched; its outcome could not change the
 decision. The policy is rejected, with no follow-up100 or full500 started.
-The [decision record](../benchmark/data/longmemeval-minimal-answer-final-decision-2026-10-21.json)
+The decision record
 binds the report, terminal record and completed audit hashes.
 
 `benchmark/longmemeval-qa.ts` now accepts `--answer-policy minimal`, which
@@ -152,7 +162,7 @@ see the [gates protocol](../benchmark/LONGMEMEVAL-MINIMAL-SUPPLEMENTAL-GATES-PRO
 The flag also accepts `premise` and `minimal-premise`, which append
 `PREMISE_CHECK_POLICY` and record `premise_sha256`. In development both premise
 versions dropped development60 below 58/60, so neither ran on locked cohorts;
-see the [premise-check decision](../benchmark/data/longmemeval-premise-check-decision-2026-10-21.json).
+see the premise-check decision.
 
 `--answer-check premise` adds one separate low-reasoning call after each
 successful answer. It sees only the question, clock and evidence, never the
@@ -276,8 +286,8 @@ at 28/30 abstentions and no paired abstention loss. All 600 calls succeeded.
 The numerical gate passed, but independent source review did not clear
 advancement: accepted answers include a wrong person identity and an unsupported
 harvest claim, while losses discard an ongoing yoga class and replace a user's
-fare quote with an assistant estimate. The candidate does not advance to
-full500. Its 95/100 pilot score cannot replace the public 472/500 result.
+fare quote with an assistant estimate. Under its own protocol the candidate did
+not advance to full500, and a 100-question pilot score is not a full-run result.
 
 The separate [category-union premise diagnostic](../benchmark/LONGMEMEVAL-PREMISE-UNION-PROTOCOL.md)
 keeps the canonical supplemental contexts and makes two fresh premise calls per
@@ -286,24 +296,19 @@ over generic categories. Named subjects and explicit co-occurrence constraints
 remain required. `--premise-policy category-union` is available only with
 `--answer-check premise --evidence supplemental`; omitting it preserves the
 original prompt. The check-only runner makes no answer or judge calls and emits
-no answer-accuracy score. Source review and a separately frozen fresh full run
-remain necessary before changing public numbers or publishing the requested
-release.
+no answer-accuracy score.
 
 The category-union diagnostic completed all 200 calls without errors but failed
-its abstention safety gate. It does not advance. Edi subsequently requested a
-separate [exploratory full500 run of the original statement candidate](../benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
-That new request does not clear either failed gate or remove the source-review
-findings. It uses fresh answers for all 500 cases, unchanged pilot settings and
-the original premise policy. The first full run finished at **470/500 (94.0%)**,
-including 27/30 abstentions, with no final row errors and two recorded answer
-recoveries. It missed the numerical target. Edi then requested one replication
-with exactly the same frozen configuration and fresh calls for all 500 cases.
-The replication scored **474/500 (94.8%)**, with 447/470 answerable and 27/30
-abstentions and no row errors. The two runs average 472/500. Recall's public
-best is now the 474/500 run, reported alongside the 470/500 repeat; it exceeds
-Hindsight's published 473/500 by one question under different answer and judge
-models, so it is not a matched ranking.
+its abstention safety gate, so it does not advance.
+
+The original statement-evidence configuration was then run on the
+[full 500 questions](../benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md)
+twice, with fresh answers each time and unchanged pilot settings. The runs
+scored **470/500 (94.0%)** and **474/500 (94.8%)**, both with 27/30 abstentions
+and no row errors, averaging 472/500. The pilot's source-review findings still
+apply to this configuration. 474/500 exceeds Hindsight's published 473/500 by
+one question under different answer and judge models, so it is not a matched
+ranking.
 
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST

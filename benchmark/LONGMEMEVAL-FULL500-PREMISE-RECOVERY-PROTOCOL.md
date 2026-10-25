@@ -2,14 +2,14 @@
 
 ## Decision
 
-Edi chose to stop using development60 as a pass/fail gate and to run the full
+The maintainer chose to stop using development60 as a pass/fail gate and to run the full
 500-question benchmark once with the best supported configuration. This
 protocol was written before any call in this run.
 
 Development60 has been answered about ten times. Fresh runs of the same
 answer path scored 53 to 58, and re-scoring the saved answers showed that the
 answers change from run to run while the judge stays mostly consistent
-([correction record](data/longmemeval-remaining-miss-diagnosis-correction-2026-10-22.json)).
+(correction record).
 A 58/60 bar with all seven original cases therefore measured chance more than
 quality. Follow-up100 is skipped for the same reason; the full run contains
 all of its questions.
@@ -74,5 +74,5 @@ run scored 93.8%. The premise check made 31 overrides, 6 of them on answerable
 questions; the recovery retry fired 3 times and recovered all 3. `0a995998`
 and `32260d93` missed. The model-kit question was judged correct, so the
 adjusted score equals the raw score. The
-[decision record](data/longmemeval-full500-premise-recovery-decision-2026-10-22.json)
+decision record
 binds the supervisor, state, report and frozen source.

@@ -16,7 +16,7 @@ established." Every other line is unchanged.
 The removed line conflicts with the task's own answer guidelines, which ask
 recommendation answers to say "They would not prefer [what to avoid based on
 context]." Re-scoring every saved development60 answer five times with the
-unchanged judge ([correction record](data/longmemeval-remaining-miss-diagnosis-correction-2026-10-22.json))
+unchanged judge (correction record)
 showed that gate 1 is decided by the answers, not judge variation. The four
 preference answers that said no negative preference was established averaged
 a 0.5 re-score rate, against 0.92 for the other 36. Four answers are too few
@@ -58,5 +58,5 @@ could no longer pass and the supervisor was stopped; the partial report is
 kept. `0a995998`: all three samples answered 2 and offered 3 only as a
 conditional reading. `32260d93`: all three samples again recommended several
 categories, so removing the negative-preference line did not fix it. The
-[decision record](data/longmemeval-minimal-v2-gates-decision-2026-10-22.json)
+decision record
 binds the supervisor, state, partial report and frozen source.

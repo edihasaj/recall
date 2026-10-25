@@ -64,5 +64,5 @@ four original-seven cases that missed in earlier runs (`0a995998`,
 samples: the disputed model-kit count, and the preference questions
 `32260d93` and `caf03d32`, where every sample recommended several categories.
 A vote cannot fix a miss that every sample makes. Answer calls used 6.8 million
-tokens. The [decision record](data/longmemeval-answer-voting-gates-decision-2026-10-22.json)
+tokens. The decision record
 binds the supervisor, state, report and frozen source.

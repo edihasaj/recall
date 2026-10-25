@@ -32,7 +32,7 @@ Versions 3 and 4 were measured by replaying only the check on saved v2
 answers and evidence. Development60 misses were all answer-side: three
 600-second timeouts during a slow-server period, the disputed model-kit count
 and the variable preference case. The
-[selection record](data/longmemeval-premise-check-selection-2026-10-22.json)
+selection record
 binds every replay.
 
 ## Serial gates
@@ -69,5 +69,5 @@ passed. The three misses all came from the answer call: the disputed
 model-kit count (`gpt4_59c863d7`), a slow-cooker preference answer
 (`caf03d32`), and `f523d9fe`, whose low-reasoning answer used the whole
 16,384-token output budget without finishing. The
-[decision record](data/longmemeval-premise-check-gates-decision-2026-10-22.json)
+decision record
 binds the supervisor, state, report and frozen source.

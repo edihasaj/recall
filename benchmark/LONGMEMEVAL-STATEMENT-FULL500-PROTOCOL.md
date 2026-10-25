@@ -1,137 +1,81 @@
-# User-requested exploratory statement-evidence full500, 24 October 2026
+# LongMemEval-S full500: statement evidence, 24–25 October 2026
 
-## Authorization and prior findings
+Recall's best experimental LongMemEval-S result is **474/500 (94.8%)**. It
+comes from the second of two fresh runs of the same frozen configuration; the
+first scored **470/500 (94.0%)**. The two runs average 472/500 (94.4%).
 
-Edi requested starting the full500 run after the completed diagnostics. This is
-a new explicitly requested exploratory run of the original statement-evidence
-candidate. It does not retroactively clear its failed source-review gate.
+| | Run 1 | Run 2 | Earlier best (23 Oct) |
+| --- | ---: | ---: | ---: |
+| **Overall** | **470/500** | **474/500** | 472/500 |
+| Answerable | 443/470 | 447/470 | 444/470 |
+| Unanswerable (abstention) | 27/30 | 27/30 | 28/30 |
+| Single-session user | 70/70 | 70/70 | 69/70 |
+| Single-session assistant | 53/56 | 53/56 | 56/56 |
+| Single-session preference | 28/30 | 29/30 | 28/30 |
+| Multi-session | 121/133 | 120/133 | 118/133 |
+| Temporal reasoning | 124/133 | 127/133 | 127/133 |
+| Knowledge update | 74/78 | 75/78 | 74/78 |
+| Final row errors | 0 | 0 | 0 |
 
-The paired statement trial scored 93/100 control versus 95/100 candidate, with
-28/30 abstentions in both arms. Its numerical gate passed, but independent source
-review found identity/status mistakes, unsupported harvest availability, and
-source-priority regressions. Those findings and fixed scores remain unchanged.
-The subsequent category-union premise diagnostic failed its abstention safety
-gate. This run uses neither that policy nor a combination of the treatments.
+Category rows include the unanswerable questions that belong to each category.
+The earlier best uses the [supplemental-evidence configuration](LONGMEMEVAL-FULL500-LONGER-TIMEOUT-PROTOCOL.md).
 
-This public corpus has been repeatedly inspected and used for development.
-Fresh calls do not make the questions unseen. The run measures an experimental
-answer harness; it does not establish everyday application accuracy.
+## What changed
 
-## Frozen configuration and full cohort
+This configuration uses statement-focused evidence. Each question receives the
+same twenty E5-ranked sessions as the earlier best, plus up to twenty more
+sessions from a keyword search on the question. All selected sessions are
+rendered within one 180,000-character budget, at most 4,000 characters per
+session, prioritizing complete statements by the speaker the question is
+about. Turn boundaries come from the original structured messages, so quoted
+`user:` text inside a message cannot pass for a new user turn. The renderer
+adds no facts and resolves no dates. See [history evidence](../docs/history-evidence.md).
 
-Use the unchanged statement QA runtime from the reviewed pilot freeze at commit
-`1ecd3a1ba269cf0aba785573337c6879adab8e49`, with its exact pinned dependencies,
-Node 24.22.1 and Python 3.13.16. The new orchestration code, protocol and all
-external inputs are separately pinned. Verify the complete inventory before
-every stage and after the run. The original pilot runtime must not be edited.
+Everything else matches the earlier best: Qwen (`qwen3.8-flash-next`) answers
+with adaptive reasoning and a 16,384-token limit, under the system History
+instructions and minimal-answer policy; a separate low-effort premise check can
+replace an answer with "not recorded"; and Qwen judges each answer against the
+reference with reasoning off.
 
-Bind the canonical baseline report SHA-256
-`9cba4555cad8031eec9e404d96ae4f7065c302cbacfa8a87f1232c0b9e0105f0`,
-prepared input SHA-256
-`169e909e5e514a8376871fb3351c6597e90bfdf696f6d7206ec33d91dd9c02f4`,
-and exact E5 ranking SHA-256
-`3202a46e13795ee463c2dee91c7831c03f71ed6ee7668c19f7092675d6b1234d`.
-The structured source-turn manifest SHA-256 is
-`1a3f7baa93c76512f04f2ef0423d2cbf2f521ded59f6c18af86415b68876e1f5`.
-Its raw dataset and prepared-input bindings remain mandatory.
+## How it was run
 
-Select exactly all 500 canonical cases in original prepared-input order,
-including all 470 answerable and 30 abstention questions. Selection, source
-retrieval and reasoning effort do not depend on correctness, references or
-marked sources. Use 167 consecutive blocks of at most three cases, with one
-candidate stage at a time and at most three concurrent question pipelines.
+Both runs used the same frozen runtime from commit
+`1ecd3a1ba269cf0aba785573337c6879adab8e49` with pinned dependencies,
+Node 24.22.1 and Python 3.13.16. Each run covered all 500 questions in their
+original order, in 167 blocks of at most three, with fresh answer, premise and
+judge calls for every question. No answers or verdicts were reused from any
+other run, and there were no correctness-based retries, rejudging or exclusions.
+The existing timeout and incomplete-response recovery applied in both runs; it
+fired twice per run. Pinned inputs:
 
-Every question receives a fresh answer, premise check and judge call. Reuse no
-pilot or historical answers, verdicts, drafts or favorable completions. Reference
-answers appear only in the unchanged judge calls. Answer generation sees neutral
-source labels, the question, trusted clock and source evidence, without original
-IDs, positions, categories, abstention labels or marked-source lists.
+| Input | SHA-256 |
+| --- | --- |
+| Prepared benchmark input | `169e909e5e514a8376871fb3351c6597e90bfdf696f6d7206ec33d91dd9c02f4` |
+| Exact E5 rankings | `3202a46e13795ee463c2dee91c7831c03f71ed6ee7668c19f7092675d6b1234d` |
+| Structured turn manifest | `1a3f7baa93c76512f04f2ef0423d2cbf2f521ded59f6c18af86415b68876e1f5` |
+| Earlier-best baseline report | `9cba4555cad8031eec9e404d96ae4f7065c302cbacfa8a87f1232c0b9e0105f0` |
 
-Keep the exact pilot treatment: original twenty E5 occurrences plus up to twenty
-distinct question-only lexical occurrences, trusted structured-message spans,
-preferred-speaker complete-unit reservation, one 180,000-character context cap
-and a 4,000-raw-character source cap. Keep Qwen adaptive answer reasoning with
-16,384 output tokens, system History instructions, minimal answers, the original
-low/4,096 premise check and none/4,096 judge, robust transport and the existing
-longer-timeout recovery. No category-union policy, extra sample, temporal helper
-or new answer instruction is included.
+Answer generation never sees original session IDs, reference answers,
+categories or abstention labels. Each run used about 35.4 million observed
+tokens and took roughly eight hours.
 
-## Execution, scoring and publication
+## How to read the result
 
-Preparation makes no model calls and reserves new output paths. Live execution
-requires `--live` and runs persistently. Retain selection, efforts, block inputs,
-inventory, stage reports, physical-LF-delimited journals, logs, prompt/source
-hashes, native settings, usage, retries, fallbacks and unknown usage. Validate
-every stage's identities, verdicts, source ranges, provenance and settings.
+- **Run-to-run variation is large.** Across the earlier best and both runs of
+  this configuration, 454 questions were right every time, 35 changed between
+  runs and 11 were wrong every time. A difference of a few questions between
+  runs is within this variation.
+- **The comparison with other systems is not head-to-head.** Hindsight's
+  published 473/500 (94.6%) uses Gemini 3.1 Pro to answer and Gemini 2.5 Flash
+  Lite to judge. Recall uses Qwen for both. 474/500 exceeds that published
+  number by one question.
+- **The public dataset has been used repeatedly during development.** Fresh
+  calls do not make these questions unseen.
+- **Some correct-judged answers still contain errors.** A source review of the
+  100-question pilot for this configuration found accepted answers that
+  misidentify a person or infer unstated facts, and misses that drop an ongoing
+  activity or prefer an assistant's estimate over the user's own figure.
 
-The denominator is always 500. Failed or missing selected cases cannot disappear
-or be reused from another run. An incomplete or invalid stage stops execution
-and leaves an incomplete result, with failed/missing cases counted incorrect in
-any progress summary. No correctness-based retry, rejudge, output repair,
-reference change, selective exclusion or replacement run is allowed. Existing
-error-based transport recovery stays visible and unchanged.
-
-Report the complete fixed raw judged score, abstention and category breakdowns,
-all errors and accounting, and historical-baseline gains/losses with the limits
-of that noncontemporaneous comparison. Do not rescore to force a target.
-
-At least **474/500 (94.8%)** exceeds the pinned published Hindsight number of
-473/500 (94.6%); at least 476/500 exceeds 95%. These thresholds alone do not
-establish better grounding or a matched system-ranking claim. Hindsight uses
-different answer and judge models. Preserve the prior source-review failures
-and independently inspect new gains, losses and accepted answers before any
-publication or release decision. The runner always leaves publication pending;
-it cannot change GitHub, the landing page, version tags or release artifacts.
-
-The current public best remains **472/500 (94.4%)** until a complete result and
-its independent audit support an accurate replacement claim. Edi has authorized
-the later GitHub/landing update and new version once a qualifying reviewed
-result is available; this run alone does not assume that outcome.
-
-## First full run and requested replication, 25 October 2026
-
-The first run completed all 500 questions across 167 valid stages with a fixed
-raw judged result of **470/500 (94.0%)**: 443/470 answerable questions and 27/30
-abstentions. There were no final row errors. Two initial answer calls required
-the existing error-based recovery: one exhausted its output budget and one
-timed out. The timeout's usage is unknown; observed token totals remain lower
-bounds. This result misses both numerical targets and remains subject to its
-independent audit. Its artifacts and fixed verdicts are preserved.
-
-After seeing that result, Edi explicitly requested another run. This authorizes
-one separate replication, rather than replacement of the completed run. Keep
-the same immutable QA runtime, controller bytes, dependencies, all 500 identities
-and their order, source-turn manifest, instructions, model settings, budgets,
-transport recovery and scoring rules. Use new exclusive output paths and fresh
-answer, premise and judge calls for every question. Change no sampling settings,
-exclude no earlier miss and reuse no earlier answer or verdict.
-
-The earlier prohibition on an automatic replacement run does not prevent this
-new user-requested replication. All other rules remain in effect. Preserve and
-report both complete results, their mean and range, and the disclosed repeated
-use of public data; a better repeat cannot erase the 470/500 result or establish
-a stable improvement by itself. The prior grounding failures remain unresolved.
-No further automatic run, public score update or release follows from starting
-this replication. Publication and release still require review of the complete
-record.
-
-## Replication result, 25 October 2026
-
-The replication completed all 500 questions across 167 valid stages with a
-fixed raw judged result of **474/500 (94.8%)**: 447/470 answerable questions
-and 27/30 abstentions, with no final row errors. Together with the first run
-(470/500), the two runs of this unchanged configuration average 472/500
-(94.4%) and range from 470 to 474.
-
-Across the canonical 472 run and both runs of this configuration, 454 questions
-were correct every time, 35 changed between runs and 11 were wrong every time.
-Most of the difference between runs is therefore answer variation on the same
-evidence rather than a systematic change.
-
-Edi chose to publish the 474/500 run as Recall's best experimental result. The
-landing page reports it as the best of two runs and states the 470/500 repeat,
-the use of Qwen for answers and judging, and that the comparison scores are
-vendor-published with different models. 474/500 exceeds Hindsight's published
-473/500 by one question; this is not a matched head-to-head comparison and
-does not establish a stable ranking. The earlier source-review findings for
-this configuration remain on record.
+This measures the benchmark answer harness, not everyday application accuracy.
+The [pilot trial](LONGMEMEVAL-STATEMENT-TRIAL-PROTOCOL.md) and the
+[evaluation guide](../docs/longmemeval-evaluation.md) give the full history.

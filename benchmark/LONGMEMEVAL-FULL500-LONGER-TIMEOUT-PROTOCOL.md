@@ -50,5 +50,5 @@ published 473/500 uses different answer and judge models, so the one-question
 gap is not a matched ranking. Scores across three near-identical runs
 (454, 464, 472) show large run-to-run variation; this is one run, not a
 stable estimate. The
-[decision record](data/longmemeval-full500-longer-timeout-decision-2026-10-23.json)
+decision record
 binds the supervisor, state, report and frozen source.

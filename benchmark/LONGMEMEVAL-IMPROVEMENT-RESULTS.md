@@ -33,7 +33,7 @@ fresh control. The difference is one control answer timeout on `0a995998`;
 both arms missed `gpt4_59c863d7`. The policy observed 2,293,525 total tokens
 across 120 calls, versus 2,241,947 across the control's 119 completed calls,
 so the required token reduction fails. The
-[decision record](data/longmemeval-minimal-answer-final-decision-2026-10-21.json)
+decision record
 rejects the policy without a grounding review, because no grounding outcome
 could satisfy the failed resource requirement.
 
@@ -55,7 +55,7 @@ questions: development60 fell to 57/60 and then 53/60, missing two and then
 four of the original seven. Both versions refused `dd2973ad`, whose date is
 ambiguous, and the revised one narrowed count answers. Neither passes gate 1,
 so no locked stage ran. The
-[decision record](data/longmemeval-premise-check-decision-2026-10-21.json)
+decision record
 keeps both runs. Adding instructions to the single answer call does not fix
 false-premise abstention without costing answerable accuracy.
 
@@ -87,10 +87,10 @@ disputed model-kit count and two preference questions (`32260d93`,
 `caf03d32`) where the model recommends several categories and the reference
 expects one.
 
-A first [diagnosis of the remaining misses](data/longmemeval-remaining-miss-diagnosis-2026-10-22.json)
+A first diagnosis of the remaining misses
 blamed judge variation. That was wrong. Re-scoring every saved development60
 answer from four runs five times with the unchanged judge
-([correction](data/longmemeval-remaining-miss-diagnosis-correction-2026-10-22.json))
+(correction)
 shows the judge is mostly consistent. The `32260d93` answer from the
 minimal-supplemental run scores 5/5; the premise-check and voting answers
 score 0/5, and the recovery answer 1/5. Two recorded verdicts were therefore
@@ -107,7 +107,7 @@ help. Development60 missed two original-seven cases within its first 28
 questions (`0a995998` and `32260d93`, each shared by all three samples), so
 the run was stopped and no locked stage started.
 
-Edi then chose to stop using development60 as a gate and to run full500 once
+The maintainer then chose to stop using development60 as a gate and to run full500 once
 with the premise check and answer recovery, without voting. The
 [full500 protocol](LONGMEMEVAL-FULL500-PREMISE-RECOVERY-PROTOCOL.md) was
 written before the run and fixes a separate adjusted score for the disputed

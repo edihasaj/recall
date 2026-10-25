@@ -59,5 +59,5 @@ No answer timed out or ran out of budget in this run, so the recovery rule
 never fired, and the premise check made no overrides. The misses were
 ordinary answer misses: the disputed model-kit count, `852ce960`, and
 original-seven `3a704032`, answered as 1 or 2 plants against a reference of 3.
-The [decision record](data/longmemeval-answer-recovery-gates-decision-2026-10-22.json)
+The decision record
 binds the supervisor, state, report and frozen source.

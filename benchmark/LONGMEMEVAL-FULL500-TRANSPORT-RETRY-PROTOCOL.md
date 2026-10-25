@@ -44,5 +44,5 @@ recovered 3 answers. The premise check made 29 overrides, 6 of them on
 answerable questions (the same 6 as the 454 run). Original-seven misses:
 `0a995998`, `6d550036`, `dd2973ad`. Hindsight's published 473/500 uses
 different models. The
-[decision record](data/longmemeval-full500-transport-retry-decision-2026-10-23.json)
+decision record
 binds the supervisor, state, report and frozen source.
