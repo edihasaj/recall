@@ -52,7 +52,7 @@ Recall answered **474 of 500** LongMemEval-S questions correctly (**94.8%**) in 
 
 ![LongMemEval-S accuracy: Recall 94.8%, Hindsight 94.6%, Supermemory 85.9%, Zep 71.2%, GPT-4o 60.2%](docs/longmemeval-chart.svg)
 
-Best of two runs of the same setup (474 and 470), answered and judged with Qwen. Other scores are as published by [Hindsight](https://github.com/vectorize-io/hindsight) with different models, so this is not a head-to-head test. Details: [protocol and results](benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
+Best of two runs of the same setup (474 and 470), answered and judged with Qwen. Other scores are as published by [Hindsight](https://github.com/vectorize-io/hindsight) with different models, so this is not a head-to-head test. See the [results, everything we tried and how we measured it](benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
 
 ### Retrieval vs agentmemory
 

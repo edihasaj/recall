@@ -20,7 +20,53 @@ first scored **470/500 (94.0%)**. The two runs average 472/500 (94.4%).
 Category rows include the unanswerable questions that belong to each category.
 The earlier best uses the [supplemental-evidence configuration](LONGMEMEVAL-FULL500-LONGER-TIMEOUT-PROTOCOL.md).
 
-## What changed
+## What we tried
+
+Every change followed the same method. We wrote its protocol and pass rules
+before making any model call, compared it against a fresh control run on the
+same questions, and kept every result, including failures. When a change
+passed on numbers, a separate reviewer checked each changed answer against the
+source conversations. We never rejudged answers or retried them because they
+were wrong.
+
+These changes moved the full 500-question score, each run with Qwen answering
+and judging:
+
+| Full run | Change | Score |
+| --- | --- | ---: |
+| Baseline | Keyword retrieval, raw conversation excerpts | 440/500 (88.0%) |
+| 2 | Highlighted evidence, History instructions, high reasoning | 446/500 (89.2%) |
+| 3 | Semantic (E5) retrieval instead of keyword search | 457/500 (91.4%) |
+| 4 | Separate check that rejects questions about things never mentioned | 454/500 (90.8%)¹ |
+| 5 | Retry requests that fail before reaching the model | 464/500 (92.8%) |
+| 6 | Retry timed-out answers at the same reasoning effort | 472/500 (94.4%) |
+| 7 and 8 | Statement-focused evidence (this page), run twice | 470 and 474/500 |
+
+¹ Sixteen calls failed during a model-server outage and count as wrong.
+Unanswerable accuracy rose to 29/30, from 24/30 in run 3.
+
+These ideas did not help and were dropped:
+
+| Idea | What happened |
+| --- | --- |
+| Extract key quotes before answering (three variants) | 29/60, 57/60 and 57/60 against a 58/60 gate |
+| Write two drafts and pick the better one | 59/60 in both arms, about three times the tokens |
+| Majority vote over three answers | 57/60; the remaining misses were shared by every sample |
+| Tell the answer prompt to reject false premises | Hurt answerable questions (57/60, then 53/60) |
+| Shorter, more focused answers | Passed development, then missed 4 of 16 unanswerable questions |
+| High reasoning for every question | 22/24 against 21/24, below the gain needed |
+| High reasoning for date questions | 73/74 against 69/74, but some gains were not supported by the sources |
+| Add more keyword-retrieved evidence | 93/100 against 94/100 for control |
+| Re-review rejected answers with fresh evidence | Recovered four answers but lost two correct abstentions |
+| Treat a count over several categories as mentioned if any category is | Let an unanswerable question through |
+
+We also gave Recall's saved contexts and Hindsight's saved contexts to the same
+answer and judge models on the same 60 questions: Recall's scored 58/60 and
+Hindsight's 56/60. That small test holds the models fixed but does not rerun
+Hindsight's full system. The [evaluation guide](../docs/longmemeval-evaluation.md)
+links each experiment's protocol and detailed results.
+
+## This configuration
 
 This configuration uses statement-focused evidence. Each question receives the
 same twenty E5-ranked sessions as the earlier best, plus up to twenty more
