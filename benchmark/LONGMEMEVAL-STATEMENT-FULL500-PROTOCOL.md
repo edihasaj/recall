@@ -87,3 +87,30 @@ The current public best remains **472/500 (94.4%)** until a complete result and
 its independent audit support an accurate replacement claim. Edi has authorized
 the later GitHub/landing update and new version once a qualifying reviewed
 result is available; this run alone does not assume that outcome.
+
+## First full run and requested replication, 25 October 2026
+
+The first run completed all 500 questions across 167 valid stages with a fixed
+raw judged result of **470/500 (94.0%)**: 443/470 answerable questions and 27/30
+abstentions. There were no final row errors. Two initial answer calls required
+the existing error-based recovery: one exhausted its output budget and one
+timed out. The timeout's usage is unknown; observed token totals remain lower
+bounds. This result misses both numerical targets and remains subject to its
+independent audit. Its artifacts and fixed verdicts are preserved.
+
+After seeing that result, Edi explicitly requested another run. This authorizes
+one separate replication, rather than replacement of the completed run. Keep
+the same immutable QA runtime, controller bytes, dependencies, all 500 identities
+and their order, source-turn manifest, instructions, model settings, budgets,
+transport recovery and scoring rules. Use new exclusive output paths and fresh
+answer, premise and judge calls for every question. Change no sampling settings,
+exclude no earlier miss and reuse no earlier answer or verdict.
+
+The earlier prohibition on an automatic replacement run does not prevent this
+new user-requested replication. All other rules remain in effect. Preserve and
+report both complete results, their mean and range, and the disclosed repeated
+use of public data; a better repeat cannot erase the 470/500 result or establish
+a stable improvement by itself. The prior grounding failures remain unresolved.
+No further automatic run, public score update or release follows from starting
+this replication. Publication and release still require review of the complete
+record.

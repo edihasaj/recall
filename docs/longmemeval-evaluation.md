@@ -295,7 +295,12 @@ its abstention safety gate. It does not advance. Edi subsequently requested a
 separate [exploratory full500 run of the original statement candidate](../benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
 That new request does not clear either failed gate or remove the source-review
 findings. It uses fresh answers for all 500 cases, unchanged pilot settings and
-the original premise policy; its result and publication decision remain pending.
+the original premise policy. The first full run finished at **470/500 (94.0%)**,
+including 27/30 abstentions, with no final row errors and two recorded answer
+recoveries. It missed the numerical target. Edi then requested one replication
+with exactly the same frozen configuration and fresh calls for all 500 cases.
+Both results will be retained and reported together; the repeat and publication
+decision remain pending. The public best stays 472/500 (94.4%).
 
 `benchmark/prepare-longmemeval-qa.py` freezes the public corpus and extracts
 literal AMB answer and category-specific judge prompts through Python AST
