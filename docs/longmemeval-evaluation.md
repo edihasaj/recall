@@ -29,9 +29,10 @@ Rankings for `--retrieval cached` come from `benchmark/longmemeval.ts`; see
 the [benchmark index](../benchmark/README.md).
 
 The answer model never sees original session IDs, reference answers,
-categories or abstention labels. The corpus's `answer_` session-ID prefix marks
-sessions that contain the answer, so sources are shown with neutral rank labels
-and dates instead. This is a deliberate difference from AMB's presentation.
+categories or abstention labels. The corpus's `answer_` session-ID prefix can
+act as an imperfect relevance hint, including in unanswerable variants, so
+sources are shown with neutral rank labels and dates instead. This is a
+deliberate difference from AMB's presentation.
 
 ## Main flags
 

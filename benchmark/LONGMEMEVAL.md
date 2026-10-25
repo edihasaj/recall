@@ -58,8 +58,8 @@ is not a head-to-head test. 474/500 exceeds Hindsight's published number by
 one question.
 
 An offline audit of Hindsight's stored contexts found original `answer_`
-session IDs in 61 of them. That prefix marks sessions that contain the answer,
-so it can act as a relevance hint. Recall hides original session IDs from the
+session IDs in 61 of them. That prefix can act as an imperfect relevance hint,
+including in unanswerable variants. Recall hides original session IDs from the
 answer model and shows only neutral rank labels and dates. The audit cannot
 tell whether the IDs affected Hindsight's score; it is one more reason the
 comparison is not matched.
