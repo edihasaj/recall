@@ -44,7 +44,17 @@ The bundled web dashboard (open via the menu bar item *Open Dashboard in Browser
 - **Timeline** — filterable feed of every daemon event (compile, query, scan, correction, feedback, tool calls…). Click a row to expand the full request/result JSON; jump straight to the linked memories or pivot into the session view.
 - **Sessions** — every distinct session Recall has seen across MCP, hooks, and CLI traffic, with duration, event count, and type breakdown. Expand a session to see its events inline or hand it off to the Timeline filtered by `session_id`.
 
-## Benchmarks — Recall vs agentmemory
+## Benchmarks
+
+### LongMemEval-S answer accuracy
+
+Recall answered **474 of 500** LongMemEval-S questions correctly (**94.8%**) in its best experimental run.
+
+![LongMemEval-S accuracy: Recall 94.8%, Hindsight 94.6%, Supermemory 85.9%, Zep 71.2%, GPT-4o 60.2%](docs/longmemeval-chart.svg)
+
+Best of two runs of the same setup (474 and 470), answered and judged with Qwen. Other scores are as published by [Hindsight](https://github.com/vectorize-io/hindsight) with different models, so this is not a head-to-head test. Details: [protocol and results](benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md).
+
+### Retrieval vs agentmemory
 
 LongMemEval-S, N=500, including 30 unanswerable question IDs. Same dataset
 agentmemory publishes; these are retrieval metrics, not answer accuracy.
