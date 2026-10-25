@@ -114,3 +114,24 @@ a stable improvement by itself. The prior grounding failures remain unresolved.
 No further automatic run, public score update or release follows from starting
 this replication. Publication and release still require review of the complete
 record.
+
+## Replication result, 25 October 2026
+
+The replication completed all 500 questions across 167 valid stages with a
+fixed raw judged result of **474/500 (94.8%)**: 447/470 answerable questions
+and 27/30 abstentions, with no final row errors. Together with the first run
+(470/500), the two runs of this unchanged configuration average 472/500
+(94.4%) and range from 470 to 474.
+
+Across the canonical 472 run and both runs of this configuration, 454 questions
+were correct every time, 35 changed between runs and 11 were wrong every time.
+Most of the difference between runs is therefore answer variation on the same
+evidence rather than a systematic change.
+
+Edi chose to publish the 474/500 run as Recall's best experimental result. The
+landing page reports it as the best of two runs and states the 470/500 repeat,
+the use of Qwen for answers and judging, and that the comparison scores are
+vendor-published with different models. 474/500 exceeds Hindsight's published
+473/500 by one question; this is not a matched head-to-head comparison and
+does not establish a stable ranking. The earlier source-review findings for
+this configuration remain on record.

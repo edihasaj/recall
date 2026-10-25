@@ -75,7 +75,7 @@
             <span>Cloud is optional</span>
           </p>
 
-          <p class="benchmark-teaser"><a href="#longmemeval">94.4% on LongMemEval-S <span>Best experimental run &middot; Explore the evaluation &darr;</span></a></p>
+          <p class="benchmark-teaser"><a href="#longmemeval">94.8% on LongMemEval-S <span>Best experimental run &middot; See how it compares &darr;</span></a></p>
 
         </div>
 
@@ -134,18 +134,29 @@
       <section class="benchmark" id="longmemeval" aria-labelledby="benchmark-title">
         <div class="benchmark-score">
           <span class="section-label">LongMemEval-S</span>
-          <strong>94.4<span>%</span></strong>
-          <p>472 of 500 questions answered correctly</p>
+          <strong>94.8<span>%</span></strong>
+          <p>474 of 500 questions answered correctly</p>
         </div>
         <div class="benchmark-copy">
           <h2 id="benchmark-title">Long conversations.<br />Memory put to the test.</h2>
           <p>LongMemEval tests whether a system can answer questions from long conversation histories, track changing facts, and recognize when an answer was never recorded.</p>
-          <p class="benchmark-scope">Our best experimental harness run scored 472/500. Three similar runs scored 454, 464, and 472 on repeatedly evaluated public data. This measures the benchmark harness, not everyday app accuracy, and does not establish a ranking against other systems.</p>
+          <p class="benchmark-scope">Our best experimental harness run scored 474/500. A repeat of the same setup scored 470/500, and earlier configurations scored 454 to 472, all on repeatedly evaluated public data. Recall answers and judges with Qwen; the other scores are published by their vendors with different models. This measures the benchmark harness, not everyday app accuracy.</p>
           <div class="benchmark-links">
-            <a href="https://github.com/edihasaj/recall/blob/729c703/benchmark/LONGMEMEVAL-FULL500-LONGER-TIMEOUT-PROTOCOL.md">Read the protocol &amp; result &rarr;</a>
-            <a href="https://github.com/edihasaj/recall/blob/729c703/benchmark/LONGMEMEVAL-IMPROVEMENT-RESULTS.md">See the experiment history &rarr;</a>
+            <a href="https://github.com/edihasaj/recall/blob/main/benchmark/LONGMEMEVAL-STATEMENT-FULL500-PROTOCOL.md">Read the protocol &amp; result &rarr;</a>
+            <a href="https://github.com/edihasaj/recall/blob/main/docs/longmemeval-evaluation.md">See the experiment history &rarr;</a>
           </div>
         </div>
+        <figure class="benchmark-chart" aria-labelledby="benchmark-chart-title">
+          <figcaption id="benchmark-chart-title">LongMemEval-S overall accuracy</figcaption>
+          <ol class="bench-bars">
+            <li class="bench-row is-recall" style="--score: 94.8"><span class="bench-name">Recall</span><span class="bench-track"><span class="bench-fill"></span></span><span class="bench-value">94.8%</span></li>
+            <li class="bench-row" style="--score: 94.6"><span class="bench-name">Hindsight</span><span class="bench-track"><span class="bench-fill"></span></span><span class="bench-value">94.6%</span></li>
+            <li class="bench-row" style="--score: 85.92"><span class="bench-name">Supermemory</span><span class="bench-track"><span class="bench-fill"></span></span><span class="bench-value">85.9%</span></li>
+            <li class="bench-row" style="--score: 71.2"><span class="bench-name">Zep</span><span class="bench-track"><span class="bench-fill"></span></span><span class="bench-value">71.2%</span></li>
+            <li class="bench-row" style="--score: 60.2"><span class="bench-name">GPT-4o, full context</span><span class="bench-track"><span class="bench-fill"></span></span><span class="bench-value">60.2%</span></li>
+          </ol>
+          <p class="bench-source">Recall: best of two runs of the same setup (474 and 470 of 500), Qwen answering and judging. Other systems: scores as published in <a href="https://github.com/vectorize-io/hindsight">Hindsight&rsquo;s January 2026 comparison</a>, with different answer and judge models; Hindsight&rsquo;s 473/500 is pinned in the <a href="https://github.com/vectorize-io/agent-memory-benchmark">Agent Memory Benchmark</a>. Not a matched head-to-head run.</p>
+        </figure>
       </section>
 
       <section class="workflow" id="how" aria-label="How Recall works">

@@ -664,6 +664,61 @@ pre code {
 .benchmark-links { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 .benchmark-links a { color: var(--fern); text-decoration: underline; text-underline-offset: 4px; }
 
+.benchmark-chart {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: clamp(20px, 3vw, 32px);
+  border-top: 1px solid var(--line);
+}
+.benchmark-chart figcaption {
+  margin-bottom: 18px;
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.bench-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.bench-row {
+  display: grid;
+  grid-template-columns: minmax(118px, 168px) 1fr 64px;
+  align-items: center;
+  gap: 16px;
+}
+.bench-name { font-weight: 500; color: var(--ink); }
+.bench-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(36, 22, 17, 0.07);
+  overflow: hidden;
+}
+.bench-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--score) * 1%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(93, 75, 64, 0.35), rgba(93, 75, 64, 0.6));
+  transform-origin: left center;
+  animation: bench-grow 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.bench-row:nth-child(2) .bench-fill { animation-delay: 0.08s; }
+.bench-row:nth-child(3) .bench-fill { animation-delay: 0.16s; }
+.bench-row:nth-child(4) .bench-fill { animation-delay: 0.24s; }
+.bench-row:nth-child(5) .bench-fill { animation-delay: 0.32s; }
+.bench-value { font: 600 15px/1 var(--mono); text-align: right; color: var(--ink-soft); }
+.bench-row.is-recall .bench-name { font-weight: 700; color: var(--fern); }
+.bench-row.is-recall .bench-track { height: 20px; }
+.bench-row.is-recall .bench-fill { background: linear-gradient(90deg, var(--fern), var(--copper)); }
+.bench-row.is-recall .bench-value { color: var(--fern); font-size: 17px; }
+.bench-source { margin: 18px 0 0; font-size: 13px; color: var(--ink-soft); }
+.bench-source a { color: var(--fern); }
+@keyframes bench-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .bench-fill { animation: none; } }
+@media (max-width: 640px) {
+  .bench-row { grid-template-columns: 1fr 56px; gap: 6px 12px; }
+  .bench-name { grid-column: 1 / -1; }
+}
+
 .workflow {
   margin: 0 0 78px;
 }
