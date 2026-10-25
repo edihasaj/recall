@@ -102,9 +102,9 @@ natural-language questions. It provides temporal selection for one
 repository/subject/predicate at a time, rather than general graph SQL,
 aggregation, or arbitrary multi-hop reasoning.
 
-The separate [temporal event investigation](../benchmark/LONGMEMEVAL-TEMPORAL-EVENTS-NOTES.md)
-explores source-linked event evidence for LongMemEval. Its offline calendar
-prototype keeps prose mentions unresolved and only interprets reviewed complete
+A separate offline calendar prototype for LongMemEval,
+`benchmark/longmemeval-date-anchors.ts`, explores source-linked event dates.
+It keeps prose mentions unresolved and only interprets reviewed complete
 date expressions. It does not extend state capture, count events, alter MCP
 queries or establish an answer-accuracy improvement.
 
@@ -161,11 +161,11 @@ separation is not authentication; a network-facing caller must authenticate
 those inputs. These records do not enter ordinary memories, embeddings,
 instruction injection, the existing `recall ump` server or Cloud sync.
 
-The [UMP pilot protocol](../benchmark/TEMPORAL-UMP-PROTOCOL.md) defines fresh
+The [UMP pilot protocol](../benchmark/TEMPORAL.md) defines fresh
 synthetic capture calls, a matched validator control and a raw-source control.
 It deliberately leaves automatic capture, natural question parsing, full UMP
 lifecycle and Cloud integration outside the experiment.
-The [completed UMP pilot](../benchmark/TEMPORAL-UMP-RESULTS.md) scored 27/34
+The [completed UMP pilot](../benchmark/TEMPORAL.md) scored 27/34
 structured lookups against 29/34 for matched v3. UMP capture stored four future
 plans despite the state-only contract and reached 80% assertion precision and
 66.7% recall. The candidate failed its adoption gates. It remains a development
@@ -179,13 +179,13 @@ state-only future-plan refusal, and scoped support for explicit replacement
 evidence across adjacent sentences. The structured low-level store continues
 to permit explicit future-effective source assertions.
 
-The [post-fix synthetic protocol](../benchmark/TEMPORAL-UMP-V2-PROTOCOL.md)
+The [post-fix synthetic protocol](../benchmark/TEMPORAL.md)
 reruns all 24 development worlds. The
-[public rerun protocol](../benchmark/TEMPORAL-V4-REAL-PROTOCOL.md) reruns the
+[public rerun protocol](../benchmark/TEMPORAL.md) reruns the
 same exposed 434 public question IDs using fresh capture, query, answer and
 grading calls. Neither protocol makes these repeated examples a new holdout.
 The previous reports and archived sources remain unchanged.
-The [v4 results](../benchmark/TEMPORAL-V4-RESULTS.md) record the UMP release,
+The [v4 results](../benchmark/TEMPORAL.md) record the UMP release,
 passing code gates and complete synthetic runs. After the first complete public
 attempt suffered a provider outage, a separate complete recovery repetition
 scored 168/434 for both temporal v4 and shared raw, versus 179/434 for full raw.
@@ -231,23 +231,23 @@ The actual SessionStart hook uses tighter limits (three memory lines and a
 500-token budget) than this default-compiler comparison. Its reported compiler
 score is therefore not a measurement of exact lifecycle delivery.
 
-The [expanded evaluation protocol](../benchmark/TEMPORAL-EXPANDED-PROTOCOL.md)
+The [expanded evaluation protocol](../benchmark/TEMPORAL.md)
 defines fresh synthetic scenarios, repeated runs, a stronger scoped-history
 control, and a separate fixed-schema extraction/query-parsing probe.
 `benchmark/temporal-expanded.ts` and `benchmark/temporal-intake.ts` expose those
 evaluations; both skip model calls when no provider is supplied. These tools
 evaluate candidate integration paths and do not connect automatic intake to
 the running memory system.
-The [completed expanded report](../benchmark/TEMPORAL-EXPANDED-RESULTS.md)
+The [completed expanded report](../benchmark/TEMPORAL.md)
 records the measured gains and the integration hurdles that remain unmet.
 
-The later [integration rehearsal protocol](../benchmark/TEMPORAL-CATEGORIES-PROTOCOL.md)
+The later [integration rehearsal protocol](../benchmark/TEMPORAL.md)
 extends coverage to all ordinary memory types, source-language routing
 boundaries, a type/source/scope/status coexistence matrix, backup recovery, and
 sampled public conversations. It evaluates proposed components offline.
 Passing a structured-store test does not certify automatic capture, lifecycle
 delivery, retention, privacy, or Cloud synchronization.
-The [rehearsal results](../benchmark/TEMPORAL-CATEGORIES-RESULTS.md) show correct
+The [rehearsal results](../benchmark/TEMPORAL.md) show correct
 structured lookup and unchanged ordinary-memory selection, but automatic
 source-language capture still fails the integration hurdles.
 
@@ -281,19 +281,19 @@ The language adapter is separate from the structured MCP tools and is not wired
 into lifecycle hooks, normal queries, promotion, or Cloud synchronization.
 Its model callback is provided by the caller; it does not configure a provider
 or grant authority to source text. The
-[v2 protocol](../benchmark/TEMPORAL-V2-PROTOCOL.md) defines development and
+[v2 protocol](../benchmark/TEMPORAL.md) defines development and
 held-out validation for this candidate. Earlier benchmark reports remain
 unchanged.
-The [v2 results](../benchmark/TEMPORAL-V2-RESULTS.md) report exact capture and
+The [v2 results](../benchmark/TEMPORAL.md) report exact capture and
 supported lookup on a small holdout, explain the casing effect in the comparison,
 and record a separate conflict/correction probe.
 
-The [larger public-conversation protocol](../benchmark/TEMPORAL-REAL-PROTOCOL.md)
+The [larger public-conversation protocol](../benchmark/TEMPORAL.md)
 extends the comparison to additional public questions with semantic scoring and
 a full-budget history control. It evaluates retrieval-time augmentation over
 fresh lexical retrieval. It does not certify full-history automatic ingestion,
 the deployed hybrid retrieval configuration or Recall Cloud.
-The [completed comparison](../benchmark/TEMPORAL-REAL-RESULTS.md) found identical
+The [completed comparison](../benchmark/TEMPORAL.md) found identical
 semantic scores to the shared raw control on 434 questions, with only one
 actual augmentation. The full-budget raw control scored higher, so this
 candidate remains experimental.
@@ -314,7 +314,7 @@ metadata conflicts. Plain evidence keeps its original representation except
 that ambiguous receipt-shaped raw text is refused. The complete receipt must
 fit the existing 16,000-character evidence limit.
 
-The [v3 diagnostic](../benchmark/TEMPORAL-V3-RESULTS.md) reproduces the original
+The [v3 diagnostic](../benchmark/TEMPORAL.md) reproduces the original
 capture outputs through both validators. Its unchanged 165/434 answer score
 uses cached answers and is not a fresh end-to-end accuracy result.
 
