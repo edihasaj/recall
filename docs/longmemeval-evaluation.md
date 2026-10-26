@@ -79,9 +79,42 @@ A running or partial report is not a score. `benchmark/summarize-longmemeval-qa.
 summarizes completed reports and can compare them with the pinned Hindsight
 artifact on matching question IDs.
 
+## Answering hosted evidence
+
+`scripts/evaluate-hosted-answers.mts` answers the exact contexts retained by
+Recall Cloud's authenticated retrieval diagnostic. It does not rebuild evidence
+from local rankings. Supply the matching completed retrieval report and an
+explicit frozen evaluator checkout:
+
+```sh
+dgx run -- node --import tsx scripts/evaluate-hosted-answers.mts \
+  --contexts <hosted-contexts.jsonl> \
+  --retrieval-report <hosted-retrieval-report.json> \
+  --prepared benchmark/data/longmemeval-amb-input-2026-10-19.json \
+  --source-root <frozen-evaluator-checkout> \
+  --out <new-hosted-answer-report.json> --dry-run
+```
+
+Remove `--dry-run` to make model calls. The runner uses the selected checkout's
+answer, premise, recovery and judge helpers. The answer system receives the
+actual Cloud evidence policy and the minimal answer policy. Gold labels and
+reference answers remain outside answer and premise prompts. Concurrency is
+bounded at three; answer reasoning is adaptive with 16,384 output tokens, and
+the judge uses no reasoning with 4,096 output tokens.
+
+The report pins the inputs and imported evaluator files. A durable call journal
+records starts and results. `--resume` retains completed rows and refuses an
+uncertain started question rather than silently repeating it. Keep the original
+artifacts when reconciling a failed run.
+
+State the retrieval environment with every result. A local ASGI run exercises
+Cloud backend code, but it is not a production deployment measurement. Pinned
+q8 model assets can produce different vectors on Mac ARM and Linux x64 CPU
+kernels; production parity requires evaluation on the matching runtime.
+
 ## Interpretation limits
 
-- The harness indexes raw sessions for each question. It does not test
+- The default local harness indexes raw sessions for each question. It does not test
   automatic capture, memory promotion, instruction injection, the experimental
   temporal store or Recall Cloud.
 - Lexical retrieval does not test vector search; `cached` rankings carry their
