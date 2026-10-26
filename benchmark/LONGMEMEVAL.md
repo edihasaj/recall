@@ -39,6 +39,28 @@ Category rows include the unanswerable questions that belong to each category.
 The earlier best used supplemental evidence: the top ten E5 sessions in full,
 with deeper excerpts from the next ten in the remaining budget.
 
+### Cloud backend evaluation
+
+On 26 October 2026, one fresh evaluation using Recall Cloud's retained Linux
+backend evidence also scored **474/500 (94.8%)**: 445/470 answerable questions
+and 29/30 abstentions, with zero final errors. Qwen answered and judged using
+the frozen evaluator, the actual Cloud evidence policy and minimal answer
+policy. The backend used pinned E5 hybrid retrieval, 20 primary and 20 lexical
+supplemental sources, and a 180,000-character budget. Semantic rescue was off.
+
+This evaluates synthetic public histories through an isolated Cloud backend
+and a separate answer harness. It does not measure live production traffic,
+automatic capture, customer memories or every connecting agent. The artifact
+audit verified all 500 terminal rows, the pinned contexts and evaluator files,
+and all 1,504 model calls, including four answer recovery attempts. No answer
+or grade was retried because it was wrong. The answer-report SHA-256 is
+`38b1547316066d1e7788648190faa6dbef49955e52399e4051162109e1544c52`.
+
+The Cloud total ties OSS run 2; ten questions gained correctness and ten lost
+it. The runs occurred at different times, so this is an observed score match,
+not proof of identical answers or a causal comparison. Competitor comparisons
+retain the different-model limits below.
+
 ## Comparison with published results
 
 | System | Score | Answer model | Judge model |

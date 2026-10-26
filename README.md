@@ -54,6 +54,8 @@ Recall answered **474 of 500** LongMemEval-S questions correctly (**94.8%**) in 
 
 Best of two runs of the same setup (474 and 470), answered and judged with Qwen. Other scores are as published by [Hindsight](https://github.com/vectorize-io/hindsight) with different models, so this is not a head-to-head test. See the [results, everything we tried and how we measured it](benchmark/LONGMEMEVAL.md).
 
+A separate Cloud Linux backend evidence evaluation also scored **474/500**, with Qwen answering and judging. See its [configuration and scope](benchmark/LONGMEMEVAL.md#cloud-backend-evaluation).
+
 ### Retrieval vs agentmemory
 
 LongMemEval-S, N=500, including 30 unanswerable question IDs. Same dataset
