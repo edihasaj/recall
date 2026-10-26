@@ -211,6 +211,13 @@ export class CloudService {
         }
       }
       const api = validateApi(input.api ?? existing?.api ?? DEFAULT_CLOUD_API);
+      let sameQueryTarget = false;
+      try {
+        sameQueryTarget = existing?.api === api
+          && readPrivateSecret(existing.tokenFile, "token") === token;
+      } catch {
+        // A new account, token or endpoint needs its own query-text consent.
+      }
       const deviceId = String(input.deviceId ?? existing?.deviceId ?? this.defaultDeviceId()).trim();
       if (!deviceId || deviceId.includes(":") || deviceId.length > 200) {
         throw new CloudError("Invalid device name", "invalid");
@@ -226,6 +233,9 @@ export class CloudService {
       const config: CloudConfig = {
         version: 1,
         enabled: true,
+        ...(existing?.queryEnrichment === undefined ? {} : {
+          queryEnrichment: existing.queryEnrichment && sameQueryTarget,
+        }),
         optInAt: this.now().toISOString(),
         api,
         deviceId,

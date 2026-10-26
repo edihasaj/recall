@@ -217,6 +217,7 @@ tool(
         history_included: result.history_included,
         history_omitted: result.history_omitted ?? [],
         token_estimate: result.token_estimate,
+        ...(result.cloud_enrichment ? { cloud_enrichment: result.cloud_enrichment } : {}),
         repo_path: bootstrap.repo_path,
       },
     });

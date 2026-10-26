@@ -808,6 +808,7 @@ async function collectInjectionSurface(
     Boolean(priorHistoryInjected && compiled.history_included.every((id) => priorHistoryInjected.has(id)));
   if (
     (compiled.memories_included.length > 0 || compiled.history_included.length > 0) &&
+    !(compiled.cloud_enrichment && compiled.cloud_enrichment.added > 0) &&
     everyMemoryWasPrior &&
     everyHistoryWasPrior
   ) {

@@ -16,6 +16,7 @@ import { isHighRiskRule } from "../capture/correction.js";
 import { isEphemeralTaskConstraint, isNonUserCaptureContext } from "../capture/context.js";
 import { memoryRepoAliases } from "../repo/aliases.js";
 import { preferredEvidenceSpeaker, renderEvidenceSources } from "../history/evidence.js";
+import { withCloudQueryEnrichment } from "../cloud/query-enrichment.js";
 
 const DEFAULT_CONFIG: CompilerConfig = {
   confidence_threshold: CONFIDENCE.ACTIVE_MIN,
@@ -140,6 +141,12 @@ export interface CompiledContext {
   /** Retrieved history that could not fit a complete source passage. */
   history_omitted?: string[];
   token_estimate: number;
+  /** Optional remote evidence diagnostics, never local injection-ledger IDs. */
+  cloud_enrichment?: {
+    status: "ok" | "timeout" | "unavailable" | "busy";
+    added: number;
+    elapsed_ms: number;
+  };
   /**
    * The confidence gate actually applied. Callers cannot infer this: with no
    * explicit override it comes from the repo quality profile and rises as a
@@ -322,6 +329,17 @@ export function compileContext(
 }
 
 export async function compileContextHybrid(
+  db: RecallDb,
+  req: CompileRequest,
+): Promise<CompiledContext> {
+  return withCloudQueryEnrichment(
+    db,
+    { ...req, query_text: req.query_text ? normalizeQueryForRetrieval(req.query_text) : undefined },
+    () => compileContextHybridLocal(db, req),
+  );
+}
+
+async function compileContextHybridLocal(
   db: RecallDb,
   req: CompileRequest,
 ): Promise<CompiledContext> {

@@ -414,6 +414,51 @@ sync process, and makes no cloud request. Sync starts only after you choose
 - **Child environment**: an allowlist (PATH, HOME, locale, temp, proxy and CA variables).
   Inherited `RECALL_*`, `NODE_OPTIONS` and similar variables never reach the engine.
 
+## Optional online retrieval
+
+Cloud sync and online query retrieval have separate consent. After connecting
+server-readable Cloud sync, enable query enrichment with:
+
+```bash
+recall cloud-query on
+recall cloud-query status
+recall cloud-query off
+```
+
+`on` permits normalized question text to be sent to the configured Cloud API.
+It does not upload the local context pack, session history or separate path
+metadata. The question itself can contain personal or project information;
+recognized credential patterns are redacted before sending it.
+Fresh installations and existing sync connections keep this option off until
+explicitly enabled. It is unavailable for E2EE and Mac App Store installations.
+The local database must match the connected sync database.
+Changing the connected token or API endpoint clears query consent; enable it
+again for the new connection if desired.
+
+Question-based MCP queries and prompt/compile paths start local retrieval and
+Cloud lookup together. Local retrieval remains the baseline. Cloud can add at
+most three complete, source-labelled active durable memories, only within the
+remaining local context budget and a separate 500-estimated-token cap (using
+the compiler's character-based estimate). Synced copies
+already present locally are excluded, including copies of locally rejected or
+otherwise omitted memories. The first version accepts matching repository and
+global scope; unknown, team, path and raw conversation-history scopes are
+excluded. Cloud text is quoted evidence and does not grant permissions or
+automatically change local memories. Duplicate copies are not independent
+corroboration.
+
+The Cloud lookup has a 1.2-second overall deadline. Its response and read-only
+deduplication share at most 150 ms of asynchronous waiting after local retrieval
+finishes. Slow or unreachable
+Cloud returns local results. There is no retry or persistent result cache;
+one request at a time and a short failure cooldown bound repeated failures.
+These bounds do not cover a blocked JavaScript event loop. Compilation
+diagnostics distinguish Cloud success, timeout, unavailability and a busy
+lookup, and report how many Cloud memories were added.
+
+Session-start compilation without a question stays local. Offline local search
+and the existing memory injection ledgers continue to work independently.
+
 ## General daemon env vars
 
 Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.plist`, then `recall daemon restart`.

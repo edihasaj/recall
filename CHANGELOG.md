@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add optional online query enrichment after separate consent with
+  `recall cloud-query on`. Local retrieval runs alongside a bounded Cloud lookup;
+  unavailable or slow Cloud falls back to local context. Up to three complete,
+  scoped Cloud memories can use remaining context space. Synced duplicates and
+  locally rejected copies are excluded, and returned evidence never changes local
+  memories. Query retrieval stays off by default, including for existing sync
+  connections, and remains unavailable for E2EE and Mac App Store installations.
+
 ## 2.0.17 - 2026-10-24
 
 - Recall Cloud sync now runs inside the Recall daemon after an explicit, in-app

@@ -595,6 +595,7 @@ const server = createServer(async (req, res) => {
           dropped: result.memories_dropped,
           history_included: result.history_included,
           token_estimate: result.token_estimate,
+          ...(result.cloud_enrichment ? { cloud_enrichment: result.cloud_enrichment } : {}),
           repo_path: bootstrap.repo_path,
         },
       });

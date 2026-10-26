@@ -12,6 +12,8 @@ import { writePrivateFile } from "./private-files.js";
 export interface CloudConfig {
   version: 1;
   enabled: boolean;
+  /** Separate consent to send question text for bounded online retrieval. */
+  queryEnrichment?: boolean;
   /** ISO time of the user's explicit opt-in; `enabled` is refused without it. */
   optInAt: string | null;
   api: string;
@@ -91,6 +93,9 @@ export function validateConfig(value: unknown): CloudConfig {
     passphraseFile: optStr("passphraseFile"),
     migratedFrom: c.migratedFrom == null ? null : c.migratedFrom === "legacy-launchd" ? "legacy-launchd" : bad("migratedFrom"),
     migrationPending: c.migrationPending === true,
+    ...(c.queryEnrichment === undefined ? {} : {
+      queryEnrichment: typeof c.queryEnrichment === "boolean" ? c.queryEnrichment : bad("queryEnrichment"),
+    }),
   };
   for (const key of ["dbPath", "stateFile", "tokenFile"] as const) {
     if (!isAbsolute(config[key])) bad(key);
