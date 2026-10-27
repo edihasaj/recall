@@ -2,21 +2,19 @@
 
 ## Unreleased
 
+## 2.0.17 - 2026-10-27
+
+- Enable online memory retrieval automatically for new and existing connected,
+  server-readable Cloud accounts. Preserve an explicit off setting across
+  upgrades and reconnection. The Cloud tab explains that question text is sent
+  for retrieval and provides a switch independent of syncing. E2EE and the
+  Mac App Store edition remain local for retrieval.
 - Keep bounded late Cloud replies available to later relevant queries in the
-  daemon and MCP process. The short local wait no longer causes an offline
-  cooldown. Require lexical or computed semantic relevance before adding Cloud
-  memories, and request compact responses that omit duplicated arrays and bulk
-  source metadata. One-shot CLI calls cancel unfinished lookups promptly.
-
-- Add optional online query enrichment after separate consent with
-  `recall cloud-query on`. Local retrieval runs alongside a bounded Cloud lookup;
-  unavailable or slow Cloud falls back to local context. Up to three complete,
-  scoped Cloud memories can use remaining context space. Synced duplicates and
-  locally rejected copies are excluded, and returned evidence never changes local
-  memories. Query retrieval stays off by default, including for existing sync
-  connections, and remains unavailable for E2EE and Mac App Store installations.
-
-## 2.0.17 - 2026-10-24
+  daemon and MCP process without delaying local retrieval beyond the short
+  wait. Require lexical or computed semantic relevance before adding up to
+  three complete Cloud memories, exclude local duplicates and rejections, and
+  request compact responses without duplicated arrays or bulk source metadata.
+  One-shot CLI calls cancel unfinished lookups promptly.
 
 - Recall Cloud sync now runs inside the Recall daemon after an explicit, in-app
   Connect, replacing the separate Recall Cloud Sync LaunchAgent. A fresh or

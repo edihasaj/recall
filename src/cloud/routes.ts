@@ -29,13 +29,14 @@ export async function handleCloudRoute(
       send(res, 200, service.status());
       return true;
     }
-    if (method !== "POST" || !["/cloud/connect", "/cloud/disconnect", "/cloud/migrate"].includes(path)) {
+    if (method !== "POST" || !["/cloud/connect", "/cloud/disconnect", "/cloud/migrate", "/cloud/query"].includes(path)) {
       return false;
     }
     const body = await parseJsonBody(req, MAX_CLOUD_BODY_BYTES);
     const input = body && typeof body === "object" && !Array.isArray(body) ? body : {};
     if (path === "/cloud/connect") send(res, 200, await service.connect(input));
     else if (path === "/cloud/migrate") send(res, 200, await service.migrateLegacy(input));
+    else if (path === "/cloud/query") send(res, 200, await service.setQueryEnrichment((input as { enabled?: unknown }).enabled));
     else send(res, 200, await service.disconnect());
     return true;
   } catch (error) {

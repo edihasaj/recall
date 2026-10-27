@@ -3,7 +3,7 @@ import { cloudQueryStatus, setCloudQueryEnabled } from "../cloud/query-settings.
 
 export function registerCloudQueryCommands(program: Command): void {
   program.command("cloud-query [mode]")
-    .description("Optional online memory lookup: on sends question text to connected Cloud; off keeps retrieval local")
+    .description("Online memory lookup defaults on for connected Cloud; off keeps retrieval local")
     .action((mode = "status") => {
       if (!["on", "off", "status"].includes(mode)) {
         throw new Error("Use cloud-query on, off, or status");

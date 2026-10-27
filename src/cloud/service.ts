@@ -10,6 +10,7 @@ import {
 } from "./config.js";
 import { resolveEngineFiles, type EngineFiles } from "./engine.js";
 import { CloudError } from "./errors.js";
+import { isCloudQueryEnabled, setCloudQueryEnabled } from "./query-settings.js";
 import { LegacyLaunchd, type LegacyLoadedState, type LegacySettings } from "./legacy.js";
 import { DEFAULT_CLOUD_API, resolveCloudPaths, type CloudPaths } from "./paths.js";
 import {
@@ -49,6 +50,7 @@ export interface CloudStatus {
     e2ee: boolean;
     migratedFrom: "legacy-launchd" | null;
     optInAt: string | null;
+    queryEnrichment: boolean;
   } | null;
   legacy: { detected: boolean; loaded: boolean; unknown: boolean; canMigrate: boolean };
   error: string | null;
@@ -157,11 +159,20 @@ export class CloudService {
             e2ee: config.e2ee,
             migratedFrom: config.migratedFrom,
             optInAt: config.optInAt,
+            queryEnrichment: isCloudQueryEnabled(config, this.env),
           }
         : null,
       legacy: { detected, loaded, unknown, canMigrate: available && detected && !config?.enabled },
       error,
     };
+  }
+
+  setQueryEnrichment(enabled: unknown): Promise<CloudStatus> {
+    return this.exclusive(async () => {
+      if (typeof enabled !== "boolean") throw new CloudError("Online retrieval enabled must be a boolean", "invalid");
+      setCloudQueryEnabled(enabled, this.env, this.paths);
+      return this.status();
+    });
   }
 
   /** Called once when the daemon is listening. No config, or disabled, means a no-op. */
@@ -211,13 +222,6 @@ export class CloudService {
         }
       }
       const api = validateApi(input.api ?? existing?.api ?? DEFAULT_CLOUD_API);
-      let sameQueryTarget = false;
-      try {
-        sameQueryTarget = existing?.api === api
-          && readPrivateSecret(existing.tokenFile, "token") === token;
-      } catch {
-        // A new account, token or endpoint needs its own query-text consent.
-      }
       const deviceId = String(input.deviceId ?? existing?.deviceId ?? this.defaultDeviceId()).trim();
       if (!deviceId || deviceId.includes(":") || deviceId.length > 200) {
         throw new CloudError("Invalid device name", "invalid");
@@ -234,7 +238,7 @@ export class CloudService {
         version: 1,
         enabled: true,
         ...(existing?.queryEnrichment === undefined ? {} : {
-          queryEnrichment: existing.queryEnrichment && sameQueryTarget,
+          queryEnrichment: existing.queryEnrichment,
         }),
         optInAt: this.now().toISOString(),
         api,

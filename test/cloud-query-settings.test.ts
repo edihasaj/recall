@@ -22,9 +22,10 @@ async function configured() {
   return { home, env, paths, db, service };
 }
 
-it("requires separate query consent, preserves it on reconnect, and supports opt-out", async () => {
+it("enables connected Cloud by default, preserves explicit settings on reconnect, and supports opt-out", async () => {
   const { env, db, service } = await configured();
-  expect(loadCloudQueryConnection(db, env)).toBeNull();
+  expect(loadCloudQueryConnection(db, env)).not.toBeNull();
+  expect(cloudQueryStatus(env)).toEqual({ enabled: true, connected: true, available: true });
   setCloudQueryEnabled(true, env);
   expect(loadCloudQueryConnection(db, env)).toMatchObject({ api: "https://api.recallmemory.dev", token: TOKEN });
   await service.connect({ token: TOKEN, optIn: true });
@@ -43,14 +44,22 @@ it("never borrows another database's credentials or operates after disconnect", 
   expect(loadCloudQueryConnection(db, env)).toBeNull();
 });
 
-it("clears query consent when reconnecting with a different token or endpoint", async () => {
+it("preserves explicit off across token and endpoint changes while automatic connections stay on", async () => {
   const { env, db, service } = await configured();
-  setCloudQueryEnabled(true, env);
   await service.connect({ token: "tok_another_account", optIn: true });
-  expect(loadCloudQueryConnection(db, env)).toBeNull();
-  setCloudQueryEnabled(true, env);
+  expect(loadCloudQueryConnection(db, env)).not.toBeNull();
+  setCloudQueryEnabled(false, env);
   await service.connect({ token: "tok_another_account", api: "https://other.example", optIn: true });
   expect(loadCloudQueryConnection(db, env)).toBeNull();
+  expect(cloudQueryStatus(env).enabled).toBe(false);
+});
+
+it("upgrades existing synced configuration without rewriting it or requiring another opt-in", async () => {
+  const { env, paths, db } = await configured();
+  const config = loadCloudConfig(paths)!;
+  expect(config.queryEnrichment).toBeUndefined();
+  expect(loadCloudQueryConnection(db, env)).not.toBeNull();
+  expect(loadCloudConfig(paths)).toEqual(config);
 });
 
 it("keeps MAS, E2EE, migrations and invalid credentials local", async () => {
