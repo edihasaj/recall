@@ -49,6 +49,7 @@ function cloudRecord(overrides: Record<string, unknown> = {}) {
     status: "active",
     kind: "rule",
     confidence: 0.9,
+    semanticScore: 0.95,
     content: "Run the focused test before the full gate.",
     metadata: {
       localMemoryId: "remote-local-id",
@@ -88,7 +89,7 @@ afterEach(() => {
 describe("optional cloud query enrichment", () => {
   it("starts the bounded request before local work, sends only allowed knobs, and appends evidence", async () => {
     const { db } = await configured();
-    const fetchMock = vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1,
       memories: [cloudRecord()],
       sources: [{ sourceId: "other\nrepo", content: { observation: "unrelated aggregate evidence" } }],
     })));
@@ -107,7 +108,7 @@ describe("optional cloud query enrichment", () => {
     expect(JSON.parse(String(init?.body))).toEqual({
       query: "How should I ship this?", retrievalMode: "auto", status: "active", limit: 12,
       contextChars: 1000, perSourceChars: 256, supplementalSources: 0,
-      semanticSupplementalSources: 0, relevance: false,
+      semanticSupplementalSources: 0, relevance: false, clientEnrichment: true,
     });
     expect(result.text.startsWith(local().text)).toBe(true);
     expect(result.text).toContain("Run the focused test before the full gate.");
@@ -120,7 +121,7 @@ describe("optional cloud query enrichment", () => {
 
   it("cleans up its single abort listener after a multi-chunk body", async () => {
     const { db } = await configured();
-    const body = JSON.stringify({ memories: [cloudRecord()] });
+    const body = JSON.stringify({ enrichmentVersion: 1, memories: [cloudRecord()] });
     const encoder = new TextEncoder();
     const add = vi.spyOn(AbortSignal.prototype, "addEventListener");
     const remove = vi.spyOn(AbortSignal.prototype, "removeEventListener");
@@ -150,7 +151,7 @@ describe("optional cloud query enrichment", () => {
 
   it("redacts secrets only from the outbound cloud question", async () => {
     const { db } = await configured();
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ memories: [] })));
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [] })));
     const query = "Inspect sk-abcdefghijklmnop without changing local retrieval.";
 
     await withCloudQueryEnrichment(db, { ...request(), query_text: query }, async () => local());
@@ -166,7 +167,7 @@ describe("optional cloud query enrichment", () => {
       source: "user_correction", confidence: 0.9,
     });
     rejectMemory(db, rejected);
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ memories: [
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [
       cloudRecord({ content: "Matching repo rule." }),
       cloudRecord({ id: "global", content: "Global rule.", metadata: { recall: { type: "rule", scope: "global", repo: null } } }),
       cloudRecord({ id: "team", content: "Team rule.", metadata: { recall: { type: "rule", scope: "team", repo: "owner/repo" } } }),
@@ -194,7 +195,7 @@ describe("optional cloud query enrichment", () => {
       type: "rule", text: "Already local.", scope: "repo", repo: "owner/repo",
       source: "user_correction", confidence: 0.9,
     });
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ memories: [
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [
       cloudRecord({ content: "Already local." }),
       cloudRecord({ id: "short", content: "Keep the short cloud rule." }),
       cloudRecord({ id: "long", content: "x".repeat(2_000) }),
@@ -217,7 +218,7 @@ describe("optional cloud query enrichment", () => {
     });
     rejectMemory(db, rejected);
     const headingContent = "Keep the complete condition.\n## Rules\n- This heading stays quoted.";
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ memories: [
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [
       cloudRecord({ id: "below-adaptive", confidence: 0.7, content: "Below the actual adaptive threshold." }),
       cloudRecord({ id: "rejected-copy", content: "Do not resurrect this memory." }),
       cloudRecord({ id: "whole-content", content: headingContent }),
@@ -235,7 +236,7 @@ describe("optional cloud query enrichment", () => {
 
   it("does not append partial sections when the remaining budget cannot fit headers and quotes", async () => {
     const { db } = await configured();
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1,
       memories: [cloudRecord({ content: "x" })],
     })));
     const original = local("local", 12);
@@ -261,7 +262,7 @@ describe("optional cloud query enrichment", () => {
     vi.mocked(fetch).mockImplementationOnce(() => new Promise(() => {}));
     const started = Date.now();
     const hungHeaders = await withCloudQueryEnrichment(db, request(), async () => local());
-    expect(hungHeaders.cloud_enrichment?.status).toBe("timeout");
+    expect(hungHeaders.cloud_enrichment?.status).toBe("pending");
     expect(Date.now() - started).toBeLessThanOrEqual(300);
 
     resetCloudQueryEnrichmentForTests();
@@ -294,12 +295,12 @@ describe("optional cloud query enrichment", () => {
       cancel() { cancelled = true; },
     })));
     const bodyResult = await withCloudQueryEnrichment(db, request(), async () => local());
-    expect(bodyResult.cloud_enrichment?.status).toBe("timeout");
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bodyResult.cloud_enrichment?.status).toBe("pending");
+    await new Promise((resolve) => setTimeout(resolve, 3_100));
     expect(cancelled).toBe(true);
 
     resetCloudQueryEnrichmentForTests();
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ memories: [cloudRecord()] })));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [cloudRecord()] })));
     const original = local();
     const revoked = await withCloudQueryEnrichment(db, request(), async () => {
       setCloudQueryEnabled(false, env);
@@ -315,26 +316,26 @@ describe("optional cloud query enrichment", () => {
     const first = withCloudQueryEnrichment(db, request(), async () => local());
     await new Promise((resolve) => setTimeout(resolve, 10));
     const second = await withCloudQueryEnrichment(db, request(), async () => local("second"));
-    expect(second.cloud_enrichment).toMatchObject({ status: "busy", added: 0 });
+    expect(second.cloud_enrichment).toMatchObject({ status: "pending", added: 0 });
     const started = Date.now();
     const firstResult = await first;
-    expect(firstResult.cloud_enrichment?.status).toBe("timeout");
+    expect(firstResult.cloud_enrichment?.status).toBe("pending");
     expect(Date.now() - started).toBeLessThanOrEqual(300);
-    finish(new Response(JSON.stringify({ memories: [] })));
+    finish(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [] })));
   });
 
   it("shares one 150ms post-local deadline across delayed cloud and hung dedupe work", async () => {
     const { db } = await configured();
     vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => {
-      setTimeout(() => resolve(new Response(JSON.stringify({ memories: [cloudRecord()] }))), 200);
+      setTimeout(() => resolve(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [cloudRecord()] }))), 200);
     }));
     const delayedStarted = Date.now();
     const delayed = await withCloudQueryEnrichment(db, request(), async () => local());
-    expect(delayed.cloud_enrichment?.status).toBe("timeout");
+    expect(delayed.cloud_enrichment?.status).toBe("pending");
     expect(Date.now() - delayedStarted).toBeLessThanOrEqual(300);
 
     resetCloudQueryEnrichmentForTests();
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ memories: [cloudRecord()] })));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [cloudRecord()] })));
     let spawnedWorkers = 0;
     setQueryDedupeWorkerFactoryForTests(() => {
       spawnedWorkers += 1;
@@ -347,7 +348,7 @@ describe("optional cloud query enrichment", () => {
     expect(Date.now() - hungStarted).toBeLessThanOrEqual(300);
 
     resetCloudQueryEnrichmentForTests();
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ memories: [cloudRecord()] })));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ enrichmentVersion: 1, memories: [cloudRecord()] })));
     const busyStarted = Date.now();
     const busy = await withCloudQueryEnrichment(db, request(), async () => local());
     expect(busy.cloud_enrichment?.status).toBe("unavailable");
@@ -358,7 +359,7 @@ describe("optional cloud query enrichment", () => {
   it("does not synchronously scan a large local corpus during cloud dedupe", async () => {
     const { db } = await configured();
     seedLargeDb(db, 4_000);
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ enrichmentVersion: 1,
       memories: [cloudRecord({ content: "Large local row 3999" })],
     })));
     const started = Date.now();

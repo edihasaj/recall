@@ -26,7 +26,7 @@ it("requires separate query consent, preserves it on reconnect, and supports opt
   const { env, db, service } = await configured();
   expect(loadCloudQueryConnection(db, env)).toBeNull();
   setCloudQueryEnabled(true, env);
-  expect(loadCloudQueryConnection(db, env)).toEqual({ api: "https://api.recallmemory.dev", token: TOKEN });
+  expect(loadCloudQueryConnection(db, env)).toMatchObject({ api: "https://api.recallmemory.dev", token: TOKEN });
   await service.connect({ token: TOKEN, optIn: true });
   expect(cloudQueryStatus(env)).toEqual({ enabled: true, connected: true, available: true });
   setCloudQueryEnabled(false, env);

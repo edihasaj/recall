@@ -143,7 +143,7 @@ export interface CompiledContext {
   token_estimate: number;
   /** Optional remote evidence diagnostics, never local injection-ledger IDs. */
   cloud_enrichment?: {
-    status: "ok" | "timeout" | "unavailable" | "busy";
+    status: "ok" | "pending" | "timeout" | "unavailable" | "busy";
     added: number;
     elapsed_ms: number;
   };

@@ -1,20 +1,15 @@
-import { createHash } from "node:crypto";
 import type { RecallDb } from "../db/client.js";
-import { redactSensitiveText } from "../security/redaction.js";
+import { cloudRecordIsRelevant } from "./query-relevance.js";
+import { startCloudLookup, resetCloudLookupsForTests, cloudQueryBackgroundEnabled } from "./query-lookup.js";
+import type { CloudQueryConnection } from "./query-settings.js";
 import { findLocalTextHashMatches, normalizedTextHash } from "./query-dedupe.js";
 import { loadCloudQueryConnection } from "./query-settings.js";
 import type { CompiledContext, CompileRequest } from "../compiler/context.js";
 
-const REQUEST_TIMEOUT_MS = 1_200;
 const LOCAL_GRACE_MS = 150;
-const FAILURE_COOLDOWN_MS = 15_000;
-const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_CLOUD_TOKENS = 500;
 const MAX_CLOUD_RECORDS = 3;
-const MAX_COOLDOWN_ENTRIES = 64;
-
 type CloudStatus = NonNullable<CompiledContext["cloud_enrichment"]>["status"];
-type CloudResult = { status: CloudStatus; payload?: unknown };
 
 interface CloudRecord {
   id: string;
@@ -25,9 +20,6 @@ interface CloudRecord {
   repo: string | null;
   localMemoryId?: string;
 }
-
-const failureCooldowns = new Map<string, number>();
-let requestsInFlight = 0;
 
 class RequestTimeout extends Error {}
 
@@ -47,93 +39,19 @@ function withDiagnostic(
   };
 }
 
-function cooldownKey(api: string, token: string): string {
-  return createHash("sha256").update(`${api}\0${token}`).digest("hex");
-}
-
-function isSameConnection(
-  current: { api: string; token: string } | null,
-  initial: { api: string; token: string },
-): boolean {
-  return current?.api === initial.api && current.token === initial.token;
-}
-
-function rememberFailure(key: string): void {
-  failureCooldowns.set(key, Date.now() + FAILURE_COOLDOWN_MS);
-  while (failureCooldowns.size > MAX_COOLDOWN_ENTRIES) {
-    failureCooldowns.delete(failureCooldowns.keys().next().value!);
-  }
-}
-
-function underCooldown(key: string): boolean {
-  const until = failureCooldowns.get(key);
-  if (!until) return false;
-  if (until <= Date.now()) {
-    failureCooldowns.delete(key);
-    return false;
-  }
-  return true;
+function isSameConnection(current: CloudQueryConnection | null, initial: CloudQueryConnection): boolean {
+  return current?.api === initial.api && current.token === initial.token
+    && current.consentVersion === initial.consentVersion;
 }
 
 function timeoutAfter<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new RequestTimeout()), Math.max(0, milliseconds));
-    timer.unref?.();
   });
   return Promise.race([promise, timeout]).finally(() => {
     if (timer) clearTimeout(timer);
   });
-}
-
-function abortError(): Error {
-  const error = new Error("Cloud request aborted");
-  error.name = "AbortError";
-  return error;
-}
-
-async function readBoundedBody(response: Response, signal: AbortSignal): Promise<string> {
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
-    void response.body?.cancel().catch(() => undefined);
-    throw new Error("Cloud response exceeds the response limit");
-  }
-  if (!response.body) return "";
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  let rejectAbort!: (error: Error) => void;
-  const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
-  const onAbort = () => rejectAbort(abortError());
-  if (signal.aborted) onAbort();
-  else signal.addEventListener("abort", onAbort, { once: true });
-  try {
-    while (true) {
-      const { done, value } = await Promise.race([reader.read(), aborted]);
-      if (done) break;
-      if (!value) continue;
-      bytes += value.byteLength;
-      if (bytes > MAX_RESPONSE_BYTES) throw new Error("Cloud response exceeds the response limit");
-      chunks.push(value);
-    }
-  } catch (error) {
-    // Do not leave a stream locked if an overlarge or hung body loses the
-    // bounded race. Cancellation is deliberately best-effort: a hostile stream
-    // can ignore it, but it cannot hold this reader's lock.
-    void reader.cancel().catch(() => undefined);
-    throw error;
-  } finally {
-    signal.removeEventListener("abort", onAbort);
-    reader.releaseLock();
-  }
-  const body = new Uint8Array(bytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(body);
 }
 
 function stringValue(value: unknown): string | null {
@@ -150,7 +68,7 @@ function sanitizeSourceId(value: unknown): string | null {
   return clean ? clean.slice(0, 160) : null;
 }
 
-function recordFrom(value: unknown, threshold: number): CloudRecord | null {
+function recordFrom(value: unknown, threshold: number, query: string, allowSemantic: boolean): CloudRecord | null {
   if (!isObject(value) || value.status !== "active") return null;
   const metadata = isObject(value.metadata) ? value.metadata : null;
   const recall = metadata && isObject(metadata.recall) ? metadata.recall : null;
@@ -172,6 +90,10 @@ function recordFrom(value: unknown, threshold: number): CloudRecord | null {
   const text = stringValue(value.content);
   const id = sanitizeSourceId(value.id) ?? sanitizeSourceId(value.externalId);
   if (!text || text.length > 2_000 || !id) return null;
+  // Confidence measures durability, not query relevance. Only server-computed
+  // scores at the response level can admit a semantic-only match. A cached
+  // answer to another question must pass lexical relevance to this question.
+  if (!cloudRecordIsRelevant(query, text, allowSemantic ? value.semanticScore : undefined)) return null;
   const scopedRepo: string | null = scope === "global" ? null : typeof repo === "string" ? repo : null;
   return {
     id,
@@ -184,11 +106,11 @@ function recordFrom(value: unknown, threshold: number): CloudRecord | null {
   };
 }
 
-function parseCloudPayload(payload: unknown, threshold: number): CloudRecord[] {
-  if (!isObject(payload)) throw new Error("Cloud response is not an object");
+function parseCloudPayload(payload: unknown, threshold: number, query: string, sameQuery: boolean): CloudRecord[] {
+  if (!isObject(payload)) return [];
   const values = Array.isArray(payload.memories) ? payload.memories
     : Array.isArray(payload.records) ? payload.records : [];
-  return values.slice(0, 12).map((value) => recordFrom(value, threshold)).filter((value): value is CloudRecord => Boolean(value));
+  return values.slice(0, 12).map((value) => recordFrom(value, threshold, query, sameQuery && payload.enrichmentVersion === 1)).filter((value): value is CloudRecord => Boolean(value));
 }
 
 function cloudText(records: readonly CloudRecord[]): string {
@@ -242,44 +164,6 @@ function appendCloudRecords(
   };
 }
 
-async function requestCloud(
-  api: string,
-  token: string,
-  req: CompileRequest,
-  controller: AbortController,
-): Promise<CloudResult & { payload?: unknown }> {
-  try {
-    const body = {
-      query: redactSensitiveText(req.query_text ?? ""),
-      retrievalMode: "auto",
-      status: "active",
-      limit: 12,
-      contextChars: 1_000,
-      perSourceChars: 256,
-      supplementalSources: 0,
-      semanticSupplementalSources: 0,
-      relevance: false,
-    };
-    const response = await fetch(`${api}/v1/compile`, {
-      method: "POST",
-      redirect: "error",
-      signal: controller.signal,
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      void response.body?.cancel().catch(() => undefined);
-      return { status: "unavailable" };
-    }
-    const raw = await readBoundedBody(response, controller.signal);
-    const payload: unknown = raw ? JSON.parse(raw) : {};
-    return { status: "ok", payload };
-  } catch (error) {
-    if (error instanceof RequestTimeout) return { status: "timeout" };
-    return { status: "unavailable" };
-  }
-}
-
 /**
  * Add bounded, explicitly opted-in cloud matches after local compilation. This
  * never writes the local database or alters its injection/value ledgers.
@@ -293,107 +177,65 @@ export async function withCloudQueryEnrichment(
   const connection = loadCloudQueryConnection(db);
   if (!connection) return compileLocal();
   const started = performance.now();
-  const key = cooldownKey(connection.api, connection.token);
-  if (requestsInFlight > 0) return withDiagnostic(await compileLocal(), "busy", started);
-  if (underCooldown(key)) return withDiagnostic(await compileLocal(), "unavailable", started);
-
-  const controller = new AbortController();
-  requestsInFlight += 1;
-  let released = false;
-  let retainUntilDeadline = false;
-  const releaseSlot = () => {
-    if (released) return;
-    released = true;
-    requestsInFlight = Math.max(0, requestsInFlight - 1);
-  };
-  const retainSlotUntilDeadline = () => {
-    if (retainUntilDeadline) return;
-    retainUntilDeadline = true;
-    const timer = setTimeout(releaseSlot, Math.max(0, REQUEST_TIMEOUT_MS - elapsedSince(started)));
-    timer.unref?.();
-  };
-  const cloud = timeoutAfter(
-    requestCloud(connection.api, connection.token, req, controller),
-    REQUEST_TIMEOUT_MS,
-  ).catch((error): CloudResult => {
-    if (error instanceof RequestTimeout) {
-      controller.abort();
-      return { status: "timeout" };
-    }
-    return { status: "unavailable" };
-  }).finally(() => {
-    if (!retainUntilDeadline) releaseSlot();
-  });
-
+  const lookup = startCloudLookup(connection, db.$client.name, req.repo, req.query_text);
   let local: CompiledContext;
-  try {
-    local = await compileLocal();
-  } catch (error) {
-    retainSlotUntilDeadline();
-    controller.abort();
-    void cloud;
-    throw error;
-  }
-
+  try { local = await compileLocal(); }
+  catch (error) { lookup.cancel?.(); throw error; }
+  if (!isSameConnection(loadCloudQueryConnection(db), connection)) return local;
   const tailDeadline = performance.now() + LOCAL_GRACE_MS;
   const remainingTail = () => Math.max(0, Math.floor(tailDeadline - performance.now()));
-  const tailFailure = (status: "timeout" | "unavailable") => {
-    rememberFailure(key);
-    return withDiagnostic(local, status, started);
-  };
-
-  // Never append a response obtained under a changed connection.
-  if (!isSameConnection(loadCloudQueryConnection(db), connection)) {
-    retainSlotUntilDeadline();
-    controller.abort();
-    return local;
+  const threshold = local.confidence_threshold ?? req.config?.confidence_threshold ?? 0.6;
+  const seen = new Set<string>();
+  const localIdExists = db.$client.prepare("SELECT 1 FROM memories WHERE id = ? LIMIT 1");
+  let records = lookup.cached.flatMap((entry) => parseCloudPayload(entry.payload, threshold, req.query_text!, entry.sameQuery))
+    .filter((record) => {
+      const hash = normalizedTextHash(record.text);
+      if (seen.has(hash) || (record.localMemoryId && localIdExists.get(record.localMemoryId))) return false;
+      seen.add(hash);
+      return true;
+    }).slice(0, 12);
+  let status: CloudStatus = lookup.status;
+  if (records.length === 0 && lookup.promise) {
+    try {
+      const result = await timeoutAfter(lookup.promise, remainingTail());
+      status = result.status;
+      if (result.status === "ok") records = parseCloudPayload(result.payload, threshold, req.query_text, true);
+    } catch {
+      // Keep the bounded lookup alive for the next relevant query. A grace
+      // window expiring is not an offline failure and must not cause cooldown.
+      if (!cloudQueryBackgroundEnabled()) {
+        lookup.cancel?.();
+        return withDiagnostic(local, "timeout", started);
+      }
+      return withDiagnostic(local, "pending", started);
+    }
   }
-
-  let result: CloudResult;
+  if (!isSameConnection(loadCloudQueryConnection(db), connection)) return local;
   try {
+    if (records.length === 0) return withDiagnostic(local, status, started);
     const remaining = remainingTail();
-    if (remaining <= 0) throw new RequestTimeout();
-    result = await timeoutAfter(cloud, remaining);
-  } catch {
-    retainSlotUntilDeadline();
-    controller.abort();
-    return tailFailure("timeout");
-  }
-  if (result.status !== "ok") return tailFailure(result.status === "timeout" ? "timeout" : "unavailable");
-  failureCooldowns.delete(key);
-
-  if (!isSameConnection(loadCloudQueryConnection(db), connection)) {
-    controller.abort();
-    return local;
-  }
-  try {
-    const records = parseCloudPayload(result.payload, local.confidence_threshold ?? req.config?.confidence_threshold ?? 0.6);
-    if (records.length === 0) return withDiagnostic(local, "ok", started);
-    const remaining = remainingTail();
-    if (remaining <= 0) return tailFailure("timeout");
+    if (remaining <= 0) return withDiagnostic(local, "timeout", started);
     const dedupe = await findLocalTextHashMatches(
       db.$client.name,
       req.repo,
       records.map((record) => normalizedTextHash(record.text)),
       remaining,
     );
-    if (dedupe === "timeout" || remainingTail() <= 0) return tailFailure("timeout");
-    if (!dedupe) return tailFailure("unavailable");
+    if (dedupe === "timeout" || remainingTail() <= 0) return withDiagnostic(local, "timeout", started);
+    if (!dedupe) return withDiagnostic(local, "unavailable", started);
     if (!isSameConnection(loadCloudQueryConnection(db), connection)) {
-      controller.abort();
       return local;
     }
-    if (remainingTail() <= 0) return tailFailure("timeout");
+    if (remainingTail() <= 0) return withDiagnostic(local, "timeout", started);
     const appended = appendCloudRecords(db, req, local, records, dedupe.matchedHashes, dedupe.repoAliases);
-    if (remainingTail() <= 0) return tailFailure("timeout");
-    return withDiagnostic(appended.context, "ok", started, appended.added);
+    if (remainingTail() <= 0) return withDiagnostic(local, "timeout", started);
+    return withDiagnostic(appended.context, status, started, appended.added);
   } catch {
-    return tailFailure("unavailable");
+    return withDiagnostic(local, "unavailable", started);
   }
 }
 
 /** Test-only reset; production calls use process-lifetime concurrency limits. */
 export function resetCloudQueryEnrichmentForTests(): void {
-  requestsInFlight = 0;
-  failureCooldowns.clear();
+  resetCloudLookupsForTests();
 }

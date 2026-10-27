@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import type { RecallDb } from "../db/client.js";
 import { loadCloudConfig, saveCloudConfig, validateApi } from "./config.js";
 import { CloudError } from "./errors.js";
@@ -8,6 +8,8 @@ import { readPrivateSecret, validatePrivateFile } from "./private-files.js";
 export interface CloudQueryConnection {
   api: string;
   token: string;
+  /** Atomic config replacement changes this even when consent is re-enabled. */
+  consentVersion: string;
 }
 
 /** Reading an unavailable or invalid optional connection must not break local recall. */
@@ -24,7 +26,9 @@ export function loadCloudQueryConnection(
     // Standalone benchmark/test databases and a second installation must never
     // borrow credentials merely because they share the process environment.
     if (realpathSync(config.dbPath) !== realpathSync(db.$client.name)) return null;
-    return { api: validateApi(config.api), token: readPrivateSecret(config.tokenFile, "Cloud token") };
+    const stat = statSync(paths.configFile);
+    return { api: validateApi(config.api), token: readPrivateSecret(config.tokenFile, "Cloud token"),
+      consentVersion: `${stat.ino}:${stat.mtimeMs}` };
   } catch {
     return null;
   }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Keep bounded late Cloud replies available to later relevant queries in the
+  daemon and MCP process. The short local wait no longer causes an offline
+  cooldown. Require lexical or computed semantic relevance before adding Cloud
+  memories, and request compact responses that omit duplicated arrays and bulk
+  source metadata. One-shot CLI calls cancel unfinished lookups promptly.
+
 - Add optional online query enrichment after separate consent with
   `recall cloud-query on`. Local retrieval runs alongside a bounded Cloud lookup;
   unavailable or slow Cloud falls back to local context. Up to three complete,

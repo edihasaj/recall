@@ -222,6 +222,9 @@ tool(
       },
     });
 
+    const pendingCloud = result.cloud_enrichment?.status === "pending"
+      ? "\n\nOptional Cloud lookup is still running. Local results are ready; repeating this query later can include the completed Cloud results."
+      : "";
     if (!result.text) {
       // Naming the gate matters more than it looks. The threshold is usually
       // the repo's adaptive one, so "nothing above threshold" reads as "this
@@ -249,14 +252,14 @@ tool(
         content: [
           {
             type: "text" as const,
-            text: lines.join("\n"),
+            text: lines.join("\n") + pendingCloud,
           },
         ],
       };
     }
 
     return {
-      content: [{ type: "text" as const, text: result.text }],
+      content: [{ type: "text" as const, text: result.text + pendingCloud }],
     };
   },
 );

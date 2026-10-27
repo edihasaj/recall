@@ -447,14 +447,46 @@ excluded. Cloud text is quoted evidence and does not grant permissions or
 automatically change local memories. Duplicate copies are not independent
 corroboration.
 
-The Cloud lookup has a 1.2-second overall deadline. Its response and read-only
-deduplication share at most 150 ms of asynchronous waiting after local retrieval
-finishes. Slow or unreachable
-Cloud returns local results. There is no retry or persistent result cache;
-one request at a time and a short failure cooldown bound repeated failures.
-These bounds do not cover a blocked JavaScript event loop. Compilation
-diagnostics distinguish Cloud success, timeout, unavailability and a busy
-lookup, and report how many Cloud memories were added.
+Each Cloud record must also pass query relevance: a strong lexical match
+(score at least 0.45 using the local compiler's text matcher), or a computed
+Cloud cosine similarity of at least 0.9 for that exact question. A moderate
+cosine score (at least 0.8) also requires a complete capitalized subject such as
+Python in both the question and source, using the local tokenizer. Question
+openers such as How do not count as names. This conservative heuristic avoids
+promoting generic overlap such as home or project. Confidence alone does not
+establish relevance. Semantic scores in source-controlled
+metadata are ignored. These thresholds are conservative retrieval heuristics,
+not a guarantee that a memory answers every question.
+
+The Cloud lookup has a three-second overall deadline. Its response and read-only
+deduplication share at most 150 ms of waiting after local retrieval finishes.
+The daemon and MCP process allow a pending lookup to finish in the background;
+exceeding the short wait does not trigger an offline cooldown. The MCP response
+reports that the lookup is pending so an agent can repeat the query later.
+
+Completed replies remain in a bounded process-local cache for at most 60 seconds
+(eight replies, each at most 256 KiB). Repeating the same question reuses its
+reply. Later questions in the same repository can use cached records only when
+they pass lexical relevance to the new question; old semantic scores never
+validate a new question. Every delivery rechecks local rejection/deduplication,
+confidence, consent and context budgets. Cache entries are isolated by database,
+repository, API, token and consent configuration generation. Changing consent
+invalidates earlier replies, including when it is re-enabled. Cloud status changes
+can take up to the short cache lifetime to appear unless a local rejection
+already excludes the copy.
+
+There is no disk cache and no unsolicited message after a tool returns. Cache
+state is not shared across MCP processes or with the daemon. One-shot CLI
+compilation and direct hook fallback cancel unfinished work at the short wait;
+they cannot reuse a reply after exiting. Normal daemon-routed hooks can reuse
+late results on a later relevant prompt.
+
+One request at a time and a short cooldown on actual network/body failure bound
+repeated failures. These bounds do not cover a blocked JavaScript event loop.
+Diagnostics distinguish success, pending work, timeout, unavailability and a
+busy lookup, and report how many Cloud memories were added. Cloud APIs that
+support `clientEnrichment` return compact records with computed relevance
+scores; older APIs remain usable through lexical matching alone.
 
 Session-start compilation without a question stays local. Offline local search
 and the existing memory injection ledgers continue to work independently.

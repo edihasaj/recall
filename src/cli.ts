@@ -1,5 +1,6 @@
 // Sentry error reporting first (no-op unless SENTRY_DSN is set).
 import "./observability/instrument.js";
+import { setCloudQueryBackgroundEnabled } from "./cloud/query-lookup.js";
 import { Command } from "commander";
 import { registerHarness2Commands } from "./cli/harness2.js";
 import { registerCloudQueryCommands } from "./cli/cloud-query.js";
@@ -689,6 +690,7 @@ program
   .option("--stdio", "Serve the UMP MCP binding over stdio (default)")
   .option("--smart", "Route writes through Recall's capture/judgement pipeline")
   .action(async (opts) => {
+    setCloudQueryBackgroundEnabled(true);
     await runUmpServer({
       http: opts.http ? parseInt(opts.http, 10) : undefined,
       stdio: opts.stdio,
@@ -1139,6 +1141,7 @@ program
   .command("serve")
   .description("Start the MCP server (stdio transport)")
   .action(async () => {
+    setCloudQueryBackgroundEnabled(true);
     // Dynamic import to avoid loading MCP deps for other commands
     await import("./mcp/server.js");
   });
@@ -2840,5 +2843,6 @@ export function isDirectCliInvocation(moduleUrl: string, argvPath?: string): boo
 }
 
 if (isDirectCliInvocation(import.meta.url, process.argv[1])) {
+  setCloudQueryBackgroundEnabled(false);
   await program.parseAsync(process.argv);
 }
