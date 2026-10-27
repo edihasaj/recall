@@ -414,26 +414,30 @@ sync process, and makes no cloud request. Sync starts only after you choose
 - **Child environment**: an allowlist (PATH, HOME, locale, temp, proxy and CA variables).
   Inherited `RECALL_*`, `NODE_OPTIONS` and similar variables never reach the engine.
 
-## Optional online retrieval
+## Online retrieval with connected Cloud
 
-Cloud sync and online query retrieval have separate consent. After connecting
-server-readable Cloud sync, enable query enrichment with:
+Connecting server-readable Recall Cloud enables both sync and online retrieval.
+This applies automatically to new and existing connections after upgrading;
+an omitted `queryEnrichment` setting means on. An explicit off setting remains
+off across upgrades and reconnection. Use the Recall Cloud tab's **Use Cloud
+memories in agent queries** switch, or:
 
 ```bash
-recall cloud-query on
 recall cloud-query status
 recall cloud-query off
+recall cloud-query on
 ```
 
-`on` permits normalized question text to be sent to the configured Cloud API.
+When enabled, normalized question text is sent to the configured Cloud API.
 It does not upload the local context pack, session history or separate path
 metadata. The question itself can contain personal or project information;
-recognized credential patterns are redacted before sending it.
-Fresh installations and existing sync connections keep this option off until
-explicitly enabled. It is unavailable for E2EE and Mac App Store installations.
-The local database must match the connected sync database.
-Changing the connected token or API endpoint clears query consent; enable it
-again for the new connection if desired.
+recognized credential patterns are redacted before sending it. This is additional
+to memory syncing. Fresh, disconnected installs make no Cloud query requests.
+
+Online retrieval is unavailable for E2EE and Mac App Store installations.
+The local database must match the connected sync database. Disconnecting stops
+both sync and online retrieval. Changing the token, API endpoint or setting
+invalidates earlier cached replies; an explicit off preference is preserved.
 
 Question-based MCP queries and prompt/compile paths start local retrieval and
 Cloud lookup together. Local retrieval remains the baseline. Cloud can add at

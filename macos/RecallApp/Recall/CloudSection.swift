@@ -18,6 +18,7 @@ struct CloudStatusSnapshot: Decodable, Equatable {
         var e2ee: Bool
         var migratedFrom: String?
         var optInAt: String?
+        var queryEnrichment: Bool?
     }
 
     struct Legacy: Decodable, Equatable {
@@ -144,6 +145,10 @@ final class CloudStatusModel: ObservableObject {
         _ = await perform("/cloud/disconnect", [:])
     }
 
+    func setQueryEnrichment(_ enabled: Bool) async {
+        _ = await perform("/cloud/query", ["enabled": enabled])
+    }
+
     private func perform(_ path: String, _ body: [String: Any]) async -> Bool {
         busy = true
         message = nil
@@ -220,7 +225,7 @@ struct CloudTab: View {
         guard let snapshot else { return "Waiting for Recall's background service." }
         if !snapshot.available { return "The Mac App Store edition keeps all memory on this Mac." }
         if snapshot.enabled {
-            return "Recall's own background service syncs in both directions. No separate Cloud Sync item is installed."
+            return "Recall syncs memories in both directions. Online retrieval can add relevant Cloud memories to agent queries."
         }
         return "Sync is off until you connect. Nothing leaves this Mac before then."
     }
@@ -245,6 +250,16 @@ struct CloudTab: View {
                 LabeledValue(label: "Device", value: config.deviceId)
                 LabeledValue(label: "Cloud", value: config.api)
                 LabeledValue(label: "Encrypt", value: config.e2ee ? "End-to-end encrypted" : "Standard")
+                if !config.e2ee {
+                    Toggle("Use Cloud memories in agent queries", isOn: Binding(
+                        get: { cloud.snapshot?.config?.queryEnrichment ?? true },
+                        set: { enabled in Task { await cloud.setQueryEnrichment(enabled) } }
+                    ))
+                    .disabled(cloud.busy)
+                    Text("Sends question text to your Cloud to find relevant memories. Local retrieval stays available when offline.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             LabeledValue(label: "Last sync", value: snapshot.worker.lastSyncAt ?? "No successful sync yet")
             if let error = snapshot.error {
@@ -264,7 +279,7 @@ struct CloudTab: View {
                 }
             }
             .controlSize(.large)
-            Text("Disconnect stops sync and removes this Mac's saved token. Memories already in the cloud stay until you delete them there.")
+            Text("Disconnect stops sync and online retrieval and removes this Mac's saved token. Memories already in the cloud stay until you delete them there.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -280,7 +295,10 @@ struct CloudTab: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Toggle("Sync this Mac with Recall Cloud", isOn: $optIn)
+            Toggle("Connect this Mac to Recall Cloud", isOn: $optIn)
+            Text("Connecting enables sync and online retrieval. Unless end-to-end encryption is enabled, agent questions are sent to Cloud to find relevant memories. You can turn online retrieval off after connecting.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Button {
                 Task { if await cloud.migrate(optIn: optIn) { optIn = false } }
             } label: {
@@ -328,7 +346,10 @@ struct CloudTab: View {
                 }
                 .padding(.top, 6)
             }
-            Toggle("Sync this Mac with Recall Cloud", isOn: $optIn)
+            Toggle("Connect this Mac to Recall Cloud", isOn: $optIn)
+            Text("Connecting enables sync and online retrieval. Unless end-to-end encryption is enabled, agent questions are sent to Cloud to find relevant memories. You can turn online retrieval off after connecting.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Button {
                 Task {
                     if await cloud.connect(token: token, passphrase: passphrase, optIn: optIn) {

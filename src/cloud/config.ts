@@ -12,7 +12,7 @@ import { writePrivateFile } from "./private-files.js";
 export interface CloudConfig {
   version: 1;
   enabled: boolean;
-  /** Separate consent to send question text for bounded online retrieval. */
+  /** Optional override: connected readable Cloud enables retrieval unless explicitly false. */
   queryEnrichment?: boolean;
   /** ISO time of the user's explicit opt-in; `enabled` is refused without it. */
   optInAt: string | null;

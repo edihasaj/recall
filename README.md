@@ -71,6 +71,11 @@ The MiniLM row isolates the system contribution (same embedding model agentmemor
 
 ## Install
 
+Cloud is optional. Connecting a server-readable Cloud account enables syncing
+and online retrieval, which sends agent question text to your configured Cloud.
+Turn retrieval off independently in the Cloud tab or with `recall cloud-query off`.
+Existing explicit off settings are preserved.
+
 ### Mac App Store edition
 
 The sandboxed store edition, **Recall: Coding Memory**, has the same window as

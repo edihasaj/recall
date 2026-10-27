@@ -65,3 +65,21 @@ describe("cloud routes", () => {
     expect((await fetch(`${base}/cloud/connect`)).status).toBe(404);
   });
 });
+
+it("lets connected users disable online retrieval independently of sync and rejects non-booleans", async () => {
+  const { base, worker } = await start();
+  const post = (path: string, body: unknown) => fetch(`${base}${path}`, {
+    method: "POST", body: JSON.stringify(body),
+  });
+  const connected = await post("/cloud/connect", { token: TOKEN, optIn: true });
+  expect((await connected.json()).config.queryEnrichment).toBe(true);
+  const off = await post("/cloud/query", { enabled: false });
+  const status = await off.json();
+  expect(status.enabled).toBe(true);
+  expect(status.config.queryEnrichment).toBe(false);
+  expect(worker.launches).toHaveLength(1);
+  expect((await post("/cloud/query", { enabled: "true" })).status).toBe(400);
+  expect((await (await post("/cloud/query", { enabled: true })).json()).config.queryEnrichment).toBe(true);
+  expect((await post("/cloud/disconnect", {})).status).toBe(200);
+  expect((await post("/cloud/query", { enabled: true })).status).toBe(400);
+});
