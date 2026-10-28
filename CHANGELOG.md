@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.0.18 - 2026-10-28
+
 - Stop the daemon from posting reliability alerts through AppleScript, which
   macOS showed as Script Editor notifications. The Recall app now shows a
   sustained reliability failure as a native "Recall" notification, at most
