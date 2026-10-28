@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Offer private sync with local search as the initial choice in the Mac Cloud
+  connection form, with passphrase confirmation and a recovery reminder.
+  Existing connections keep their mode. Reject silent encryption downgrades
+  and saved-key changes, stop encrypted sync on verification failures before
+  uploading, and rebuild local search indexes after successful pulls.
+- Preserve applicability notes during bundled sync uploads so encrypted restore
+  retains the information used for local relevance matching.
+
 ## 2.0.17 - 2026-10-27
 
 - Enable online memory retrieval automatically for new and existing connected,

@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { withMemoryIndexLock } from "../embeddings/index-lock.js";
 import { eq, lt } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { activityEvents, feedbackEvents, historySnippets, hookCalls, implicitSignals, memories } from "../db/schema.js";
@@ -178,20 +179,22 @@ export async function runMaintenanceCycle(
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (embeddingConfig) {
-    const verify = verifyEmbeddings(db, embeddingConfig);
-    embedding_stale = verify.stale;
-    vector_drift = verify.index_drift;
-    lexical_drift = verify.lexical_drift;
+    await withMemoryIndexLock(db, async () => {
+      const verify = verifyEmbeddings(db, embeddingConfig);
+      embedding_stale = verify.stale;
+      vector_drift = verify.index_drift;
+      lexical_drift = verify.lexical_drift;
 
-    if (embedding_stale > 0) {
-      embeddings_refreshed = await bootstrapEmbeddings(db, embeddingConfig);
-    }
+      if (embedding_stale > 0) {
+        embeddings_refreshed = await bootstrapEmbeddings(db, embeddingConfig);
+      }
 
-    if (vector_drift !== 0 || lexical_drift !== 0) {
-      const rebuilt = await rebuildEmbeddingIndexResponsive(db, embeddingConfig);
-      vector_rows_rebuilt = rebuilt.vector_rows;
-      lexical_rows_rebuilt = rebuilt.lexical_rows;
-    }
+      if (vector_drift !== 0 || lexical_drift !== 0) {
+        const rebuilt = await rebuildEmbeddingIndexResponsive(db, embeddingConfig);
+        vector_rows_rebuilt = rebuilt.vector_rows;
+        lexical_rows_rebuilt = rebuilt.lexical_rows;
+      }
+    });
 
     const historyVerify = verifyHistoryEmbeddings(db, embeddingConfig);
     history_vector_drift = historyVerify.index_drift;

@@ -39,6 +39,16 @@ function setup(options: ConstructorParameters<typeof CloudWorker>[0] = {}) {
 afterEach(() => { for (const w of workers.splice(0)) w.killSync(); });
 
 describe("CloudWorker", () => {
+  it("notifies local indexing only after a successful pull", () => {
+    let pulls = 0;
+    const { worker, children } = setup({ onPull: () => { pulls++; } });
+    worker.start(launch);
+    children[0].say("[recall-cloud] watch started api=x\n");
+    children[0].say("[t] sync error: E2EE verification failed\n");
+    expect(pulls).toBe(0);
+    children[0].say("[t] pull ok fetched=2 imported=2 updated=0 unchanged=0 skipped=0\n");
+    expect(pulls).toBe(1);
+  });
   it("spawns one child with an IPC channel and ignores a duplicate start", () => {
     const { worker, children, calls } = setup();
     worker.start(launch);
@@ -69,6 +79,8 @@ describe("CloudWorker", () => {
     expect(status).not.toContain("sk-secret-token");
     expect(status).not.toContain("body-with-secret");
     expect(classifyEngineOutput("nothing interesting")).toBeNull();
+    expect(classifyEngineOutput("POST /sync/push failed 409: Encrypted memories cannot be replaced with server-readable content"))
+      .toContain("Use private sync");
   });
 
   it("stop() resolves only after the child exits, via IPC stop then SIGTERM", async () => {

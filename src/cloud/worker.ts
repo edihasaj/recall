@@ -29,6 +29,7 @@ export interface WorkerLike {
 }
 
 export interface WorkerOptions {
+  onPull?: () => void;
   spawn?: SpawnFn;
   startTimeoutMs?: number;
   stopGraceMs?: number;
@@ -48,6 +49,9 @@ export interface WorkerOptions {
 export function classifyEngineOutput(line: string): string | null {
   if (/failed (?:401|403)\b/i.test(line)) return "The cloud rejected this device's token";
   if (/failed (?:408|425|429|5\d\d)\b/i.test(line)) return "The cloud is temporarily unavailable";
+  if (/failed 409\b/i.test(line) && /encrypted|encryption|private|aliases/i.test(line)) {
+    return "Cloud encryption settings conflict. Use private sync with the original passphrase and check device aliases.";
+  }
   if (/failed \d{3}\b/i.test(line)) return "A cloud request failed";
   if (/fetch failed|network error|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|aborted|timeout/i.test(line)) return "Network error while syncing";
   if (/database is locked|SQLITE_BUSY/i.test(line)) return "The local database was busy";
@@ -66,6 +70,7 @@ export function classifyEngineOutput(line: string): string | null {
  * actually exited (IPC stop + SIGTERM, then SIGKILL after a short grace).
  */
 export class CloudWorker implements WorkerLike {
+  private readonly onPull: () => void;
   private readonly spawnFn: SpawnFn;
   private readonly startTimeoutMs: number;
   private readonly stopGraceMs: number;
@@ -91,6 +96,7 @@ export class CloudWorker implements WorkerLike {
   private buffer = "";
 
   constructor(options: WorkerOptions = {}) {
+    this.onPull = options.onPull ?? (() => {});
     this.spawnFn = options.spawn ?? ((command, args, opts) => nodeSpawn(command, args, opts));
     this.startTimeoutMs = options.startTimeoutMs ?? 20_000;
     this.stopGraceMs = options.stopGraceMs ?? 3_000;
@@ -246,6 +252,7 @@ export class CloudWorker implements WorkerLike {
       if (/\bpull ok fetched=/.test(line)) {
         this.lastSyncAt = new Date().toISOString();
         this.lastError = null;
+        this.onPull();
         continue;
       }
       const reason = classifyEngineOutput(line);

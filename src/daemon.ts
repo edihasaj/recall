@@ -46,6 +46,7 @@ import {
 } from "./graph/store.js";
 import { homedir } from "node:os";
 import { CloudService } from "./cloud/service.js";
+import { createCloudIndexRefresher } from "./cloud/local-index.js";
 import { handleCloudRoute } from "./cloud/routes.js";
 import { join } from "node:path";
 import { safeIngestMemoryById } from "./graph/ingest.js";
@@ -448,7 +449,11 @@ function runReliabilityProbeSubprocess(realEmbeddings: boolean): Promise<Reliabi
 }
 
 // Optional Recall Cloud sync. Inert (no worker, no network) until the user connects in the app.
-const cloudService = new CloudService({ log: (message) => console.log(message) });
+let refreshCloudIndex: ReturnType<typeof createCloudIndexRefresher> | undefined;
+const cloudService = new CloudService({
+  log: (message) => console.log(message),
+  onPull: (dbPath) => { void refreshCloudIndex?.(dbPath); },
+});
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
@@ -1350,6 +1355,7 @@ async function startDaemon() {
   }
 
   db = initDb();
+  refreshCloudIndex = createCloudIndexRefresher(db, () => console.error("[recall-cloud] local index refresh failed; maintenance will retry"));
   // A first install has no database before init, so the pre-migration backup
   // is a no-op. Create its first verified snapshot immediately after schema
   // initialization so the daily reliability probe has a restore point.

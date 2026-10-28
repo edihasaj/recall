@@ -6,7 +6,7 @@ import { CloudError } from "./errors.js";
 const ENGINE_DIR = join("vendor", "recall-cloud-sync");
 
 export interface EngineFiles {
-  /** Unmodified upstream recall-sync.mjs. */
+  /** Bundled upstream recall-sync.mjs; backports are recorded in PROVENANCE.md. */
   engine: string;
   /** Recall-authored wrapper that binds the engine's lifetime to the daemon. */
   wrapper: string;

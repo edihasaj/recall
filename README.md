@@ -76,6 +76,13 @@ and online retrieval, which sends agent question text to your configured Cloud.
 Turn retrieval off independently in the Cloud tab or with `recall cloud-query off`.
 Existing explicit off settings are preserved.
 
+For private backup and device sync, choose **Private sync · local search** in
+the Mac app. Memory text, notes and evidence are encrypted before upload;
+search runs on your device, including offline after sync and indexing. Save
+the same passphrase for every device. Hosted MCP and Cloud search require
+the separate server-readable mode. See [private Cloud sync](docs/private-cloud.md)
+for recovery and the limits of this privacy boundary.
+
 ### Mac App Store edition
 
 The sandboxed store edition, **Recall: Coding Memory**, has the same window as

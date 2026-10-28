@@ -381,6 +381,9 @@ recall maintenance credentials clear openai
 
 ## Recall Cloud sync (optional)
 
+See [private Cloud sync](private-cloud.md) for mode selection, local search,
+passphrase recovery, verification failures and privacy limits.
+
 Cloud sync is off by default. A fresh install has no `~/.recall/cloud.json`, runs no
 sync process, and makes no cloud request. Sync starts only after you choose
 **Connect** (or **Move sync into Recall**) in the Recall app's Recall Cloud tab.
