@@ -608,3 +608,8 @@ npm run build
 ```
 
 Release and Homebrew publishing notes live in [docs/RELEASING.md](docs/RELEASING.md). The landing page is static HTML/CSS in [docs/](docs/) and deploys with GitHub Pages. Public crawl configuration lives in [docs/robots.txt](docs/robots.txt), with canonical landing-page URLs listed in [docs/sitemap.xml](docs/sitemap.xml).
+
+IndexNow ownership is not committed to the repository. The Pages workflow writes
+the public `/<key>.txt` verification file into the uploaded site at deploy time
+from the repository secret `COMPASS_INDEXNOW_KEY`, the shared Compass portfolio
+key. Runs without that secret skip the step and publish the site unchanged.
