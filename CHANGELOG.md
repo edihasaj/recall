@@ -14,6 +14,13 @@
   which fails only when emitted memories never resolve. Recall never invents
   outcomes for rules that did not apply, so the resolved share is now a
   warning-only precision signal.
+- Reject previously captured rules whose every source is an automated Codex
+  thread during the daemon's regular cleanup, so these rules no longer need to
+  be removed by hand. The rejection is audited and reversible.
+- Archive candidates from automatic injection 60 days after creation when they
+  were never confirmed or repeated, even in repositories without measurable
+  loop coverage. They stay searchable, and an explicit restore restarts the
+  clock. `RECALL_CANDIDATE_MAX_AGE_DAYS` changes the limit.
 - Offer private sync with local search as the initial choice in the Mac Cloud
   connection form, with passphrase confirmation and a recovery reminder.
   Existing connections keep their mode. Reject silent encryption downgrades

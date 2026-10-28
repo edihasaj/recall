@@ -271,10 +271,11 @@ function scheduleCleanupLoop() {
         c.globalizations +
         c.test_fixture_rejections +
         c.invalid_scope_rejections +
-        c.generic_scanned_tooling_rejections;
+        c.generic_scanned_tooling_rejections +
+        c.agent_authored_rejections;
       if (total > 0) {
         console.log(
-          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions} suppress=${c.command_suppressions} globalize=${c.globalizations}/${c.globalize_losers} test_repos=${c.test_fixture_rejections} invalid_scope=${c.invalid_scope_rejections} generic_tooling=${c.generic_scanned_tooling_rejections}`,
+          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions} suppress=${c.command_suppressions} globalize=${c.globalizations}/${c.globalize_losers} test_repos=${c.test_fixture_rejections} invalid_scope=${c.invalid_scope_rejections} generic_tooling=${c.generic_scanned_tooling_rejections} agent_authored=${c.agent_authored_rejections}`,
         );
         emitEvent("cleanup.tick", {
           run_id: report.run_id,

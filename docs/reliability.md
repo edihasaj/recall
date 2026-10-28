@@ -77,6 +77,14 @@ Recall still injects memory into those threads, but it never learns
 corrections or outcomes from their prompts. The prompt event is recorded with
 `automated: true`. An unreadable rollout is treated as an interactive thread.
 
+Rules captured before this check existed are removed by the daemon's cleanup
+tick (`reject_agent_authored`). A rule is rejected only when every piece of its
+evidence is a session correction or repetition, and every one of those sessions
+is a local Codex rollout with an automated origin. Explicit confirmation,
+reactivation, other evidence, and sessions from another machine keep the rule.
+Each rejection is audited and reversible with
+`recall maintenance cleanup --revert <run-id>` or `reactivate`.
+
 ## Disposable canary
 
 The canary creates a temporary database, teaches one synthetic rule, starts a
@@ -152,6 +160,16 @@ memories backed only by generated or non-user context; those need
 `auto-pruner`, and a second run restores nothing.
 
 Set `RECALL_CANDIDATE_UNCONFIRMED_DAYS` to change the daemon maintenance limit.
+
+The guards above keep measurement honest, but alone they would let a candidate
+stay in automatic injection forever: repositories worked on from another
+machine never show loop coverage, and a candidate that keeps being selected is
+never "never selected". A hard age limit closes that gap. A candidate still
+unconfirmed and seen in fewer than two sessions 60 days after creation leaves
+automatic injection regardless of loop coverage or selection. It stays
+searchable, `recall confirm` restores it, and `--restore-unmeasured` does not
+reverse it. An explicit restore restarts the clock. Set
+`RECALL_CANDIDATE_MAX_AGE_DAYS` to change the limit, or `0` to disable it.
 
 ## Backup guarantees
 

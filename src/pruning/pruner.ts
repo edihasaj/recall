@@ -9,10 +9,11 @@
  * - Configurable retention policies
  */
 
-import { eq, or } from "drizzle-orm";
+import { and, eq, gte, like, or } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import {
   approvalRequests,
+  auditTrail,
   contradictions,
   feedbackEvents,
   implicitSignals,
@@ -29,9 +30,11 @@ import {
   loadInjectedMemoryIds,
   loopRepoForMemory,
 } from "./loop-activity.js";
+import { RESTORE_ACTOR, RESTORE_REASON_PREFIX } from "./restore.js";
 
 const DEFAULT_CONFIG: PruneConfig = {
   candidate_unconfirmed_days: 30,
+  candidate_max_age_days: 60,
   stale_days: 90,
   rejected_retention_days: 30,
   transient_retention_days: 7,
@@ -48,6 +51,12 @@ export interface PruneResult {
    * unproven, so "never selected" is unmeasured. Not counted in `total`.
    */
   unconfirmed_skipped_loop_inactive: string[];
+  /**
+   * Candidates archived from automatic injection because they stayed
+   * unconfirmed and unrepeated past `candidate_max_age_days`, whether or not
+   * they were selected or the loop covered their repo.
+   */
+  candidate_age_archived: string[];
   /** Stale memories archived out of auto-injection (still active + retrievable). */
   stale_archived: string[];
   /** Stale candidates kept for the same reason. Active rows are never skipped. Not counted in `total`. */
@@ -75,6 +84,7 @@ export function pruneMemories(
   const result: PruneResult = {
     unconfirmed_archived: [],
     unconfirmed_skipped_loop_inactive: [],
+    candidate_age_archived: [],
     stale_archived: [],
     stale_skipped_loop_inactive: [],
     rejected_pruned: [],
@@ -131,6 +141,60 @@ export function pruneMemories(
     result.unconfirmed_archived.push(mem.id);
   }
 
+  // 1b. Hard age limit. Step 1 refuses to read "never selected" as evidence
+  // when the loop did not cover a repo, and it never touches a candidate the
+  // compiler did select. Both are correct for measurement, but they let a
+  // candidate stay in automatic injection forever: repos worked on another
+  // machine never drain, and a candidate that keeps being injected without
+  // ever being confirmed or repeated keeps its slot. Past the age limit, an
+  // unearned candidate leaves automatic injection. It stays searchable and
+  // `recall confirm` restores it.
+  if (cfg.candidate_max_age_days > 0) {
+    const maxAgeCutoff = new Date(now - cfg.candidate_max_age_days * dayMs).toISOString();
+    const archivedInStep1 = new Set(result.unconfirmed_archived);
+    // An explicit `--restore-unmeasured` readmits a candidate; its age counts
+    // from that decision, so the next prune does not silently undo it.
+    const recentlyRestored = new Set(db.select({ memory_id: auditTrail.memory_id })
+      .from(auditTrail)
+      .where(and(
+        eq(auditTrail.action, "policy_applied"),
+        eq(auditTrail.actor, RESTORE_ACTOR),
+        like(auditTrail.reason, `${RESTORE_REASON_PREFIX}%`),
+        gte(auditTrail.timestamp, maxAgeCutoff),
+      ))
+      .all()
+      .map((row) => row.memory_id));
+    const aged = queryMemories(db, {
+      repo: cfg.repo,
+      status: "candidate",
+      auto_inject: true,
+    }).filter((mem) =>
+      mem.created_at < maxAgeCutoff &&
+      mem.repetition_count < 2 &&
+      !archivedInStep1.has(mem.id) &&
+      !recentlyRestored.has(mem.id)
+    );
+    for (const mem of aged) {
+      if (!cfg.dry_run) {
+        db.update(memories)
+          .set({ auto_inject: false, updated_at: new Date().toISOString() })
+          .where(eq(memories.id, mem.id))
+          .run();
+        recordAudit(
+          db,
+          mem.id,
+          "demoted",
+          "auto-pruner",
+          `Archived candidate past ${cfg.candidate_max_age_days}d max age without confirmation or repetition`,
+        );
+      }
+      result.candidate_age_archived.push(mem.id);
+    }
+    const agedIds = new Set(result.candidate_age_archived);
+    result.unconfirmed_skipped_loop_inactive = result.unconfirmed_skipped_loop_inactive
+      .filter((id) => !agedIds.has(id));
+  }
+
   // 2. Archive stale active/candidate memories.
   //
   // Staleness means "not used lately", not "wrong". Rejecting on disuse threw
@@ -152,6 +216,7 @@ export function pruneMemories(
 
   for (const mem of staleCandidates) {
     if (result.unconfirmed_archived.includes(mem.id)) continue;
+    if (result.candidate_age_archived.includes(mem.id)) continue;
     if (skippedLoopInactive.has(mem.id)) continue;
     const lastActivity =
       mem.last_validated_at ?? mem.last_injected_at ?? mem.updated_at;
@@ -251,6 +316,7 @@ export function pruneMemories(
 
   result.total =
     result.unconfirmed_archived.length +
+    result.candidate_age_archived.length +
     result.stale_archived.length +
     result.rejected_pruned.length +
     result.transient_pruned.length +
@@ -285,6 +351,7 @@ export function formatPruneReport(result: PruneResult, dryRun: boolean): string 
     ``,
     `Unconfirmed archived:${String(result.unconfirmed_archived.length).padStart(5)}`,
     `Unconfirmed skipped (loop inactive): ${result.unconfirmed_skipped_loop_inactive?.length ?? 0}`,
+    `Candidates past max age archived: ${result.candidate_age_archived?.length ?? 0}`,
     `Stale archived:    ${result.stale_archived.length}`,
     `Stale skipped (loop inactive): ${result.stale_skipped_loop_inactive?.length ?? 0}`,
     `Rejected pruned:   ${result.rejected_pruned.length}`,

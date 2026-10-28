@@ -1,4 +1,6 @@
-import { closeSync, openSync, readSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Whether a Codex thread's prompts were written by a person or by another
@@ -41,6 +43,57 @@ export function readCodexThreadSource(transcriptPath: unknown): string | null {
 export function isAutomatedCodexThread(transcriptPath: unknown): boolean {
   const source = readCodexThreadSource(transcriptPath);
   return source !== null && AUTOMATED_SOURCES.has(source);
+}
+
+export function isAutomatedCodexSource(source: string | null): boolean {
+  return source !== null && AUTOMATED_SOURCES.has(source);
+}
+
+const THREAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Finds the local rollout for a Codex thread id. Live rollouts sit under
+ * `sessions/YYYY/MM/DD` by local start date, so only the days around
+ * `startedAt` are listed; archived rollouts share one flat directory, listed
+ * once per locator. Returns null for non-thread ids and threads from another
+ * machine.
+ */
+export function createCodexRolloutLocator(codexHome = process.env.CODEX_HOME || join(homedir(), ".codex")) {
+  const dirCache = new Map<string, string[]>();
+  const list = (dir: string): string[] => {
+    let entries = dirCache.get(dir);
+    if (!entries) {
+      try {
+        entries = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
+      } catch {
+        entries = [];
+      }
+      dirCache.set(dir, entries);
+    }
+    return entries;
+  };
+  return (threadId: string, startedAt?: string): string | null => {
+    if (!THREAD_ID.test(threadId)) return null;
+    const suffix = `-${threadId}.jsonl`;
+    const hint = startedAt ? Date.parse(startedAt) : Number.NaN;
+    if (Number.isFinite(hint)) {
+      for (const offset of [0, -1, 1]) {
+        const day = new Date(hint + offset * 86_400_000);
+        const dir = join(
+          codexHome,
+          "sessions",
+          String(day.getFullYear()),
+          String(day.getMonth() + 1).padStart(2, "0"),
+          String(day.getDate()).padStart(2, "0"),
+        );
+        const match = list(dir).find((name) => name.endsWith(suffix));
+        if (match) return join(dir, match);
+      }
+    }
+    const archived = join(codexHome, "archived_sessions");
+    const match = list(archived).find((name) => name.endsWith(suffix));
+    return match ? join(archived, match) : null;
+  };
 }
 
 function readFirstLine(path: string): string | null {

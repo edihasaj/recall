@@ -580,6 +580,8 @@ export type Contradiction = z.infer<typeof Contradiction>;
 export const PruneConfig = z.object({
   repo: z.string().optional(),
   candidate_unconfirmed_days: z.number().default(30),
+  /** Unconfirmed, unrepeated candidates leave automatic injection after this age. 0 disables. */
+  candidate_max_age_days: z.number().default(60),
   stale_days: z.number().default(90),
   rejected_retention_days: z.number().default(30),
   transient_retention_days: z.number().default(7),

@@ -14,6 +14,11 @@ import { checkContradiction } from "../contradictions/detector.js";
 import { isNonUserCaptureContext } from "../capture/context.js";
 import { isGenericScannedToolingMemory } from "../scanner/signal.js";
 import {
+  applyRejectAgentAuthored,
+  planRejectAgentAuthored,
+  type RejectAgentAuthoredPlan,
+} from "./agent-authored.js";
+import {
   applyPromoteRepeat,
   formatPromoteLine,
   planPromotions,
@@ -47,7 +52,8 @@ export type CleanupActionKind =
   | "globalize_cross_repo"
   | "reject_test_fixture_repo"
   | "reject_invalid_scope"
-  | "reject_generic_scanned_tooling";
+  | "reject_generic_scanned_tooling"
+  | "reject_agent_authored";
 
 export interface DedupeExactPlan {
   kind: "dedupe_exact_merge";
@@ -115,7 +121,8 @@ export type CleanupPlanItem =
   | GlobalizeCrossRepoPlan
   | RejectTestFixtureRepoPlan
   | RejectInvalidScopePlan
-  | RejectGenericScannedToolingPlan;
+  | RejectGenericScannedToolingPlan
+  | RejectAgentAuthoredPlan;
 
 export interface CleanupReport {
   run_id: string;
@@ -133,6 +140,7 @@ export interface CleanupReport {
     test_fixture_rejections: number;
     invalid_scope_rejections: number;
     generic_scanned_tooling_rejections: number;
+    agent_authored_rejections: number;
     e2e_artifact_rejections: number;
   };
   plan: CleanupPlanItem[];
@@ -172,6 +180,9 @@ export function runDeterministicCleanup(
   if (!opts.only || opts.only === "reject_generic_scanned_tooling") {
     plan.push(...planRejectGenericScannedTooling(db));
   }
+  if (!opts.only || opts.only === "reject_agent_authored") {
+    plan.push(...planRejectAgentAuthored(db));
+  }
 
   const counts = summarize(plan);
 
@@ -202,6 +213,9 @@ export function runDeterministicCleanup(
         case "reject_generic_scanned_tooling":
           applyRejectGenericScannedTooling(db, runId, item);
           break;
+        case "reject_agent_authored":
+          applyRejectAgentAuthored(db, runId, item);
+          break;
       }
     }
   }
@@ -227,6 +241,7 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
   let testFixtureRejections = 0;
   let invalidScopeRejections = 0;
   let genericScannedToolingRejections = 0;
+  let agentAuthoredRejections = 0;
   let e2eArtifactRejections = 0;
   for (const p of plan) {
     if (p.kind === "dedupe_exact_merge") {
@@ -245,6 +260,8 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
       testFixtureRejections += 1;
     } else if (p.kind === "reject_invalid_scope") {
       invalidScopeRejections += 1;
+    } else if (p.kind === "reject_agent_authored") {
+      agentAuthoredRejections += 1;
     } else {
       genericScannedToolingRejections += 1;
     }
@@ -263,6 +280,7 @@ function summarize(plan: CleanupPlanItem[]): CleanupReport["counts"] {
     test_fixture_rejections: testFixtureRejections,
     invalid_scope_rejections: invalidScopeRejections,
     generic_scanned_tooling_rejections: genericScannedToolingRejections,
+    agent_authored_rejections: agentAuthoredRejections,
     e2e_artifact_rejections: e2eArtifactRejections,
   };
 }
@@ -1267,6 +1285,7 @@ export function formatCleanupReport(report: CleanupReport): string {
   lines.push(`  test_fixture_rejects: ${report.counts.test_fixture_rejections}`);
   lines.push(`  invalid_scope_rejects:${report.counts.invalid_scope_rejections}`);
   lines.push(`  generic_tool_rejects: ${report.counts.generic_scanned_tooling_rejections}`);
+  lines.push(`  agent_authored_rejects: ${report.counts.agent_authored_rejections}`);
   lines.push(`  e2e_artifact_rejects: ${report.counts.e2e_artifact_rejections}`);
   if (report.plan.length === 0) {
     lines.push("  (no actions)");
@@ -1295,6 +1314,9 @@ export function formatCleanupReport(report: CleanupReport): string {
     } else if (item.kind === "reject_invalid_scope") {
       lines.push(`  reject-invalid-scope: ${item.memory_id.slice(0, 8)}  scope=${item.scope} repo=${item.repo ?? "-"} path=${item.path_scope ?? "-"} reasons=${item.reasons.join(",")}`);
       lines.push(`                        "${truncate(item.text, 80)}"`);
+    } else if (item.kind === "reject_agent_authored") {
+      lines.push(`  reject-agent-authored: ${item.memory_id.slice(0, 8)}  sources=${[...new Set(item.sessions.map((s) => s.source))].join(",")} sessions=${item.sessions.length}`);
+      lines.push(`                         "${truncate(item.text, 80)}"`);
     } else {
       lines.push(`  reject-generic-tooling: ${item.memory_id.slice(0, 8)}  source=${item.source} type=${item.memory_type}`);
       lines.push(`                          "${truncate(item.text, 80)}"`);

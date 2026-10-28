@@ -512,6 +512,7 @@ Set under `EnvironmentVariables` in `~/Library/LaunchAgents/com.recall.daemon.pl
 | `RECALL_MAINTENANCE_LLM_DISABLED` | `false` | Set to `true` to stop enqueuing LLM-needing tasks. |
 | `RECALL_EMBEDDINGS_DISABLED` | `false` | Set to `true` to skip embedding generation entirely (hybrid retrieval still works with FTS-only ranking). |
 | `RECALL_CANDIDATE_UNCONFIRMED_DAYS` | `30` | Archive never-selected candidates from automatic injection after this many days, but only when injections covered that window for the candidate's repository. The memory stays searchable and confirmable. |
+| `RECALL_CANDIDATE_MAX_AGE_DAYS` | `60` | Archive candidates that are still unconfirmed and unrepeated this many days after creation, regardless of injection coverage or selection. An explicit restore restarts the clock. `0` disables. |
 | `RECALL_RELIABILITY_PROBE_ENABLED` | `true` | Run the daily database, backup, and disposable canary probe. |
 | `RECALL_RELIABILITY_PROBE_INTERVAL_SECONDS` | `86400` | Interval between reliability probes. The daemon enforces a five-minute minimum. |
 | `RECALL_RELIABILITY_PROBE_REAL_EMBEDDINGS` | `true` | Include real local embedding generation and native vector retrieval in the probe. |
