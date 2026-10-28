@@ -3,18 +3,31 @@
 Bundled so Recall can run optional cloud sync inside its own daemon, without the
 separate `Recall Cloud Sync` helper, LaunchAgent or `~/.recall-cloud-sync` install.
 
-## Upstream files (byte-identical copies, do not edit here)
+## Upstream snapshot and reviewed backports
 
 Source: `recall-cloud` repository, `scripts/`, commit `6ad7bfe921ca5d5aab53c95c464664ae57a8d2f3` (2026-10-12).
 
+The two sync modules include the October 28, 2026 privacy-verification backport
+from `recall-cloud/scripts`, commit `218a03d`: transactional failure on invalid encrypted payloads,
+key verification before upload, and a full encrypted pull on watcher restart.
+The upload projection also backports optional note-column selection from
+upstream `13b0b58` without importing unrelated installer and outcome changes.
+The token module remains byte-identical to the original snapshot. Maintain
+changes upstream first, then apply the focused backport; do not develop a second
+sync engine here.
+
 | File | sha256 |
 |---|---|
-| `recall-sync.mjs` | `01e5fb2dad66d86ee8c4de126c3efddc4553d86506ce2d7b9c20eb5e6cef5c19` |
-| `recall-sync-local.mjs` | `084ad070f468924e5cb9a32c5b6fb7d9d2ea8c3f347838d4360cc1a7cef62e7a` |
+| `recall-sync.mjs` | `4c1404f91144e03a6d75038776ec2c976f696a89cfcc560d086d2540593b2223` |
+| `recall-sync-local.mjs` | `d2b4d1172fc1e39be52fac1eb4fc8b64cb5ae83969e70944188fde4406c7cadb` |
 | `private-token.mjs` | `4450e12ccf9509d33bf65cb7ef084d059a96898e0bef1adc438b14cf37eb484d` |
 
-To update, copy the three files from `recall-cloud/scripts/`, update the commit and
-hashes above, and run `npx vitest run test/cloud-packaging.test.ts`.
+To refresh the complete snapshot, stage the upstream module graph together,
+including any new relative imports, update the commit and hashes above, and
+run `npx vitest run test/cloud-packaging.test.ts`. For a focused backport, keep
+its source and scope here. The upstream `scripts/recall-sync-private.test.mjs`
+also runs against this engine by setting `RECALL_SYNC_ENGINE` to its absolute
+path, exercising actual HTTP push/pull, restore, key failure and retry safety.
 
 ## Recall-authored
 

@@ -31,6 +31,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Publish IndexNow ownership file
+        env:
+          INDEXNOW_KEY: ${{ secrets.COMPASS_INDEXNOW_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          key="$(printf '%s' "${INDEXNOW_KEY:-}" | tr -d '\r\n')"
+          if [ -z "$key" ]; then
+            echo "IndexNow ownership key is not configured for this deployment; skipping."
+            exit 0
+          fi
+          if ! [[ "$key" =~ ^[A-Za-z0-9-]{8,128}$ ]]; then
+            echo "IndexNow ownership key must be 8-128 characters of A-Z, a-z, 0-9 or '-'." >&2
+            exit 1
+          fi
+          printf '%s' "$key" > "docs/${key}.txt"
+          chmod 644 "docs/${key}.txt"
+          echo "Wrote the IndexNow ownership file into the published site."
+
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
         with:

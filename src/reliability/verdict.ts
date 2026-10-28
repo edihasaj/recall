@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
 import { getDbPath, type RecallDb } from "../db/client.js";
 import { atomicWriteUtf8File, readUtf8FileIfExists } from "../security/atomic-file.js";
@@ -168,31 +167,10 @@ export function isNotificationDue(verdict: ReliabilityVerdict, now: Date): boole
   return now.getTime() - Date.parse(verdict.last_notified_at) >= RELIABILITY_NOTIFY_INTERVAL_MS;
 }
 
-/** macOS user notification; resolves false (never throws) when unavailable. */
-export function notifyMacOS(
-  message: string,
-  options: { platform?: NodeJS.Platform } = {},
-): Promise<boolean> {
-  if ((options.platform ?? process.platform) !== "darwin") return Promise.resolve(false);
-  return new Promise((resolve) => {
-    try {
-      execFile("/usr/bin/osascript", ["-e", buildNotificationScript(message)], { timeout: 10_000 }, (error) => {
-        resolve(!error);
-      });
-    } catch {
-      resolve(false);
-    }
-  });
-}
-
-export function buildNotificationScript(message: string): string {
-  const escaped = message.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]+/g, " ");
-  return `display notification "${escaped}" with title "Recall"`;
-}
-
 /**
- * Notifications are always off under a test runner, so a daemon booted by a
- * test can never post to the developer's Notification Center.
+ * `notify` is advertised on `/health` for the Recall app, which owns desktop
+ * notifications. It is always off under a test runner, so a daemon booted by
+ * a test never asks the app to post to the developer's Notification Center.
  */
 export function loadReliabilityVerdictConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
@@ -211,7 +189,8 @@ const CHECK_HINTS: Record<string, string> = {
   session_scope_coverage: "most sessions start outside a repo (home, /tmp, ~/Projects) and cannot receive repo memory",
   retrieval_observations: "too few used/missed retrieval observations in 14 d — inspect query and hook telemetry",
   emission_coverage: "memories selected but the hook did not emit them",
-  outcome_coverage: "emitted memories never resolved — check session-end hooks",
+  outcome_loop: "emitted memories never resolved — check tool and session-end hooks",
+  outcome_coverage: "most emitted memories were not observably applied — check for over-broad or agent-authored rules",
   candidate_backlog: "run `recall maintenance cleanup` (a dry run unless you pass --apply)",
 };
 

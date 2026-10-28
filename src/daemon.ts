@@ -46,6 +46,7 @@ import {
 } from "./graph/store.js";
 import { homedir } from "node:os";
 import { CloudService } from "./cloud/service.js";
+import { createCloudIndexRefresher } from "./cloud/local-index.js";
 import { handleCloudRoute } from "./cloud/routes.js";
 import { join } from "node:path";
 import { safeIngestMemoryById } from "./graph/ingest.js";
@@ -92,7 +93,6 @@ import { recallBuildInfo } from "./runtime/build.js";
 import type { ReliabilityProbeResult } from "./reliability/probe.js";
 import {
   loadReliabilityVerdictConfigFromEnv,
-  notifyMacOS,
   readReliabilityVerdict,
   reliabilityVerdictDataDir,
   runReliabilityVerdictCycle,
@@ -271,10 +271,11 @@ function scheduleCleanupLoop() {
         c.globalizations +
         c.test_fixture_rejections +
         c.invalid_scope_rejections +
-        c.generic_scanned_tooling_rejections;
+        c.generic_scanned_tooling_rejections +
+        c.agent_authored_rejections;
       if (total > 0) {
         console.log(
-          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions} suppress=${c.command_suppressions} globalize=${c.globalizations}/${c.globalize_losers} test_repos=${c.test_fixture_rejections} invalid_scope=${c.invalid_scope_rejections} generic_tooling=${c.generic_scanned_tooling_rejections}`,
+          `[recall] cleanup run=${report.run_id.slice(0, 8)} merges=${c.dedupe_clusters}/${c.dedupe_losers} fragments=${c.fragment_rejections} promotions=${c.repeat_promotions} suppress=${c.command_suppressions} globalize=${c.globalizations}/${c.globalize_losers} test_repos=${c.test_fixture_rejections} invalid_scope=${c.invalid_scope_rejections} generic_tooling=${c.generic_scanned_tooling_rejections} agent_authored=${c.agent_authored_rejections}`,
         );
         emitEvent("cleanup.tick", {
           run_id: report.run_id,
@@ -390,22 +391,24 @@ function scheduleReliabilityProbeLoop() {
 }
 
 let lastReliabilityVerdict: ReliabilityVerdict | null = null;
+let reliabilityVerdictNotify = false;
 let reliabilityVerdictRunning = false;
 
 // Persists the measured 14-day reliability verdict daily so a FAIL that lasts
-// for weeks is surfaced (stderr, /health, doctor, macOS notification).
+// for weeks is surfaced (stderr, /health, doctor). The daemon never posts
+// desktop notifications itself: AppleScript notifications are attributed to
+// Script Editor. The Recall app reads `/health` and notifies natively.
 function scheduleReliabilityVerdictLoop() {
   const config = loadReliabilityVerdictConfigFromEnv();
   const dataDir = reliabilityVerdictDataDir();
   lastReliabilityVerdict = readReliabilityVerdict(dataDir);
+  reliabilityVerdictNotify = config.enabled && config.notify;
   if (!config.enabled) return;
   const run = async () => {
     if (reliabilityVerdictRunning) return;
     reliabilityVerdictRunning = true;
     try {
-      lastReliabilityVerdict = await runReliabilityVerdictCycle(db, dataDir, {
-        notify: config.notify ? notifyMacOS : undefined,
-      });
+      lastReliabilityVerdict = await runReliabilityVerdictCycle(db, dataDir);
       console.log(
         `[recall] reliability verdict overall=${lastReliabilityVerdict.overall} fail_days=${lastReliabilityVerdict.consecutive_fail_days} sustained=${lastReliabilityVerdict.sustained_fail}`,
       );
@@ -448,7 +451,11 @@ function runReliabilityProbeSubprocess(realEmbeddings: boolean): Promise<Reliabi
 }
 
 // Optional Recall Cloud sync. Inert (no worker, no network) until the user connects in the app.
-const cloudService = new CloudService({ log: (message) => console.log(message) });
+let refreshCloudIndex: ReturnType<typeof createCloudIndexRefresher> | undefined;
+const cloudService = new CloudService({
+  log: (message) => console.log(message),
+  onPull: (dbPath) => { void refreshCloudIndex?.(dbPath); },
+});
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
@@ -479,6 +486,7 @@ const server = createServer(async (req, res) => {
         build: recallBuildInfo,
         reliability_probe: lastReliabilityProbe,
         reliability_verdict: lastReliabilityVerdict,
+        reliability_verdict_notify: reliabilityVerdictNotify,
         embeddings: getEmbeddingModelInfo(),
         retrieval_mode: loadEmbeddingConfigFromEnv() ? "hybrid" : "lexical",
         embedding_unavailable_reason: getEmbeddingUnavailableReason(),
@@ -1350,6 +1358,7 @@ async function startDaemon() {
   }
 
   db = initDb();
+  refreshCloudIndex = createCloudIndexRefresher(db, () => console.error("[recall-cloud] local index refresh failed; maintenance will retry"));
   // A first install has no database before init, so the pre-migration backup
   // is a no-op. Create its first verified snapshot immediately after schema
   // initialization so the daily reliability probe has a restore point.

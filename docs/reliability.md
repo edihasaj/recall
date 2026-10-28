@@ -54,12 +54,36 @@ The report starts with these operating targets:
 | Repository attribution for scoped sessions | at least 95% |
 | Sessions with repository scope | at least 50% (warning only) |
 | Selected memories emitted by the hook | at least 99% |
-| Emitted memories with a resolved outcome | at least 80% |
+| Resolved outcomes once 20 or more memories were emitted (`outcome_loop`) | at least 1 |
+| Emitted memories with a resolved outcome (`outcome_coverage`) | at least 80% (warning only) |
 | Used or missed retrieval observations per 14 days | at least 20 |
 | Candidates still eligible for automatic injection | at most 50 in one repo |
 
 An empty denominator is `warn`, not `pass`. Missing evidence never becomes a
 successful outcome.
+
+Recall resolves an outcome only from observable evidence: a tool call or
+correction that matches the rule. A rule that did not apply in a session stays
+unresolved, so unresolved injections mix "not applicable" with "missed".
+`outcome_loop` therefore fails only when nothing resolves at all, which points
+to broken tool or session-end hooks. A low `outcome_coverage` warns about
+over-broad rules that are injected where they never apply.
+
+## Agent-authored prompts
+
+Codex records each thread's origin in the first rollout line. Prompts in
+`exec`, subagent, and `mcp` threads are written by another agent or a script.
+Recall still injects memory into those threads, but it never learns
+corrections or outcomes from their prompts. The prompt event is recorded with
+`automated: true`. An unreadable rollout is treated as an interactive thread.
+
+Rules captured before this check existed are removed by the daemon's cleanup
+tick (`reject_agent_authored`). A rule is rejected only when every piece of its
+evidence is a session correction or repetition, and every one of those sessions
+is a local Codex rollout with an automated origin. Explicit confirmation,
+reactivation, other evidence, and sessions from another machine keep the rule.
+Each rejection is audited and reversible with
+`recall maintenance cleanup --revert <run-id>` or `reactivate`.
 
 ## Disposable canary
 
@@ -136,6 +160,16 @@ memories backed only by generated or non-user context; those need
 `auto-pruner`, and a second run restores nothing.
 
 Set `RECALL_CANDIDATE_UNCONFIRMED_DAYS` to change the daemon maintenance limit.
+
+The guards above keep measurement honest, but alone they would let a candidate
+stay in automatic injection forever: repositories worked on from another
+machine never show loop coverage, and a candidate that keeps being selected is
+never "never selected". A hard age limit closes that gap. A candidate still
+unconfirmed and seen in fewer than two sessions 60 days after creation leaves
+automatic injection regardless of loop coverage or selection. It stays
+searchable, `recall confirm` restores it, and `--restore-unmeasured` does not
+reverse it. An explicit restore restarts the clock. Set
+`RECALL_CANDIDATE_MAX_AGE_DAYS` to change the limit, or `0` to disable it.
 
 ## Backup guarantees
 

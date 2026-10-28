@@ -7,12 +7,10 @@ import { createServer } from "node:net";
 import { closeDb, initStandaloneDb as openStandaloneDb, type RecallDb } from "../src/db/client.js";
 import { formatDoctorReport } from "../src/doctor/report.js";
 import {
-  buildNotificationScript,
   computeReliabilityVerdict,
   deriveReliabilityVerdict,
   formatReliabilityVerdictSection,
   loadReliabilityVerdictConfigFromEnv,
-  notifyMacOS,
   persistReliabilityVerdict,
   readReliabilityVerdict,
   reliabilityVerdictPath,
@@ -247,11 +245,11 @@ describe("reliability verdict config and notifier", () => {
     expect(bounded.intervalMs).toBe(86_400_000);
   });
 
-  it("does nothing off macOS and escapes AppleScript strings", async () => {
-    await expect(notifyMacOS("hello", { platform: "linux" })).resolves.toBe(false);
-    expect(buildNotificationScript('say "hi" \\ now\nplease')).toBe(
-      'display notification "say \\"hi\\" \\\\ now please" with title "Recall"',
-    );
+  it("never posts desktop notifications through osascript (shown as Script Editor)", () => {
+    const source = readFileSync(new URL("../src/reliability/verdict.ts", import.meta.url), "utf-8");
+    const daemon = readFileSync(new URL("../src/daemon.ts", import.meta.url), "utf-8");
+    expect(source).not.toMatch(/osascript|child_process/);
+    expect(daemon).not.toMatch(/osascript|display notification/);
   });
 });
 

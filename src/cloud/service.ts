@@ -57,6 +57,7 @@ export interface CloudStatus {
 }
 
 export interface ConnectInput {
+  privacyMode?: unknown;
   token?: unknown;
   e2eePassphrase?: unknown;
   api?: unknown;
@@ -65,6 +66,7 @@ export interface ConnectInput {
 }
 
 export interface CloudServiceDeps {
+  onPull?: (dbPath: string) => void;
   paths?: CloudPaths;
   env?: NodeJS.ProcessEnv;
   worker?: WorkerLike;
@@ -108,7 +110,12 @@ export class CloudService {
     this.env = deps.env ?? process.env;
     this.paths = deps.paths ?? resolveCloudPaths(this.env);
     this.log = deps.log ?? (() => {});
-    this.worker = deps.worker ?? new CloudWorker({ log: this.log });
+    this.worker = deps.worker ?? new CloudWorker({ log: this.log, onPull: () => {
+      try {
+        const config = loadCloudConfig(this.paths);
+        if (config?.enabled) deps.onPull?.(config.dbPath);
+      } catch { this.log("[recall-cloud] local index notification failed"); }
+    } });
     this.legacy = deps.legacy ?? new LegacyLaunchd({ paths: this.paths });
     this.engineFn = deps.engine ?? (() => resolveEngineFiles());
     this.nodePath = deps.nodePath ?? process.execPath;
@@ -206,6 +213,13 @@ export class CloudService {
       const existing = loadCloudConfig(this.paths);
       this.assertNoLegacy();
 
+      if (input.privacyMode !== undefined && input.privacyMode !== "private" && input.privacyMode !== "searchable") {
+        throw new CloudError("Choose private sync or Cloud-assisted search", "invalid");
+      }
+      if (input.privacyMode === "searchable" && (typedPassphrase || existing?.e2ee)) {
+        throw new CloudError("An encrypted device cannot switch to server-readable sync. Keep private sync and use the original passphrase.", "encryption-required", 409);
+      }
+
       let passphrase = typedPassphrase;
       if (!passphrase && existing?.e2ee) {
         try {
@@ -219,6 +233,16 @@ export class CloudService {
             "encryption-required",
             409,
           );
+        }
+      }
+      if (input.privacyMode === "private" && !passphrase) {
+        throw new CloudError("Private sync requires a saved passphrase. Use the same one on every device.", "encryption-required", 409);
+      }
+      if (typedPassphrase && existing?.e2ee && existing.passphraseFile) {
+        let saved: string | null = null;
+        try { saved = readPrivatePassphrase(existing.passphraseFile); } catch { /* worker verifies against Cloud */ }
+        if (saved && typedPassphrase !== saved) {
+          throw new CloudError("Use the original private-sync passphrase. Changing it here would strand encrypted memories.", "encryption-required", 409);
         }
       }
       const api = validateApi(input.api ?? existing?.api ?? DEFAULT_CLOUD_API);

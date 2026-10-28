@@ -66,6 +66,7 @@ final class DaemonController: ObservableObject {
                 if let version = Self.jsonString(health, key: "version") {
                     daemonVersion = version
                 }
+                ReliabilityNotifier.shared.consider(healthJSON: health)
             }
         } catch {
             healthOK = false

@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { withMemoryIndexLock } from "../embeddings/index-lock.js";
 import { eq, lt } from "drizzle-orm";
 import type { RecallDb } from "../db/client.js";
 import { activityEvents, feedbackEvents, historySnippets, hookCalls, implicitSignals, memories } from "../db/schema.js";
@@ -38,6 +39,7 @@ export interface MaintenanceConfig {
   interval_seconds: number;
   stale_days: number;
   candidate_unconfirmed_days: number;
+  candidate_max_age_days: number;
   min_health_score: number;
   activity_retention_days: number;
   hook_call_retention_days: number;
@@ -105,6 +107,7 @@ export function loadMaintenanceConfigFromEnv(): MaintenanceConfig {
     interval_seconds: parseInt(process.env.RECALL_MAINTENANCE_INTERVAL_SECONDS ?? "3600", 10),
     stale_days: parseInt(process.env.RECALL_MAINTENANCE_STALE_DAYS ?? "90", 10),
     candidate_unconfirmed_days: parseInt(process.env.RECALL_CANDIDATE_UNCONFIRMED_DAYS ?? "30", 10),
+    candidate_max_age_days: parseInt(process.env.RECALL_CANDIDATE_MAX_AGE_DAYS ?? "60", 10),
     min_health_score: parseFloat(process.env.RECALL_MAINTENANCE_MIN_HEALTH_SCORE ?? "0.2"),
     activity_retention_days: parseInt(process.env.RECALL_ACTIVITY_RETENTION_DAYS ?? "30", 10),
     hook_call_retention_days: parseInt(process.env.RECALL_HOOK_CALL_RETENTION_DAYS ?? "30", 10),
@@ -149,6 +152,7 @@ export async function runMaintenanceCycle(
 ): Promise<MaintenanceResult> {
   const prune = pruneMemories(db, {
     candidate_unconfirmed_days: config.candidate_unconfirmed_days,
+    candidate_max_age_days: config.candidate_max_age_days,
     stale_days: config.stale_days,
     min_health_score: config.min_health_score,
     rejected_retention_days: config.rejected_retention_days,
@@ -178,20 +182,22 @@ export async function runMaintenanceCycle(
 
   const embeddingConfig = loadEmbeddingConfigFromEnv();
   if (embeddingConfig) {
-    const verify = verifyEmbeddings(db, embeddingConfig);
-    embedding_stale = verify.stale;
-    vector_drift = verify.index_drift;
-    lexical_drift = verify.lexical_drift;
+    await withMemoryIndexLock(db, async () => {
+      const verify = verifyEmbeddings(db, embeddingConfig);
+      embedding_stale = verify.stale;
+      vector_drift = verify.index_drift;
+      lexical_drift = verify.lexical_drift;
 
-    if (embedding_stale > 0) {
-      embeddings_refreshed = await bootstrapEmbeddings(db, embeddingConfig);
-    }
+      if (embedding_stale > 0) {
+        embeddings_refreshed = await bootstrapEmbeddings(db, embeddingConfig);
+      }
 
-    if (vector_drift !== 0 || lexical_drift !== 0) {
-      const rebuilt = await rebuildEmbeddingIndexResponsive(db, embeddingConfig);
-      vector_rows_rebuilt = rebuilt.vector_rows;
-      lexical_rows_rebuilt = rebuilt.lexical_rows;
-    }
+      if (vector_drift !== 0 || lexical_drift !== 0) {
+        const rebuilt = await rebuildEmbeddingIndexResponsive(db, embeddingConfig);
+        vector_rows_rebuilt = rebuilt.vector_rows;
+        lexical_rows_rebuilt = rebuilt.lexical_rows;
+      }
+    });
 
     const historyVerify = verifyHistoryEmbeddings(db, embeddingConfig);
     history_vector_drift = historyVerify.index_drift;

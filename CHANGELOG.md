@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## 2.0.18 - 2026-10-28
+
+- Stop the daemon from posting reliability alerts through AppleScript, which
+  macOS showed as Script Editor notifications. The Recall app now shows a
+  sustained reliability failure as a native "Recall" notification, at most
+  once a day.
+- Stop learning corrections from prompts that Codex `exec`, subagent, and
+  MCP-server threads receive. Those prompts are written by another agent or a
+  script, so their task briefs had become durable rules. Memory is still
+  injected into those threads.
+- Replace the failing `outcome_coverage` reliability gate with `outcome_loop`,
+  which fails only when emitted memories never resolve. Recall never invents
+  outcomes for rules that did not apply, so the resolved share is now a
+  warning-only precision signal.
+- Reject previously captured rules whose every source is an automated Codex
+  thread during the daemon's regular cleanup, so these rules no longer need to
+  be removed by hand. The rejection is audited and reversible.
+- Archive candidates from automatic injection 60 days after creation when they
+  were never confirmed or repeated, even in repositories without measurable
+  loop coverage. They stay searchable, and an explicit restore restarts the
+  clock. `RECALL_CANDIDATE_MAX_AGE_DAYS` changes the limit.
+- Offer private sync with local search as the initial choice in the Mac Cloud
+  connection form, with passphrase confirmation and a recovery reminder.
+  Existing connections keep their mode. Reject silent encryption downgrades
+  and saved-key changes, stop encrypted sync on verification failures before
+  uploading, and rebuild local search indexes after successful pulls.
+- Preserve applicability notes during bundled sync uploads so encrypted restore
+  retains the information used for local relevance matching.
+
 ## 2.0.17 - 2026-10-27
 
 - Enable online memory retrieval automatically for new and existing connected,

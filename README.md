@@ -76,6 +76,13 @@ and online retrieval, which sends agent question text to your configured Cloud.
 Turn retrieval off independently in the Cloud tab or with `recall cloud-query off`.
 Existing explicit off settings are preserved.
 
+For private backup and device sync, choose **Private sync · local search** in
+the Mac app. Memory text, notes and evidence are encrypted before upload;
+search runs on your device, including offline after sync and indexing. Save
+the same passphrase for every device. Hosted MCP and Cloud search require
+the separate server-readable mode. See [private Cloud sync](docs/private-cloud.md)
+for recovery and the limits of this privacy boundary.
+
 ### Mac App Store edition
 
 The sandboxed store edition, **Recall: Coding Memory**, has the same window as
@@ -601,3 +608,8 @@ npm run build
 ```
 
 Release and Homebrew publishing notes live in [docs/RELEASING.md](docs/RELEASING.md). The landing page is static HTML/CSS in [docs/](docs/) and deploys with GitHub Pages. Public crawl configuration lives in [docs/robots.txt](docs/robots.txt), with canonical landing-page URLs listed in [docs/sitemap.xml](docs/sitemap.xml).
+
+IndexNow ownership is not committed to the repository. The Pages workflow writes
+the public `/<key>.txt` verification file into the uploaded site at deploy time
+from the repository secret `COMPASS_INDEXNOW_KEY`, the shared Compass portfolio
+key. Runs without that secret skip the step and publish the site unchanged.

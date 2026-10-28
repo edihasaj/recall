@@ -196,20 +196,29 @@ function isExpiredRejectedTombstone(row, retentionDays, now) {
   return updatedMs < now - retentionDays * 86_400_000;
 }
 
+export function decryptCloudPayload(record, e2ee, decrypt) {
+  try {
+    if (!record.contentCiphertext || !record.contentNonce || !decrypt) throw new Error();
+    const payload = JSON.parse(decrypt(e2ee.key, record.contentCiphertext, record.contentNonce));
+    if (!payload || typeof payload.text !== "string" || !payload.text.trim()
+      || !payload.recall || typeof payload.recall !== "object" || Array.isArray(payload.recall)) {
+      throw new Error();
+    }
+    return payload;
+  } catch {
+    // Do not leak crypto errors, record contents, or keys to engine logs.
+    throw new Error("E2EE verification failed. Check the original passphrase; encrypted data may also be damaged. Sync was stopped.");
+  }
+}
+
 function cloudRecordToLocalRow(record, { deviceId, e2ee, decrypt, deviceAliases }) {
   let text = record.contentPlaintext;
   let metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   if (record.encryptionMode === "e2ee") {
-    if (!e2ee || !decrypt || !record.contentCiphertext || !record.contentNonce) return null;
-    try {
-      const payload = JSON.parse(
-        decrypt(e2ee.key, record.contentCiphertext, record.contentNonce)
-      );
-      text = payload.text;
-      metadata = { ...metadata, recall: payload.recall };
-    } catch {
-      return null;
-    }
+    if (!e2ee) return null;
+    const payload = decryptCloudPayload(record, e2ee, decrypt);
+    text = payload.text;
+    metadata = { ...metadata, recall: payload.recall };
   }
   if (typeof text !== "string" || !text.trim()) return null;
 

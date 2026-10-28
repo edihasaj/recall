@@ -23,7 +23,7 @@ describe("cloud sync engine packaging", () => {
     expect(rsync).toBeGreaterThan(mkdir);
   });
 
-  it("keeps the upstream files identical to the hashes in PROVENANCE.md", () => {
+  it("keeps the bundled snapshot identical to the hashes in PROVENANCE.md", () => {
     const provenance = readFileSync(join(vendor, "PROVENANCE.md"), "utf8");
     for (const file of ["recall-sync.mjs", "recall-sync-local.mjs", "private-token.mjs"]) {
       const hash = createHash("sha256").update(readFileSync(join(vendor, file))).digest("hex");

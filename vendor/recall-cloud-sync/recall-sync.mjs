@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   applyPulledRecords,
+  decryptCloudPayload,
   canonicalExternalId,
   cloudExternalIdForRow
 } from "./recall-sync-local.mjs";
@@ -160,7 +161,7 @@ async function main() {
   }
 }
 
-async function push(options) {
+async function push(options, { verifiedE2ee = false } = {}) {
   const api = requiredApi(options.api ?? process.env.RECALL_CLOUD_API);
   const token = resolveToken(options);
   const dbPath = resolve(expandHome(options.db ?? process.env.RECALL_DB ?? DEFAULT_DB));
@@ -188,6 +189,10 @@ async function push(options) {
     }), null, 2));
     return;
   }
+
+  // A mistyped key on a new device must not overwrite existing ciphertext.
+  // Watch verifies through its preceding pull; standalone push verifies here.
+  if (e2ee && !verifiedE2ee) await verifyRemoteEncryption(api, token, e2ee);
 
   let accepted = 0;
   // Rows the server actually wrote. `accepted` only counts records that
@@ -436,16 +441,31 @@ async function watch(options) {
   process.on("SIGINT", () => stop("SIGINT"));
   process.on("SIGTERM", () => stop("SIGTERM"));
 
+  const privateSync = resolveE2ee(loopOptions);
+  let needsKeyVerification = Boolean(privateSync);
   while (running) {
     try {
       const lastFullMs = Date.parse(String(cursor.fullReconciledAt ?? ""));
-      const fullReconcile = !Number.isFinite(lastFullMs)
+      const fullReconcile = needsKeyVerification || !Number.isFinite(lastFullMs)
         || Date.now() - lastFullMs >= fullReconcileSeconds * 1000;
+      // Verify/import encrypted data before any upload, even with saved cursors.
+      // Failed decryption rolls back the pull and never advances its cursor.
+      if (privateSync) {
+        // Key verification must not inherit the user's incremental batch limit.
+        if (needsKeyVerification) await retryTransientSync(() => verifyRemoteEncryption(api, token, privateSync));
+        const verified = await retryTransientSync(() => retrySqliteBusy(() => pull({
+          ...loopOptions,
+          since: fullReconcile ? undefined : cursor.pull?.updatedAt,
+          sinceId: fullReconcile ? undefined : cursor.pull?.id
+        })));
+        if (verified.cursor) cursor.pull = verified.cursor;
+        needsKeyVerification = false;
+      }
       const pushResult = await retryTransientSync(() => push({
         ...loopOptions,
         after: fullReconcile ? undefined : cursor.push?.updatedAt,
         afterId: fullReconcile ? undefined : cursor.push?.id
-      }));
+      }, { verifiedE2ee: Boolean(privateSync) }));
       if (pushResult?.cursor) cursor.push = pushResult.cursor;
       state.entries[stateKey] = cursor;
       saveSyncState(statePath, state);
@@ -933,6 +953,8 @@ function readRecallMemories(dbPath, statusSet, limit, cursor = {}) {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
     db.pragma("query_only = ON");
+    const columns = new Set(db.prepare("PRAGMA table_info(memories)").all().map((column) => column.name));
+    const note = columns.has("note") ? ", note" : "";
     const placeholders = [...statusSet].map(() => "?").join(",");
     const cursorClause = cursor.after
       ? "AND (updated_at > ? OR (updated_at = ? AND id > ?))"
@@ -947,7 +969,7 @@ function readRecallMemories(dbPath, statusSet, limit, cursor = {}) {
         id, type, text, scope, path_scope, repo, status, confidence, source,
         evidence, capture_context, supersedes, created_at, updated_at,
         last_validated_at, last_injected_at, injection_count, override_count,
-        repetition_count, team_id, sync_version, auto_inject, dedupe_key
+        repetition_count, team_id, sync_version, auto_inject, dedupe_key${note}
       FROM memories
       WHERE status IN (${placeholders})
       ${cursorClause}
@@ -1054,6 +1076,14 @@ function toCloudRecord(row, deviceId, e2ee = null, deviceAliases = {}) {
   };
 }
 
+async function verifyRemoteEncryption(api, token, e2ee) {
+  const remote = await fetchAllSyncRecords({ api, token, max: 100001 });
+  if (remote.length > 100000) throw new Error("E2EE verification exceeded the safe record limit; sync was stopped.");
+  for (const record of remote) {
+    if (record.encryptionMode === "e2ee") decryptCloudPayload(record, e2ee, e2eeDecrypt);
+  }
+}
+
 async function fetchAllSyncRecords({ api, token, since = null, sinceId = null, max = 100000 }) {
   const all = [];
   let cursorTime = since ?? null;
@@ -1066,11 +1096,14 @@ async function fetchAllSyncRecords({ api, token, since = null, sinceId = null, m
       token,
       body: { since: cursorTime, sinceId: cursorId, limit: pageSize }
     });
-    const batch = Array.isArray(result.records) ? result.records : [];
+    if (!Array.isArray(result.records)) throw new Error("Invalid Cloud sync response: records are missing");
+    const batch = result.records;
     if (batch.length === 0) break;
     all.push(...batch);
     const last = batch[batch.length - 1];
-    if (!last?.updatedAt || !last?.externalId || batch.length < pageSize) break;
+    if (!last?.updatedAt || !last?.externalId) throw new Error("Invalid Cloud sync response: cursor is missing");
+    if (batch.length < pageSize) break;
+    if (last.updatedAt === cursorTime && last.externalId === cursorId) throw new Error("Invalid Cloud sync response: cursor did not advance");
     cursorTime = last.updatedAt;
     cursorId = last.externalId;
   }
@@ -1093,6 +1126,7 @@ async function fetchJson(url, { method, token, body }) {
     try {
       const parsed = text ? JSON.parse(text) : {};
       if (typeof parsed.error === "string") detail = parsed.error;
+      else if (typeof parsed.detail === "string") detail = parsed.detail;
     } catch {
       // HTML proxy errors are intentionally not echoed into long-lived logs.
     }

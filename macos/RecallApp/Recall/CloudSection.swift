@@ -131,9 +131,10 @@ final class CloudStatusModel: ObservableObject {
         }
     }
 
-    func connect(token: String, passphrase: String, optIn: Bool) async -> Bool {
+    func connect(token: String, passphrase: String, privateSync: Bool, optIn: Bool) async -> Bool {
         var body: [String: Any] = ["token": token.trimmingCharacters(in: .whitespacesAndNewlines), "optIn": optIn]
         if !passphrase.isEmpty { body["e2eePassphrase"] = passphrase }
+        body["privacyMode"] = privateSync ? "private" : "searchable"
         return await perform("/cloud/connect", body)
     }
 
@@ -178,9 +179,14 @@ struct CloudTab: View {
     @ObservedObject private var cloud = CloudStatusModel.shared
     @State private var token = ""
     @State private var passphrase = ""
+    @State private var passphraseConfirmation = ""
+    @State private var passphraseSaved = false
+    @State private var privateSync = true
+    @State private var confirmPrivateDisconnect = false
     @State private var optIn = false
 
     private var snapshot: CloudStatusSnapshot? { cloud.snapshot }
+    private var needsPrivateSync: Bool { privateSync || snapshot?.config?.e2ee == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -225,6 +231,9 @@ struct CloudTab: View {
         guard let snapshot else { return "Waiting for Recall's background service." }
         if !snapshot.available { return "The Mac App Store edition keeps all memory on this Mac." }
         if snapshot.enabled {
+            if snapshot.config?.e2ee == true {
+                return "Memories sync as encrypted data. This Mac decrypts and searches them locally, including when offline."
+            }
             return "Recall syncs memories in both directions. Online retrieval can add relevant Cloud memories to agent queries."
         }
         return "Sync is off until you connect. Nothing leaves this Mac before then."
@@ -259,6 +268,10 @@ struct CloudTab: View {
                     Text("Sends question text to your Cloud to find relevant memories. Local retrieval stays available when offline.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else {
+                    Text("Memory text, notes and evidence are encrypted before upload. Search runs locally; encrypted memories are unavailable to hosted MCP and Cloud search. Keep your passphrase safely outside Recall to connect another device.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             LabeledValue(label: "Last sync", value: snapshot.worker.lastSyncAt ?? "No successful sync yet")
@@ -267,11 +280,22 @@ struct CloudTab: View {
             }
             HStack(spacing: 10) {
                 Button(role: .destructive) {
-                    Task { await cloud.disconnect() }
+                    if snapshot.config?.e2ee == true {
+                        confirmPrivateDisconnect = true
+                    } else {
+                        Task { await cloud.disconnect() }
+                    }
                 } label: {
                     Label("Disconnect", systemImage: "icloud.slash")
                 }
                 .disabled(cloud.busy)
+                .confirmationDialog("Disconnect private sync?", isPresented: $confirmPrivateDisconnect) {
+                    Button("Disconnect and remove saved passphrase", role: .destructive) {
+                        Task { await cloud.disconnect() }
+                    }
+                } message: {
+                    Text("Save your original passphrase first. Disconnect removes its saved copy from this Mac. Encrypted Cloud memories still need it to recover on another device.")
+                }
                 Button {
                     CloudLinks.openPortal(path: "/memories")
                 } label: {
@@ -279,7 +303,7 @@ struct CloudTab: View {
                 }
             }
             .controlSize(.large)
-            Text("Disconnect stops sync and online retrieval and removes this Mac's saved token. Memories already in the cloud stay until you delete them there.")
+            Text("Disconnect stops sync and online retrieval and removes this Mac's saved token and encryption passphrase. Memories already in the cloud stay until you delete them there.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -335,26 +359,48 @@ struct CloudTab: View {
             }
             SecureField("Recall Cloud token", text: $token)
                 .textFieldStyle(.roundedBorder)
-            DisclosureGroup("End-to-end encryption (optional)") {
+            Picker("Privacy", selection: $privateSync) {
+                Text("Private sync · local search").tag(true)
+                Text("Cloud-assisted search").tag(false)
+            }
+            .disabled(snapshot.config?.e2ee == true)
+            .onChange(of: privateSync) { _, _ in
+                passphrase = ""
+                passphraseConfirmation = ""
+                passphraseSaved = false
+            }
+            if needsPrivateSync {
                 VStack(alignment: .leading, spacing: 6) {
-                    SecureField("Passphrase", text: $passphrase)
+                    SecureField("Private sync passphrase", text: $passphrase)
                         .textFieldStyle(.roundedBorder)
-                    Text("Memories are encrypted on this Mac before upload. Use the same passphrase on every device; if you lose it, encrypted memories cannot be recovered.")
+                        .onChange(of: passphrase) { _, _ in passphraseSaved = false }
+                    SecureField("Confirm passphrase", text: $passphraseConfirmation)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Use the same passphrase on every device. For a new encrypted store, choose at least four random words and save them in a password manager. Recall cannot reset it; losing it and every local copy means losing your memories.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Toggle("I saved the passphrase outside Recall", isOn: $passphraseSaved)
                 }
                 .padding(.top, 6)
+            } else {
+                Text("The Cloud service can read synced memories and agent questions to provide hosted search and MCP.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Toggle("Connect this Mac to Recall Cloud", isOn: $optIn)
-            Text("Connecting enables sync and online retrieval. Unless end-to-end encryption is enabled, agent questions are sent to Cloud to find relevant memories. You can turn online retrieval off after connecting.")
+            Text(needsPrivateSync
+                 ? "Private sync sends encrypted memories and searches on this Mac. Account, device and structural metadata remain visible. This does not erase earlier plaintext Cloud copies or backups. Separately configured agent and model providers can still receive local context."
+                 : "Connecting enables sync and online retrieval. Agent questions are sent to Cloud to find relevant memories; you can turn online retrieval off after connecting.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button {
                 Task {
-                    if await cloud.connect(token: token, passphrase: passphrase, optIn: optIn) {
+                    if await cloud.connect(token: token, passphrase: needsPrivateSync ? passphrase : "", privateSync: needsPrivateSync, optIn: optIn) {
                         token = ""
                         passphrase = ""
+                        passphraseConfirmation = ""
+                        passphraseSaved = false
                         optIn = false
                     }
                 }
@@ -363,7 +409,8 @@ struct CloudTab: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(!optIn || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || cloud.busy)
+            .disabled(!optIn || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || cloud.busy
+                      || (needsPrivateSync && (passphrase.isEmpty || passphrase != passphraseConfirmation || !passphraseSaved)))
         }
         .padding(18)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -379,7 +426,7 @@ struct CloudTab: View {
             CloudFeatureRow(
                 icon: "network",
                 title: "Hosted MCP",
-                detail: "Codex, Claude, Cursor, and web agents can query the same synced memory."
+                detail: "Cloud-assisted mode lets remote and web agents query server-readable memories. Private mode uses your local agent connections."
             )
             CloudFeatureRow(
                 icon: "lock.shield.fill",

@@ -240,8 +240,9 @@ describe("pruneMemories: unconfirmed candidates", () => {
   });
 
   it("does not mass-archive after the loop restarts", () => {
+    // Below the 60-day max age, which archives regardless of loop coverage.
     const db = freshDb();
-    const id = candidate(db, { ageDays: 200 });
+    const id = candidate(db, { ageDays: 50 });
     inject(db, carrier(db), "acme/app", [0.1]);
     const result = pruneMemories(db, { candidate_unconfirmed_days: 30 });
     expect(result.unconfirmed_archived).toEqual([]);
@@ -484,5 +485,43 @@ describe("restoreUnmeasuredCandidates", () => {
     expect(() => restoreUnmeasuredCandidates(db, { minConfidence: Number.NaN })).toThrow(RangeError);
     expect(() => restoreUnmeasuredCandidates(db, { lookbackDays: 0 })).toThrow(RangeError);
     expect(getMemory(db, id)?.auto_inject).toBe(false);
+  });
+});
+
+describe("pruneMemories: candidate max age", () => {
+  it("archives an unearned candidate past the max age even when the loop is inactive", () => {
+    const db = freshDb();
+    const old = candidate(db, { ageDays: 75 });
+    const young = candidate(db, { ageDays: 40 });
+    const result = pruneMemories(db, { candidate_unconfirmed_days: 30 });
+    expect(result.candidate_age_archived).toEqual([old]);
+    expect(result.unconfirmed_skipped_loop_inactive).toEqual([young]);
+    expect(result.total).toBe(1);
+    expect(getMemory(db, old)?.auto_inject).toBe(false);
+    expect(getMemory(db, old)?.status).toBe("candidate");
+    expect(getMemory(db, young)?.auto_inject).toBe(true);
+    expect(auditRows(db, old, "demoted")[0]?.reason).toMatch(/past 60d max age/);
+  });
+
+  it("archives a candidate that keeps being injected without ever being confirmed", () => {
+    const db = freshDb();
+    const id = candidate(db, { ageDays: 75, injectionCount: 12 });
+    inject(db, id, "acme/app", [1, 3, 9]);
+    const result = pruneMemories(db, {});
+    expect(result.candidate_age_archived).toEqual([id]);
+    expect(result.stale_archived).not.toContain(id);
+  });
+
+  it("keeps repeated candidates, honours 0 to disable, and never auto-restores the archive", () => {
+    const db = freshDb();
+    const repeated = candidate(db, { ageDays: 90, repetitionCount: 2 });
+    const disabled = pruneMemories(db, { candidate_max_age_days: 0, dry_run: true });
+    expect(disabled.candidate_age_archived).toEqual([]);
+    const aged = candidate(db, { ageDays: 90 });
+    pruneMemories(db, {});
+    expect(getMemory(db, repeated)?.auto_inject).toBe(true);
+    expect(getMemory(db, aged)?.auto_inject).toBe(false);
+    restoreUnmeasuredCandidates(db, { minConfidence: 0 });
+    expect(getMemory(db, aged)?.auto_inject).toBe(false);
   });
 });
