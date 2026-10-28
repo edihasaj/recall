@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.0.19 - 2026-10-28
+
+- Install updates automatically on macOS. When a complete, verified release is
+  ready, Recall.app runs the existing verified update and reopens without a
+  click. A version that failed on this Mac is not retried automatically. The
+  Updates tab has a switch to turn this off.
+
 ## 2.0.18 - 2026-10-28
 
 - Stop the daemon from posting reliability alerts through AppleScript, which
