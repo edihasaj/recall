@@ -14,8 +14,28 @@ final class UpdateController: ObservableObject {
     let installedVersion: String
     private var pollingTask: Task<Void, Never>?
 
+    /// Install verified releases without waiting for a click. On by default;
+    /// the Updates tab turns it off.
+    @Published var installAutomatically: Bool {
+        didSet { UserDefaults.standard.set(installAutomatically, forKey: Self.automaticKey) }
+    }
+    /// Set by the app delegate: quits Recall so the helper can replace it.
+    var onAutomaticInstall: (@MainActor () throws -> Void)?
+    private static let automaticKey = "installUpdatesAutomatically"
+
     init() {
         installedVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        installAutomatically = UserDefaults.standard.object(forKey: Self.automaticKey) as? Bool ?? true
+    }
+
+    /// True when the daemon reports a complete, newer release that this copy
+    /// can install itself, and that version has not already failed here.
+    /// A failed version is never retried automatically, so a bad release can't
+    /// restart Recall in a loop; the Install button still works.
+    nonisolated static func shouldInstallAutomatically(
+        enabled: Bool, available: Bool, canInstall: Bool, failedVersion: String?, latest: String?
+    ) -> Bool {
+        enabled && available && canInstall && latest != nil && failedVersion != latest
     }
 
     var isAvailable: Bool {
@@ -79,6 +99,12 @@ final class UpdateController: ObservableObject {
             if report.error != nil { throw UpdateFailure.checkFailed }
             checkFailed = false
             if !hasFailedUpdateResult { lastError = nil }
+            if let onAutomaticInstall, Self.shouldInstallAutomatically(
+                enabled: installAutomatically, available: isAvailable, canInstall: canInstallInApp,
+                failedVersion: failedUpdateVersion, latest: latestVersion) {
+                checking = false
+                install(onInstalled: onAutomaticInstall)
+            }
         } catch {
             checkFailed = true
             if !hasFailedUpdateResult {
@@ -122,6 +148,14 @@ final class UpdateController: ObservableObject {
     private var brewPath: String? {
         ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
             .first(where: FileManager.default.isExecutableFile(atPath:))
+    }
+
+    /// The version named by a `failed<TAB>version` result, if any.
+    private var failedUpdateVersion: String? {
+        guard let raw = try? String(contentsOfFile: resultPath, encoding: .utf8), raw.hasPrefix("failed\t") else {
+            return nil
+        }
+        return raw.dropFirst("failed\t".count).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var hasFailedUpdateResult: Bool {

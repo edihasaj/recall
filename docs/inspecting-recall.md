@@ -81,6 +81,14 @@ its daemon. Local memories stay in `~/.recall`, with a fresh backup made before
 the swap. An app in another folder or a protected Applications folder shows
 **Download Update** with a manual install explanation.
 
+From 2.0.19, Recall.app installs a ready update by itself: when the daemon
+reports a complete release that this copy can install, the app runs the same
+verified update without a click and reopens in about ten seconds. It checks
+every 30 minutes. A version whose update failed on this Mac is never retried
+automatically, so a bad release cannot restart Recall in a loop; **Install &
+Restart** still works. Turn this off with **Install updates automatically** in
+the Updates tab. Versions before 2.0.19 need one last manual update.
+
 Versions through 2.0.2 only supported Homebrew updates. A direct installation
 of those versions needs one manual download to get the new updater. Verify the
 archive with `shasum -a 256 -c Recall.app.zip.sha256`, quit Recall, replace the

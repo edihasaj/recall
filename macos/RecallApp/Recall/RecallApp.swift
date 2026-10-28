@@ -213,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Boot controllers first — the menu we're about to build reads from them.
         controller.start()
         webui.start()
+        updates.onAutomaticInstall = { [weak self] in self?.quitForUpdate() }
         updates.start()
         preferences.syncLaunchAtLogin()
         preferences.applyActivationPolicy()

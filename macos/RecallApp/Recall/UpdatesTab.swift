@@ -125,6 +125,11 @@ struct UpdatesTab: View {
                 }
             }
 
+            Toggle("Install updates automatically", isOn: $updates.installAutomatically)
+                .toggleStyle(.switch)
+                .font(.system(size: 12))
+                .help("Recall installs a verified release when it appears and reopens in about ten seconds.")
+
             HStack(spacing: 10) {
                 Image(systemName: "lock.shield")
                     .foregroundStyle(.secondary)
