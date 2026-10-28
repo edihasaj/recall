@@ -35,6 +35,9 @@ export interface ReliabilityReport {
   overall: "pass" | "warn" | "fail";
 }
 
+/** Emitted injections required before zero resolved outcomes counts as a broken loop. */
+export const OUTCOME_LOOP_MIN_EMITTED = 20;
+
 function ratio(numerator: number, denominator: number): number {
   return denominator > 0 ? numerator / denominator : 0;
 }
@@ -142,7 +145,12 @@ export function computeReliabilityReport(
     // of hiding it behind a perfect attribution rate; never fails on its own.
     { name: "session_scope_coverage", status: sessionIds.size === 0 || scopeCoverage < 0.5 ? "warn" : "pass", value: scopeCoverage, target: ">=50%" },
     { name: "emission_coverage", status: selectedPairs.size === 0 ? "warn" : emissionCoverage >= 0.99 ? "pass" : emissionCoverage >= 0.95 ? "warn" : "fail", value: emissionCoverage, target: ">=99%" },
-    { name: "outcome_coverage", status: emittedSelected === 0 ? "warn" : outcomeCoverage >= 0.8 ? "pass" : outcomeCoverage >= 0.5 ? "warn" : "fail", value: outcomeCoverage, target: ">=80%" },
+    // The resolver never invents an outcome for a rule that did not apply in a
+    // session, so unresolved injections mix "not applicable" with "missed".
+    // The loop fails only when nothing resolves at all; the coverage ratio is
+    // a precision signal (over-broad rules) and never fails on its own.
+    { name: "outcome_loop", status: emittedSelected === 0 ? "warn" : resolvedOutcomes > 0 ? "pass" : emittedSelected >= OUTCOME_LOOP_MIN_EMITTED ? "fail" : "warn", value: resolvedOutcomes, target: `>=1 once ${OUTCOME_LOOP_MIN_EMITTED} emitted` },
+    { name: "outcome_coverage", status: emittedSelected > 0 && outcomeCoverage >= 0.8 ? "pass" : "warn", value: outcomeCoverage, target: ">=80%" },
     { name: "retrieval_observations", status: retrievalObservations >= 20 ? "pass" : retrievalObservations >= 5 ? "warn" : "fail", value: retrievalObservations, target: ">=20" },
     { name: "candidate_backlog", status: candidateBacklog <= 50 ? "pass" : candidateBacklog <= 100 ? "warn" : "fail", value: candidateBacklog, target: "<=50" },
   ];

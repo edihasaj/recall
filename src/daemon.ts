@@ -93,7 +93,6 @@ import { recallBuildInfo } from "./runtime/build.js";
 import type { ReliabilityProbeResult } from "./reliability/probe.js";
 import {
   loadReliabilityVerdictConfigFromEnv,
-  notifyMacOS,
   readReliabilityVerdict,
   reliabilityVerdictDataDir,
   runReliabilityVerdictCycle,
@@ -391,22 +390,24 @@ function scheduleReliabilityProbeLoop() {
 }
 
 let lastReliabilityVerdict: ReliabilityVerdict | null = null;
+let reliabilityVerdictNotify = false;
 let reliabilityVerdictRunning = false;
 
 // Persists the measured 14-day reliability verdict daily so a FAIL that lasts
-// for weeks is surfaced (stderr, /health, doctor, macOS notification).
+// for weeks is surfaced (stderr, /health, doctor). The daemon never posts
+// desktop notifications itself: AppleScript notifications are attributed to
+// Script Editor. The Recall app reads `/health` and notifies natively.
 function scheduleReliabilityVerdictLoop() {
   const config = loadReliabilityVerdictConfigFromEnv();
   const dataDir = reliabilityVerdictDataDir();
   lastReliabilityVerdict = readReliabilityVerdict(dataDir);
+  reliabilityVerdictNotify = config.enabled && config.notify;
   if (!config.enabled) return;
   const run = async () => {
     if (reliabilityVerdictRunning) return;
     reliabilityVerdictRunning = true;
     try {
-      lastReliabilityVerdict = await runReliabilityVerdictCycle(db, dataDir, {
-        notify: config.notify ? notifyMacOS : undefined,
-      });
+      lastReliabilityVerdict = await runReliabilityVerdictCycle(db, dataDir);
       console.log(
         `[recall] reliability verdict overall=${lastReliabilityVerdict.overall} fail_days=${lastReliabilityVerdict.consecutive_fail_days} sustained=${lastReliabilityVerdict.sustained_fail}`,
       );
@@ -484,6 +485,7 @@ const server = createServer(async (req, res) => {
         build: recallBuildInfo,
         reliability_probe: lastReliabilityProbe,
         reliability_verdict: lastReliabilityVerdict,
+        reliability_verdict_notify: reliabilityVerdictNotify,
         embeddings: getEmbeddingModelInfo(),
         retrieval_mode: loadEmbeddingConfigFromEnv() ? "hybrid" : "lexical",
         embedding_unavailable_reason: getEmbeddingUnavailableReason(),

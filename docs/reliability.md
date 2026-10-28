@@ -54,12 +54,28 @@ The report starts with these operating targets:
 | Repository attribution for scoped sessions | at least 95% |
 | Sessions with repository scope | at least 50% (warning only) |
 | Selected memories emitted by the hook | at least 99% |
-| Emitted memories with a resolved outcome | at least 80% |
+| Resolved outcomes once 20 or more memories were emitted (`outcome_loop`) | at least 1 |
+| Emitted memories with a resolved outcome (`outcome_coverage`) | at least 80% (warning only) |
 | Used or missed retrieval observations per 14 days | at least 20 |
 | Candidates still eligible for automatic injection | at most 50 in one repo |
 
 An empty denominator is `warn`, not `pass`. Missing evidence never becomes a
 successful outcome.
+
+Recall resolves an outcome only from observable evidence: a tool call or
+correction that matches the rule. A rule that did not apply in a session stays
+unresolved, so unresolved injections mix "not applicable" with "missed".
+`outcome_loop` therefore fails only when nothing resolves at all, which points
+to broken tool or session-end hooks. A low `outcome_coverage` warns about
+over-broad rules that are injected where they never apply.
+
+## Agent-authored prompts
+
+Codex records each thread's origin in the first rollout line. Prompts in
+`exec`, subagent, and `mcp` threads are written by another agent or a script.
+Recall still injects memory into those threads, but it never learns
+corrections or outcomes from their prompts. The prompt event is recorded with
+`automated: true`. An unreadable rollout is treated as an interactive thread.
 
 ## Disposable canary
 

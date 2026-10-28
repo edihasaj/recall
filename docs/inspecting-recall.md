@@ -197,16 +197,18 @@ daemon is not running.
 
 When a failure has lasted 7 days or more, every daemon run writes
 `[recall] reliability FAIL for N days: <failing checks>` to
-`daemon.stderr.log`. On macOS the daemon also shows one notification titled
-"Recall", at most once every 24 hours. If `osascript` is missing or fails, the
-daemon skips the notification and tries again on the next run.
+`daemon.stderr.log`. The daemon itself never posts desktop notifications. On
+macOS the Recall app reads `/health` and shows one native "Recall"
+notification, at most once every 24 hours, when the daemon reports
+`reliability_verdict_notify: true`. The first notification asks for
+notification permission.
 
 Environment flags:
 
 - `RECALL_RELIABILITY_VERDICT_ENABLED=false` stops the daily computation.
   `/health` and doctor still show the last saved verdict.
-- `RECALL_RELIABILITY_VERDICT_NOTIFY=false` keeps the log line but disables the
-  macOS notification. Notifications are always off under a test runner.
+- `RECALL_RELIABILITY_VERDICT_NOTIFY=false` keeps the log line but tells the
+  Recall app not to notify. Notifications are always off under a test runner.
 - `RECALL_RELIABILITY_VERDICT_DELAY_SECONDS` (default 120) and
   `RECALL_RELIABILITY_VERDICT_INTERVAL_SECONDS` (default 86400, minimum 300)
   change the timing.

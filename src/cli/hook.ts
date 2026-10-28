@@ -34,6 +34,7 @@ import {
 } from "../models/memory-value.js";
 import { textMatches } from "../text/match.js";
 import { resolveCodexSessionIdOrExit } from "./hook-codex-payload.js";
+import { isAutomatedCodexThread } from "./codex-thread-origin.js";
 
 const DEFAULT_DAEMON_ORIGIN = `http://127.0.0.1:${process.env.RECALL_PORT ?? "7890"}`;
 const DEFAULT_DAEMON_TIMEOUT_MS = 15_000;
@@ -59,6 +60,12 @@ export interface PromptHookInput {
   prev_assistant_turn?: string;
   recent_tool_calls?: readonly RecentToolCall[];
   agent?: string;
+  /**
+   * The prompt was written by another agent or a script (Codex `exec`,
+   * subagent or MCP-server threads), not typed by the user. Memory is still
+   * injected, but the prompt never becomes correction or outcome evidence.
+   */
+  automated?: boolean;
 }
 
 export interface ToolHookInput {
@@ -326,6 +333,7 @@ export async function handlePromptHook(
         client: input.agent ?? "hook",
         name: "prompt_submitted",
         repo_path: input.repo_path ?? null,
+        ...(input.automated === true ? { automated: true } : {}),
       },
       result: {
         text,
@@ -338,7 +346,8 @@ export async function handlePromptHook(
       },
     });
 
-    const userAuthored = !isGeneratedCaptureContext(text);
+    const generated = isGeneratedCaptureContext(text);
+    const userAuthored = !generated && input.automated !== true;
     if (userAuthored) await resolvePendingInjectionOutcomesOnPrompt(
       db,
       sessionId,
@@ -376,7 +385,7 @@ export async function handlePromptHook(
     // floor keeps off-topic prompts silent. Set RECALL_HOOK_INJECT_PROMPT=false
     // to opt out (SessionStart-only injection still applies).
     const promptInjectionEnabled = process.env.RECALL_HOOK_INJECT_PROMPT !== "false";
-    const injection = repo && promptInjectionEnabled && userAuthored
+    const injection = repo && promptInjectionEnabled && !generated
       ? await collectInjectionSurface(db, {
           repo,
           path: input.path,
@@ -945,6 +954,7 @@ async function readPromptInputFromStdin(agent: "claude-code" | "codex"): Promise
     repo_path: payload.cwd,
     session_id: payload.session_id,
     text: requireNonEmpty(payload.prompt ?? "", "prompt"),
+    ...(agent === "codex" && isAutomatedCodexThread(payload.transcript_path) ? { automated: true } : {}),
   };
 }
 
