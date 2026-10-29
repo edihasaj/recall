@@ -151,7 +151,7 @@ export function computeReliabilityReport(
     // a precision signal (over-broad rules) and never fails on its own.
     { name: "outcome_loop", status: emittedSelected === 0 ? "warn" : resolvedOutcomes > 0 ? "pass" : emittedSelected >= OUTCOME_LOOP_MIN_EMITTED ? "fail" : "warn", value: resolvedOutcomes, target: `>=1 once ${OUTCOME_LOOP_MIN_EMITTED} emitted` },
     { name: "outcome_coverage", status: emittedSelected > 0 && outcomeCoverage >= 0.8 ? "pass" : "warn", value: outcomeCoverage, target: ">=80%" },
-    { name: "retrieval_observations", status: retrievalObservations >= 20 ? "pass" : retrievalObservations >= 5 ? "warn" : "fail", value: retrievalObservations, target: ">=20" },
+    { name: "retrieval_observations", status: retrievalObservations >= 20 ? "pass" : "warn", value: retrievalObservations, target: ">=20" },
     { name: "candidate_backlog", status: candidateBacklog <= 50 ? "pass" : candidateBacklog <= 100 ? "warn" : "fail", value: candidateBacklog, target: "<=50" },
   ];
   const overall = checks.some((check) => check.status === "fail")

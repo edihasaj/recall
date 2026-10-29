@@ -62,7 +62,8 @@ export function computeReliabilityVerdict(
 /**
  * Carry-over rule: a FAIL that follows a FAIL keeps the earlier
  * `first_fail_at` and counts one more day only when the UTC calendar day
- * changed. Any PASS, WARN, clock reversal, or missed UTC day resets the streak:
+ * changed. Changes in failing checks, PASS, WARN, clock reversal, or a missed
+ * UTC day reset the streak:
  * downtime is missing evidence, not an observed sustained failure.
  */
 export function deriveReliabilityVerdict(
@@ -78,7 +79,10 @@ export function deriveReliabilityVerdict(
     const dayGap = previous
       ? (Date.parse(utcDay(computedAt)) - Date.parse(utcDay(previous.computed_at))) / DAY_MS
       : Number.NaN;
+    const failingNames = (checks: ReadonlyArray<ReliabilityVerdictCheck>) =>
+      checks.filter((check) => check.status === "fail").map((check) => check.name).sort().join("\0");
     if (previous?.overall === "fail" && previous.first_fail_at
+      && failingNames(previous.checks) === failingNames(measured.checks)
       && now.getTime() >= Date.parse(previous.computed_at) && dayGap >= 0 && dayGap <= 1) {
       firstFailAt = previous.first_fail_at;
       consecutiveFailDays = Math.max(1, previous.consecutive_fail_days) + dayGap;
@@ -187,7 +191,7 @@ export function loadReliabilityVerdictConfigFromEnv(
 const CHECK_HINTS: Record<string, string> = {
   repo_attribution: "sessions start outside a recognized repo or hooks are missing — see ## Agents",
   session_scope_coverage: "most sessions start outside a repo (home, /tmp, ~/Projects) and cannot receive repo memory",
-  retrieval_observations: "too few used/missed retrieval observations in 14 d — inspect query and hook telemetry",
+  retrieval_observations: "too few used/missed observations to assess retrieval — collect more evidence; this is not proof of failure",
   emission_coverage: "memories selected but the hook did not emit them",
   outcome_loop: "emitted memories never resolved — check tool and session-end hooks",
   outcome_coverage: "most emitted memories were not observably applied — check for over-broad or agent-authored rules",

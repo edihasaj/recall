@@ -126,6 +126,15 @@ describe("reliability report", () => {
     expect(report.checks.filter((check) => check.name.startsWith("outcome_") && check.status === "fail")).toEqual([]);
   });
 
+  it("does not fail or alert on a small retrieval evidence sample", async () => {
+    const db = freshDb();
+    seedEmittedInjections(db, 25, 3);
+    const report = computeReliabilityReport(db);
+    expect(report.retrieval_observations).toBe(0);
+    expect(statusOf(report, "retrieval_observations")).toBe("warn");
+    expect(report.overall).toBe("warn");
+  });
+
   it("fails the outcome loop when many emitted memories never resolve", () => {
     const db = freshDb();
     seedEmittedInjections(db, 25, 0);
