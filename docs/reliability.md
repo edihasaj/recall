@@ -56,8 +56,15 @@ The report starts with these operating targets:
 | Selected memories emitted by the hook | at least 99% |
 | Resolved outcomes once 20 or more memories were emitted (`outcome_loop`) | at least 1 |
 | Emitted memories with a resolved outcome (`outcome_coverage`) | at least 80% (warning only) |
-| Used or missed retrieval observations per 14 days | at least 20 |
+| Used or missed retrieval observations per 14 days | at least 20 (warning only: sample sufficiency) |
 | Candidates still eligible for automatic injection | at most 50 in one repo |
+
+A small retrieval sample cannot prove a retrieval failure. Database integrity and
+the real retrieval canary are measured separately. A sustained failure streak
+resets whenever the set of failing checks changes, so a new failure never
+inherits the duration of a different resolved failure. On startup, the daemon
+keeps the saved verdict available for diagnostics but only enables alerts after
+a fresh computation with the running build.
 
 An empty denominator is `warn`, not `pass`. Missing evidence never becomes a
 successful outcome.

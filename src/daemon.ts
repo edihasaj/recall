@@ -402,13 +402,16 @@ function scheduleReliabilityVerdictLoop() {
   const config = loadReliabilityVerdictConfigFromEnv();
   const dataDir = reliabilityVerdictDataDir();
   lastReliabilityVerdict = readReliabilityVerdict(dataDir);
-  reliabilityVerdictNotify = config.enabled && config.notify;
+  // A cached verdict may reflect the previous build or an already fixed check.
+  // Keep it visible to diagnostics, but wait for a fresh measurement to alert.
+  reliabilityVerdictNotify = false;
   if (!config.enabled) return;
   const run = async () => {
     if (reliabilityVerdictRunning) return;
     reliabilityVerdictRunning = true;
     try {
       lastReliabilityVerdict = await runReliabilityVerdictCycle(db, dataDir);
+      reliabilityVerdictNotify = config.notify;
       console.log(
         `[recall] reliability verdict overall=${lastReliabilityVerdict.overall} fail_days=${lastReliabilityVerdict.consecutive_fail_days} sustained=${lastReliabilityVerdict.sustained_fail}`,
       );

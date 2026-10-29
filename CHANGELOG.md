@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.0.20 - 2026-10-29
+
+- Treat a small retrieval evidence sample as a warning rather than a failure.
+  A quiet installation no longer sends daily reliability alerts when its
+  database and retrieval canary are healthy.
+- Reset the sustained failure streak when the failing checks change. A new
+  failure no longer inherits the duration of a different resolved problem.
+
 ## 2.0.19 - 2026-10-28
 
 - Install updates automatically on macOS. When a complete, verified release is

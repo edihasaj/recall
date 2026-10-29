@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 import { closeDb, initStandaloneDb as openStandaloneDb, type RecallDb } from "../src/db/client.js";
+import { createActivityEvent } from "../src/models/activity.js";
 import { formatDoctorReport } from "../src/doctor/report.js";
 import {
   computeReliabilityVerdict,
@@ -85,6 +86,17 @@ describe("reliability verdict carry-over", () => {
     expect(day3.checks.map((check) => check.name)).toEqual(failing.checks.map((check) => check.name));
   });
 
+  it("starts a new streak when a different check fails", () => {
+    const previous = sustainedVerdict();
+    const changed = { overall: "fail" as const, checks: [
+      { name: "emission_coverage", status: "fail" as const, value: 0.5, target: ">=99%" },
+    ] };
+    const next = deriveReliabilityVerdict(changed, { now: at(10 * DAY), previous });
+    expect(next).toMatchObject({ first_fail_at: at(10 * DAY).toISOString(), consecutive_fail_days: 1, sustained_fail: false });
+    const reordered = deriveReliabilityVerdict({ ...failing, checks: [...failing.checks].reverse() }, { now: at(10 * DAY), previous });
+    expect(reordered.first_fail_at).toBe(previous.first_fail_at);
+  });
+
   it("does not count a second FAIL on the same UTC day", () => {
     const morning = deriveReliabilityVerdict(failing, { now: at(0) });
     const evening = deriveReliabilityVerdict(failing, { now: at(10 * 3_600_000), previous: morning });
@@ -163,19 +175,21 @@ describe("reliability verdict persistence", () => {
 });
 
 describe("reliability verdict computation", () => {
-  it("runs the existing 14-day report and fails an empty store on retrieval observations", () => {
+  it("reports an empty store as insufficient evidence, without a failure streak", () => {
     const db = initStandaloneDb(join(tempDir("recall-verdict-db-"), "recall.db"));
     const verdict = computeReliabilityVerdict(db, { now: new Date() });
-    expect(verdict.overall).toBe("fail");
-    expect(verdict.checks.find((check) => check.name === "retrieval_observations")?.status).toBe("fail");
-    expect(verdict.consecutive_fail_days).toBe(1);
+    expect(verdict.overall).toBe("warn");
+    expect(verdict.checks.find((check) => check.name === "retrieval_observations")?.status).toBe("warn");
+    expect(verdict.consecutive_fail_days).toBe(0);
   });
 
   it("logs a sustained FAIL every run but notifies at most once per 24 h", async () => {
     const dataDir = tempDir("recall-verdict-cycle-");
     const db = initStandaloneDb(join(dataDir, "recall.db"));
     const now = new Date();
+    createActivityEvent(db, { session_id: "missing-repo", event_type: "session_start", source: "cli", request: { repo_path: "/missing/reliability-repo" } });
     persistReliabilityVerdict(dataDir, sustainedVerdict({
+      checks: computeReliabilityVerdict(db).checks,
       computed_at: new Date(now.getTime() - DAY).toISOString(),
       first_fail_at: new Date(now.getTime() - 10 * DAY).toISOString(),
     }));
@@ -191,7 +205,7 @@ describe("reliability verdict computation", () => {
     expect(first.sustained_fail).toBe(true);
     expect(first.last_notified_at).toBe(now.toISOString());
     expect(logged).toHaveLength(1);
-    expect(logged[0]).toMatch(/^\[recall\] reliability FAIL for 10 days: .*retrieval_observations/);
+    expect(logged[0]).toMatch(/^\[recall\] reliability FAIL for 10 days: .*repo_attribution/);
     expect(notified).toHaveLength(1);
     expect(readReliabilityVerdict(dataDir)?.last_notified_at).toBe(now.toISOString());
 
@@ -208,7 +222,9 @@ describe("reliability verdict computation", () => {
     const dataDir = tempDir("recall-verdict-cycle-");
     const db = initStandaloneDb(join(dataDir, "recall.db"));
     const now = new Date();
+    createActivityEvent(db, { session_id: "missing-repo", event_type: "session_start", source: "cli", request: { repo_path: "/missing/reliability-repo" } });
     persistReliabilityVerdict(dataDir, sustainedVerdict({
+      checks: computeReliabilityVerdict(db).checks,
       computed_at: new Date(now.getTime() - DAY).toISOString(),
       first_fail_at: new Date(now.getTime() - 8 * DAY).toISOString(),
     }));
@@ -277,7 +293,7 @@ describe("doctor ## Reliability section", () => {
     expect(text).toContain("FAIL repo_attribution: 11.2% (target >=95%)");
     expect(text).toContain("sessions start outside a recognized repo or hooks are missing — see ## Agents");
     expect(text).toContain("FAIL retrieval_observations: 0 (target >=20)");
-    expect(text).toContain("too few used/missed retrieval observations in 14 d");
+    expect(text).toContain("too few used/missed observations to assess retrieval");
     expect(text).not.toContain("candidate_backlog");
   });
 
@@ -373,7 +389,7 @@ afterAll(async () => {
 });
 
 describe("daemon /health reliability_verdict (live HTTP)", () => {
-  it("serves the persisted verdict, then recomputes it with carry-over", async () => {
+  it("serves a legacy failure, then clears it when the evidence is insufficient", async () => {
     const dataDir = tempDir("recall-daemon-verdict-");
     const now = Date.now();
     const seeded = sustainedVerdict({
@@ -382,10 +398,16 @@ describe("daemon /health reliability_verdict (live HTTP)", () => {
       consecutive_fail_days: 9,
     });
     persistReliabilityVerdict(dataDir, seeded);
-    const daemon = await bootDaemon(dataDir, { RECALL_RELIABILITY_VERDICT_DELAY_SECONDS: "4" });
+    const daemon = await bootDaemon(dataDir, {
+      RECALL_RELIABILITY_VERDICT_DELAY_SECONDS: "4",
+      RECALL_RELIABILITY_VERDICT_NOTIFY: "true",
+      VITEST: "",
+      NODE_ENV: "production",
+    });
 
     const initial = await daemon.health();
     expect(initial).toHaveProperty("reliability_verdict");
+    expect(initial.reliability_verdict_notify).toBe(false);
     expect(initial.reliability_verdict.first_fail_at).toBe(seeded.first_fail_at);
 
     let current = initial.reliability_verdict;
@@ -395,15 +417,16 @@ describe("daemon /health reliability_verdict (live HTTP)", () => {
       current = (await daemon.health()).reliability_verdict;
     }
     expect(current.computed_at).not.toBe(seeded.computed_at);
+    expect((await daemon.health()).reliability_verdict_notify).toBe(true);
     expect(current).toMatchObject({
-      overall: "fail",
-      first_fail_at: seeded.first_fail_at,
-      consecutive_fail_days: 10,
-      sustained_fail: true,
+      overall: "warn",
+      first_fail_at: null,
+      consecutive_fail_days: 0,
+      sustained_fail: false,
       last_notified_at: null,
     });
     expect(JSON.parse(readFileSync(reliabilityVerdictPath(dataDir), "utf-8"))).toEqual(current);
-    expect(daemon.stderr()).toContain("[recall] reliability FAIL for 10 days:");
+    expect(daemon.stderr()).not.toContain("[recall] reliability FAIL");
   }, 60_000);
 
   it("reports null when no verdict exists and the loop is disabled", async () => {
