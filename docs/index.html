@@ -11,6 +11,51 @@
     <meta name="theme-color" content="#2f211a" />
     <link rel="canonical" href="https://recallmemory.dev/" />
 
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://recallmemory.dev/#website",
+            "url": "https://recallmemory.dev/",
+            "name": "Recall",
+            "description": "Teach Recall once. Every coding agent gets the right context across sessions, projects, and devices. Local-first, open source, with optional encrypted cloud sync.",
+            "inLanguage": "en",
+            "publisher": {
+              "@type": "Person",
+              "name": "Edi Hasaj",
+              "url": "https://edihasaj.com"
+            },
+            "sameAs": ["https://github.com/edihasaj/recall"],
+            "mainEntity": { "@id": "https://github.com/edihasaj/recall#software" }
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "@id": "https://github.com/edihasaj/recall#software",
+            "name": "Recall",
+            "alternateName": "@edihasaj/recall",
+            "description": "Recall is a local repo-memory compiler for coding agents. It learns from corrections, review feedback, repo scans, and session outcomes, then injects compact trusted instructions through CLI, MCP, daemon endpoints, and lifecycle hooks.",
+            "url": "https://recallmemory.dev/",
+            "codeRepository": "https://github.com/edihasaj/recall",
+            "programmingLanguage": "TypeScript",
+            "runtimePlatform": "Node.js 22 or later",
+            "license": "https://spdx.org/licenses/MIT",
+            "author": {
+              "@type": "Person",
+              "name": "Edi Hasaj",
+              "url": "https://edihasaj.com"
+            },
+            "isPartOf": { "@id": "https://recallmemory.dev/#website" },
+            "sameAs": [
+              "https://github.com/edihasaj/recall",
+              "https://www.npmjs.com/package/@edihasaj/recall"
+            ]
+          }
+        ]
+      }
+    </script>
+
     <meta property="og:title" content="Recall" />
     <meta
       property="og:description"

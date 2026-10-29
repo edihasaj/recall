@@ -148,6 +148,8 @@ If `HOMEBREW_TAP_GITHUB_TOKEN` is configured, the workflow renders `Casks/recall
 
 The landing page is static HTML/CSS in [docs/](../docs/). `.github/workflows/pages.yml` deploys that directory to GitHub Pages on pushes to `main`.
 
+The page `<head>` carries a single JSON-LD block (`WebSite` + `SoftwareSourceCode`) that identifies the site and links it to the canonical `https://github.com/edihasaj/recall` repository through `codeRepository` and `sameAs`. Keep its `description`, `license`, and `programmingLanguage` grounded in `README.md`, `LICENSE`, and `package.json`, and add no ratings, download counts, prices, or guarantees.
+
 Run the local docs check before changing the page:
 
 ```bash
